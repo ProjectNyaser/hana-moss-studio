@@ -3,7 +3,7 @@ import { hana } from "./sdk.js";
 import { startLive, outputUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
-const API = "/moss-studio";
+const API = "/hana-moss-studio";
 
 const el = (id) => document.getElementById(id);
 const nodes = {

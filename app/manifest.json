@@ -1,11 +1,11 @@
 {
   "manifestVersion": 2,
-  "id": "moss-studio",
+  "id": "hana-moss-studio",
   "name": "苔室",
-  "version": "0.2.11",
+  "version": "0.1.0",
   "description": "MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、提示词面板与画廊；工具出图在对话里挂实时进度卡，左侧状态面板跟着当前任务走。",
   "entry": "index.js",
-  "icon": "assets/icon.svg",
+  "icon": "assets/icon.png",
   "minAppVersion": "1.5.7-beta",
   "capabilities": [
     "app/tools.expose-to-model",
@@ -31,8 +31,9 @@
           "route": "/panel.html"
         },
         "face": {
-          "image": "assets/cover.svg"
-        }
+          "image": "assets/cover.png"
+        },
+        "pageIcon": "assets/page-icon.svg"
       }
     ]
   }

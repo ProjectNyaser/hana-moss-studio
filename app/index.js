@@ -6,7 +6,7 @@ import { Engine } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
 import { UPSTREAM } from "./lib/upstream.js";
 
-export const name = "moss-studio";
+export const name = "hana-moss-studio";
 
 /** 名单里的 id 与版本以 manifest 为准，别再在代码里写一份。 */
 const MANIFEST = JSON.parse(readFileSync(new URL("./manifest.json", import.meta.url), "utf8"));
@@ -35,7 +35,7 @@ const STATUS_TEXT = {
 
 export default defineApp(async (sdk) => {
   const dataDir = sdk.dataDir;
-  const outputsDir = join(dataDir, "outputs");
+  const outputsDir = join(dataDir, "generated");
   const cacheDir = join(dataDir, "cache");
   for (const dir of [outputsDir, cacheDir]) mkdirSync(dir, { recursive: true });
 

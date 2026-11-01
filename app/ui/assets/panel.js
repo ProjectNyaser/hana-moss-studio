@@ -1,10 +1,10 @@
 // 苔室侧栏：生成设置与运行状态都在这条侧栏里，工作区那边只留画布与画廊。
-// 数据：GET /moss-studio/state（轮询 1.5s）；写操作走同前缀的 POST 路由。
+// 数据：GET /hana-moss-studio/state（轮询 1.5s）；写操作走同前缀的 POST 路由。
 import { hana } from "./sdk.js";
 import { startLive } from "./live.js";
 import { applyTheme } from "./theme.js";
 
-const API = "/moss-studio";
+const API = "/hana-moss-studio";
 /** 引擎的真实上限：单边 4096、总量 4.2 MP。 */
 const MAX_MP = 4.2;
 const MIN_MP = 0.3;
@@ -62,7 +62,6 @@ const nodes = {
   generate: el("pn-generate"),
   queue: el("pn-queue"),
   queueCount: el("pn-queue-count"),
-  open: el("pn-open"),
   facts: el("pn-facts"),
   engineDetail: el("pn-engine-detail"),
   serverPath: el("pn-server-path"),
@@ -571,36 +570,10 @@ async function onSaveSettings() {
   }
 }
 
-async function openWorkspace() {
-  // 以前这里写的是 hana.cards?.open?.(…)：接口不存在时可选链直接短路，
-  // await undefined 也算成功，于是按钮看起来「完全没反应」。先显式检查再调。
-  const cards = hana?.cards;
-  if (typeof cards?.open !== "function") {
-    console.warn("[苔室] 当前面板拿不到 hana.cards.open", { cards: cards ? Object.keys(cards) : null });
-    say("打不开工作区：这个面板没有 hana.cards.open 接口", "bad");
-    return;
-  }
-  nodes.open.disabled = true;
-  nodes.open.textContent = "打开中…";
-  try {
-    await cards.open("studio");
-    say("已请宿主切到工作区", "ok");
-  } catch (error) {
-    const code = error?.code ? `${error.code}：` : "";
-    const detail = error instanceof Error ? error.message : String(error);
-    console.warn("[苔室] 打开工作区失败", { code: error?.code, detail, error });
-    say(`打不开工作区 — ${code}${detail}`, "bad");
-  } finally {
-    nodes.open.disabled = false;
-    nodes.open.textContent = "工作区";
-  }
-}
-
 nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
 nodes.engine.addEventListener("click", onEngineToggle);
 nodes.save.addEventListener("click", onSaveSettings);
-nodes.open.addEventListener("click", openWorkspace);
 nodes.reroll.addEventListener("click", () => {
   nodes.seed.value = "";
   nodes.seed.placeholder = String(Math.floor(Math.random() * 4294967295));

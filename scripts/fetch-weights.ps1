@@ -3,7 +3,7 @@
 # 已存在的文件按大小判断是否完整，不完整就 --continue-at - 续传。
 
 param(
-  [string]$Root = "H:\.hanako\app-data\moss-studio\models\moss-image-sft",
+  [string]$Root = "H:\.hanako\app-data\hana-moss-studio\models\moss-image-sft",
   [string]$Repo = "OpenMOSS-Team/MOSS-Image-SFT",
   [string]$Endpoint = "https://hf-mirror.com",
   [string[]]$Includes = @("model_index.json", "scheduler/*", "transformer/*", "vae/*", "tokenizer/*", "text_encoder/*")

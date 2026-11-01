@@ -1,0 +1,19 @@
+{
+  "name": "hana-moss-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MOSS-Image local image studio for Hana: engine process, serial queue, prompt panel and gallery, with in-chat progress cards.",
+  "license": "MPL-2.0",
+  "author": "Nyaser",
+  "publisher": "Nyaser",
+  "scripts": {
+    "build": "node scripts/package.mjs",
+    "check": "node scripts/package.mjs",
+    "pack": "node scripts/pack.mjs",
+    "market": "node scripts/market.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

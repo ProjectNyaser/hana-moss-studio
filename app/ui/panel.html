@@ -9,6 +9,24 @@
   <style>
     /* 苔室侧栏：生成设置与运行状态都在这条侧栏里，页面那边只留画布与画廊。
        颜色只走 hana-theme.css 的 --ui-*（宿主主题变量），不另造一套。 */
+    /* 界面图标：内联 SVG 符号，线宽与颜色都跟文字走。 */
+    .ic {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.8;
+    }
+    .pn-head .ic { color: var(--ui-accent); opacity: 1; }
+    .pn-head-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .pn-fold > summary { display: flex; align-items: center; gap: 6px; }
+    .btn .ic { width: 12px; height: 12px; opacity: 0.9; }
+    .pn-icons { position: absolute; width: 0; height: 0; overflow: hidden; }
+
     html, body { height: 100%; }
     body { background: var(--ui-sidebar); overflow-x: hidden; }
 
@@ -39,7 +57,6 @@
 
     .pn-state { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ui-text-2); min-width: 0; }
     .pn-state-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pn-state-open { margin-left: auto; flex: none; }
 
     /* 参数：两列在窄栏里会自动落成一列。minmax(0,…) 是必需的，否则数字输入框的
        min-content 宽度会把两列顶出侧栏。 */
@@ -170,18 +187,51 @@
   </style>
 </head>
 <body>
+  <svg class="pn-icons" aria-hidden="true">
+    <symbol id="i-task" viewBox="0 0 16 16">
+      <path d="M4.5 2.5h7M4.5 13.5h7M5.8 2.5c0 2.4 2.2 3.4 2.2 5.5s-2.2 3.1-2.2 5.5M10.2 2.5c0 2.4-2.2 3.4-2.2 5.5s2.2 3.1 2.2 5.5"/>
+    </symbol>
+    <symbol id="i-prompt" viewBox="0 0 16 16">
+      <path d="M2.5 4.5h11M2.5 8h8M2.5 11.5h5.5"/>
+    </symbol>
+    <symbol id="i-sliders" viewBox="0 0 16 16">
+      <path d="M2.5 5.2h11M2.5 10.8h11"/>
+      <circle cx="5.8" cy="5.2" r="1.7"/>
+      <circle cx="10.4" cy="10.8" r="1.7"/>
+    </symbol>
+    <symbol id="i-queue" viewBox="0 0 16 16">
+      <path d="M6 4.5h7.5M6 8h7.5M6 11.5h7.5"/>
+      <circle cx="2.8" cy="4.5" r="0.85"/>
+      <circle cx="2.8" cy="8" r="0.85"/>
+      <circle cx="2.8" cy="11.5" r="0.85"/>
+    </symbol>
+    <symbol id="i-engine" viewBox="0 0 16 16">
+      <rect x="4.8" y="4.8" width="6.4" height="6.4" rx="1.2"/>
+      <path d="M2 6.2h2.8M2 9.8h2.8M11.2 6.2H14M11.2 9.8H14M6.2 2v2.8M9.8 2v2.8M6.2 11.2V14M9.8 11.2V14"/>
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 16 16">
+      <path d="M8 2.5v7M5.2 7l2.8 2.8L10.8 7M3 13h10"/>
+    </symbol>
+    <symbol id="i-power" viewBox="0 0 16 16">
+      <path d="M8 2.4v4.8"/>
+      <path d="M5.1 4.3a4.6 4.6 0 1 0 5.8 0"/>
+    </symbol>
+    <symbol id="i-spark" viewBox="0 0 16 16">
+      <path d="M8 2.4 9.3 6 13 7.4 9.3 8.8 8 12.4 6.7 8.8 3 7.4 6.7 6z"/>
+    </symbol>
+  </svg>
+
   <div class="pn" id="pn-root">
     <div class="pn-block">
       <div class="pn-state">
         <span class="dot" id="pn-dot"></span>
         <span class="pn-state-text" id="pn-state">读取状态…</span>
-        <button class="btn ghost small pn-state-open" id="pn-open" type="button">工作区</button>
       </div>
       <p class="hint" id="pn-message" role="status"></p>
     </div>
 
     <div class="pn-block" id="pn-job-block" hidden>
-      <div class="pn-head">当前任务 <button class="btn ghost small" id="pn-cancel" type="button">取消</button></div>
+      <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-task"/></svg>当前任务</span> <button class="btn ghost small" id="pn-cancel" type="button">取消</button></div>
       <div class="pn-job">
         <span class="pn-job-prompt" id="pn-job-prompt"></span>
         <div class="bar" id="pn-bar"><i></i></div>
@@ -193,7 +243,7 @@
     </div>
 
     <div class="pn-block">
-      <div class="pn-head">提示词</div>
+      <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>提示词</span></div>
       <label class="field">
         <textarea id="pn-prompt" rows="4" placeholder="苔石上的一盏白兰花，晨雾，柔光，浅景深"></textarea>
       </label>
@@ -204,7 +254,7 @@
     </div>
 
     <div class="pn-block">
-      <div class="pn-head">生成参数</div>
+      <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-sliders"/></svg>生成参数</span></div>
       <div class="pn-slider" id="pn-ratio-slider">
         <div class="pn-slider-rail"><i class="pn-slider-fill" id="pn-ratio-fill"></i></div>
         <span class="pn-slider-thumb" id="pn-ratio-thumb" role="slider" tabindex="0"
@@ -240,16 +290,16 @@
         </label>
         <label class="field"><span class="label">修正步数</span><input id="pn-hires-steps" type="number" min="0" max="80" value="0" placeholder="跟主步数"></label>
       </div>
-      <button class="btn primary wide" id="pn-generate" type="button">开始生成</button>
+      <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
     </div>
 
     <div class="pn-block">
-      <div class="pn-head">队列 <span class="mono" id="pn-queue-count"></span></div>
+      <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-queue"/></svg>队列</span> <span class="mono" id="pn-queue-count"></span></div>
       <ul class="pn-list" id="pn-queue"></ul>
     </div>
 
     <details class="pn-fold" id="pn-fold-engine">
-      <summary>引擎与模型</summary>
+      <summary><svg class="ic"><use href="#i-engine"/></svg>引擎与模型</summary>
       <div class="fold-body">
         <div class="pn-facts" id="pn-facts"></div>
         <p class="hint" id="pn-engine-detail"></p>
@@ -280,14 +330,14 @@
           </label>
         </div>
         <div class="pn-row">
-          <button class="btn small" id="pn-engine" type="button">启动引擎</button>
+          <button class="btn small" id="pn-engine" type="button"><svg class="ic"><use href="#i-power"/></svg>启动引擎</button>
           <button class="btn ghost small" id="pn-save" type="button">保存设置</button>
         </div>
       </div>
     </details>
 
     <details class="pn-fold" id="pn-fold-plan">
-      <summary>要下什么</summary>
+      <summary><svg class="ic"><use href="#i-download"/></svg>要下什么</summary>
       <div class="fold-body">
         <p class="hint" id="pn-plan-total"></p>
         <ul class="pn-list" id="pn-plan-list"></ul>

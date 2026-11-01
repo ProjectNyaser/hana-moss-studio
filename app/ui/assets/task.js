@@ -1,11 +1,11 @@
 // 苔室流内进度卡：工具提交出图后挂在对话里，跟着任务走。
 // 身份：宿主 surface 上下文里的 cardInstanceId（卡页 route 静态，id 反查任务）；
-// 数据：GET /moss-studio/task?cardId=<卡实例 id>，轮询到终态后放慢。
+// 数据：GET /hana-moss-studio/task?cardId=<卡实例 id>，轮询到终态后放慢。
 import { hana } from "./sdk.js";
 import { startLive, outputUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
-const API = "/moss-studio";
+const API = "/hana-moss-studio";
 const CARD_WIDTH = 460;
 
 const root = document.getElementById("tk-root");

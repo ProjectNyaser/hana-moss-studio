@@ -1,8 +1,8 @@
-// 苔室实时通道：订阅 /moss-studio/events 的 SSE 状态流。
+// 苔室实时通道：订阅 /hana-moss-studio/events 的 SSE 状态流。
 // 连不上或宿主把响应缓冲了（5 秒内收不到第一帧）就退化成轮询，界面不至于停在旧数据上。
 
-const API = "/moss-studio";
-const ROUTE_BASE = "/api/apps/moss-studio/routes";
+const API = "/hana-moss-studio";
+const ROUTE_BASE = "/api/apps/hana-moss-studio/routes";
 const FIRST_FRAME_TIMEOUT_MS = 5000;
 const RECONNECT_DELAY_MS = 2500;
 const FALLBACK_POLL_MS = 3000;
