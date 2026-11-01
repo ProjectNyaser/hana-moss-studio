@@ -14,6 +14,9 @@ export const DEFAULT_SETTINGS = {
     height: 768,
     steps: 8,
     cfg: 3,
+    hiresScale: 0,
+    hiresSteps: 0,
+    hiresStrength: 0.45,
   },
 };
 
@@ -47,10 +50,13 @@ export function createStore(dataDir) {
       tier: TIERS.includes(merged.tier) ? merged.tier : DEFAULT_SETTINGS.tier,
       device: Number.isInteger(merged.device) && merged.device >= 0 ? merged.device : 0,
       defaults: {
-        width: clamp(defaults.width, 256, 2048, DEFAULT_SETTINGS.defaults.width),
-        height: clamp(defaults.height, 256, 2048, DEFAULT_SETTINGS.defaults.height),
+        width: clamp(defaults.width, 256, 4096, DEFAULT_SETTINGS.defaults.width),
+        height: clamp(defaults.height, 256, 4096, DEFAULT_SETTINGS.defaults.height),
         steps: clamp(defaults.steps, 1, 80, DEFAULT_SETTINGS.defaults.steps),
-        cfg: clamp(defaults.cfg, 0, 20, DEFAULT_SETTINGS.defaults.cfg),
+        cfg: clampFloat(defaults.cfg, 0, 20, DEFAULT_SETTINGS.defaults.cfg),
+        hiresScale: clamp(defaults.hiresScale, 0, 3, 0),
+        hiresSteps: clamp(defaults.hiresSteps, 0, 80, 0),
+        hiresStrength: clampFloat(defaults.hiresStrength, 0.05, 1, 0.45),
       },
     };
   }
@@ -94,4 +100,11 @@ export function clamp(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, Math.round(number)));
+}
+
+/** 小数参数用这个：clamp 会把值四舍五入成整数，强度、CFG 这类会丢掉小数部分。 */
+export function clampFloat(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
 }

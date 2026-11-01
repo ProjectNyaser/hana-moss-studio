@@ -324,6 +324,21 @@ export class Engine {
       save_metadata: true,
       include_prompts: true,
     };
+    if (job.initImage) {
+      // 图生图：引擎按 init_image 读取源图，只跑 denoise_strength 之后的那段采样。
+      params.init_image = job.initImage;
+      params.denoise_strength = job.strength;
+      params.resize = job.resize;
+    }
+    if (job.hiresWidth > 0 && job.hiresHeight > 0) {
+      // 服务端接受 hires 对象：{width, height, strength?, steps?}
+      params.hires = {
+        width: job.hiresWidth,
+        height: job.hiresHeight,
+        strength: job.hiresStrength,
+        steps: job.hiresSteps > 0 ? job.hiresSteps : job.steps,
+      };
+    }
     try {
       await this.request(String(job.id), "generate", params, 3_600_000);
     } catch (error) {

@@ -6,17 +6,31 @@
 
 ```
 app/                 App 本体，打包后就是安装包内容
-  manifest.json      v2 manifest（整页卡片 + 两个工具）
-  index.js           路由、串行队列、工具注册
+  manifest.json      v2 manifest（整页卡片 + 功能面板 + 两个工具）
+  index.js           路由、串行队列、宿主任务桥、工具注册
   lib/engine.js      moss-server 生命周期与 JSON-lines 协议
   lib/store.js       设置与任务台账
   lib/upstream.js    生成物，来自 scripts/sync-upstream.mjs
-  ui/                工作区页面
+  ui/                工作区页面 studio.html / 流内进度卡 task.html / 功能面板 panel.html
+    assets/          hana-theme.css（主题 token 与公共控件）、各页脚本、宿主桥 sdk.js
 scripts/
   sync-upstream.mjs  从 submodule 抽取上游契约
   package.mjs        产出 build/<appId>/
 vendor/MossStudio    git submodule，上游源仓
 ```
+
+## 三个界面
+
+| 界面 | 位置 | 数据 |
+| --- | --- | --- |
+| 工作区 `studio.html` | 整页卡（常驻全站导航） | `GET /moss-studio/state`，1.5 s 轮询 |
+| 流内进度卡 `task.html` | 工具提交后挂在对话里 | `GET /moss-studio/task?cardId=`，1.2 s 轮询，终态后放慢 |
+| 功能面板 `panel.html` | 左侧栏，跟工作区走 | `GET /moss-studio/panel`，2 s 轮询 |
+
+版式沿用上游 MossStudio 的 `studio-workbench`（左「生成设置」、中间画布、右「运行信息」、底部进度带），配色改成宿主主题：`hana-theme.css` 把 `--hana-*` → 旧主题名 → 本地兜底三级映射成页面语义 token，宿主换主题、切明暗都跟着走。
+
+流内进度卡靠工具回执里的 `details.card` 落地（卡页 route 静态，身份经宿主 surface 上下文的 `cardInstanceId` 反查到任务），同时按 `app/tasks.manage` + `app/session.start-turn` 建宿主任务：任务完成时结果自动投递回会话。这两个能力缺失时自动降级成「只跟踪、不投递」，回执里会写清楚。
+
 
 ## 上游当成 submodule 用
 
@@ -41,7 +55,7 @@ node scripts/package.mjs
 
 产出 `build/moss-studio/`，用 App Manager 从本地目录安装。
 
-App 需要两条能力：`app/tools.expose-to-model`（模型可调 `moss_generate` / `moss_status`）与 `app/process.spawn`（能拉起 `moss-server` 外部进程）。
+App 需要四条能力：`app/tools.expose-to-model`（模型可调 `moss_generate` / `moss_status`）、`app/process.spawn`（能拉起 `moss-server` 外部进程）、`app/tasks.manage` 与 `app/session.start-turn`（宿主任务与结果投递）。
 
 ## 引擎
 

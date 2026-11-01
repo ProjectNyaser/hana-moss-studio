@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>苔室出图</title>
+  <script src="./assets/theme-boot.js"></script>
+  <link rel="stylesheet" href="./assets/hana-theme.css">
+  <style>
+    body { background: transparent; overflow: hidden; }
+    .tk { padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 7px; max-width: 460px; }
+
+    .tk-head { display: flex; align-items: center; gap: 8px; }
+    .tk-title { font-size: 13.5px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tk-elapsed { font-size: 11px; color: var(--ui-text-3); font-variant-numeric: tabular-nums; flex: none; }
+
+    .tk-prompt {
+      margin: 0;
+      font-size: 12px;
+      color: var(--ui-text-2);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .tk-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tk-meta .m {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: var(--ui-overlay);
+      font-size: 10.5px;
+      color: var(--ui-text-3);
+      white-space: nowrap;
+    }
+    .tk-meta .m b { font-size: 11px; font-weight: 600; color: var(--ui-text-2); font-variant-numeric: tabular-nums; }
+
+    /* 阶段时间轴：完成点亮、当前流动、未跑留灰 */
+    .tk-stages { display: flex; gap: 3px; }
+    .tk-stage { flex: 1 1 0; height: 4px; border-radius: 2px; background: var(--ui-overlay-strong); transition: background 240ms var(--ui-ease); }
+    .tk-stage.done { background: var(--ui-accent); }
+    .tk-stage.current {
+      background: linear-gradient(90deg, var(--ui-accent), color-mix(in srgb, var(--ui-accent) 30%, var(--ui-surface)), var(--ui-accent));
+      background-size: 200% 100%;
+      animation: tk-flow 1.2s linear infinite;
+    }
+    .tk-stage.bad { background: var(--ui-bad); }
+    @keyframes tk-flow { 0% { background-position: 0 0; } 100% { background-position: -200% 0; } }
+    .tk-stage-cap { font-size: 10.5px; color: var(--ui-text-3); font-variant-numeric: tabular-nums; }
+
+    .tk-result { display: flex; gap: 10px; align-items: flex-start; margin-top: 2px; }
+    .tk-shot {
+      width: 116px;
+      flex: none;
+      aspect-ratio: 1 / 1;
+      border-radius: var(--ui-radius-control);
+      border: 1px solid var(--ui-line);
+      overflow: hidden;
+      background: var(--ui-overlay);
+      cursor: zoom-in;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--ui-text-3);
+      font-size: 10.5px;
+    }
+    .tk-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .tk-facts { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--ui-text-3); min-width: 0; }
+    .tk-facts b { color: var(--ui-text-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tk-actions { display: flex; gap: 6px; margin-top: auto; }
+
+    .tk-err { font-size: 11.5px; color: var(--ui-bad); white-space: pre-wrap; word-break: break-word; }
+    .tk-hint { font-size: 11px; color: var(--ui-text-3); white-space: pre-wrap; }
+    .tk-foot { font-size: 10.5px; color: var(--ui-text-3); display: flex; justify-content: space-between; gap: 8px; }
+    .tk-note { font-size: 12px; color: var(--ui-text-2); white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="tk" id="tk-root">
+    <div class="tk-head">
+      <span class="tk-title">苔室出图</span>
+      <span class="chip">读取中…</span>
+    </div>
+    <p class="tk-note">正在读取任务状态…</p>
+  </div>
+  <div class="lightbox" id="tk-lightbox" hidden><img alt="出图预览"></div>
+  <script type="module" src="./assets/task.js"></script>
+</body>
+</html>

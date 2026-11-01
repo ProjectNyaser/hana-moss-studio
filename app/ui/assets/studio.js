@@ -1,47 +1,65 @@
+// 苔室工作区：画布与画廊。生成设置与运行状态在左侧栏（panel.html），这边只管看。
 import { hana } from "./sdk.js";
+import { startLive, outputUrl } from "./live.js";
+import { applyTheme } from "./theme.js";
+
+const API = "/moss-studio";
 
 const el = (id) => document.getElementById(id);
-
 const nodes = {
-  engineDot: el("engine-dot"),
-  engineText: el("engine-text"),
-  engineDetail: el("engine-detail"),
-  engineToggle: el("engine-toggle"),
-  prompt: el("prompt"),
-  negative: el("negative"),
-  width: el("width"),
-  height: el("height"),
-  steps: el("steps"),
-  cfg: el("cfg"),
-  seed: el("seed"),
-  generate: el("generate"),
-  cancel: el("cancel"),
-  message: el("message"),
-  serverPath: el("server-path"),
-  modelPath: el("model-path"),
-  memoryMode: el("memory-mode"),
-  tier: el("tier"),
-  saveSettings: el("save-settings"),
-  currentLabel: el("current-label"),
-  currentEta: el("current-eta"),
-  currentBar: el("current-bar"),
-  currentPrompt: el("current-prompt"),
-  grid: el("grid"),
+  stageChip: el("stage-chip"),
+  stageDot: el("stage-dot"),
+  stageText: el("stage-text"),
+  canvasMeta: el("canvas-meta"),
+  canvas: el("canvas"),
+  result: el("result"),
+  resultImage: el("result-image"),
+  resultCaption: el("result-caption"),
+  canvasEmpty: el("canvas-empty"),
+  progressBand: el("progress-band"),
+  bandLabel: el("band-label"),
+  bandBar: el("band-bar"),
+  bandEta: el("band-eta"),
+  galleryCount: el("gallery-count"),
+  thumbs: el("thumbs"),
   clearJobs: el("clear-jobs"),
-  planTotal: el("plan-total"),
-  planList: el("plan-list"),
-  upstreamNote: el("upstream-note"),
   lightbox: el("lightbox"),
   lightboxImage: el("lightbox-image"),
 };
 
 const imageCache = new Map();
 let latest = null;
-let settingsLoaded = false;
-let pollTimer = null;
+let renderedJobsKey = null;
+let selectedId = null;
+let lastNewestId = null;
 
+async function withTimeout(promise, ms) {
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  try {
+    await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+// ── 主题 ───────────────────────────────────────────────────────────────
+function syncTheme() {
+  applyTheme(hana);
+}
+
+// ── 网络 ───────────────────────────────────────────────────────────────
 async function api(path, init) {
-  const response = await hana.api.fetch(path, init);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  let response;
+  try {
+    response = await hana.api.fetch(`${API}${path}`, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
   const text = await response.text();
   let data = null;
   try {
@@ -49,30 +67,27 @@ async function api(path, init) {
   } catch {
     data = null;
   }
-  if (!response.ok) {
-    throw new Error(data?.error ?? text ?? `请求失败（${response.status}）`);
-  }
+  if (!response.ok) throw new Error(data?.error ?? text ?? `请求失败（${response.status}）`);
   return data;
 }
 
-function say(text, kind) {
-  nodes.message.textContent = text;
-  nodes.message.className = kind ? `hint ${kind}` : "hint";
+function post(path, body) {
+  return api(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
 }
 
-function applySettings(settings) {
-  if (settingsLoaded) return;
-  settingsLoaded = true;
-  nodes.serverPath.value = settings.serverPath ?? "";
-  nodes.modelPath.value = settings.modelPath ?? "";
-  nodes.memoryMode.value = settings.memoryMode;
-  nodes.tier.value = settings.tier;
-  nodes.width.value = settings.defaults.width;
-  nodes.height.value = settings.defaults.height;
-  nodes.steps.value = settings.defaults.steps;
-  nodes.cfg.value = settings.defaults.cfg;
+// ── 格式化 ─────────────────────────────────────────────────────────────
+function formatDuration(ms) {
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds} 秒`;
+  return `${Math.floor(seconds / 60)} 分 ${String(seconds % 60).padStart(2, "0")} 秒`;
 }
 
+// ── 渲染 ───────────────────────────────────────────────────────────────
 function renderEngine(data) {
   const { engine } = data;
   let dotClass = "dot";
@@ -84,308 +99,195 @@ function renderEngine(data) {
     label = "引擎未启动";
   } else if (engine.active) {
     dotClass = "dot busy";
-    label = `引擎运行中 · ${engine.active.phase || "准备中"}`;
+    const progress = engine.active.progress ?? {};
+    label = `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step}/${progress.total}` : ""}`;
   } else {
     dotClass = "dot on";
-    label = engine.loaded ? "引擎就绪 · 模型已加载" : "引擎就绪 · 模型未加载";
+    label = engine.loaded ? "就绪 · 模型已加载" : "就绪 · 模型未加载";
   }
-  nodes.engineDot.className = dotClass;
-  nodes.engineText.textContent = label;
-  nodes.engineText.title = engine.lastError ?? "";
-  nodes.engineToggle.textContent = engine.running ? "停止" : "启动";
-  nodes.engineToggle.disabled = !engine.serverFound && !engine.running;
-  renderEngineDetail(engine);
+  nodes.stageDot.className = dotClass;
+  nodes.stageText.textContent = label;
+  nodes.stageChip.title = engine.lastError ?? "";
 }
 
-function formatGb(bytes) {
-  if (!bytes) return "";
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-}
-
-function renderEngineDetail(engine) {
-  const probe = engine.hello?.probe;
-  if (!engine.running || !probe) {
-    nodes.engineDetail.className = "hint";
-    nodes.engineDetail.textContent = engine.lastError ?? "";
-    return;
-  }
-  const device = (probe.devices ?? []).find((item) => item.supported) ?? (probe.devices ?? [])[0];
-  const parts = [];
-  if (device) parts.push(`${device.name} · ${formatGb(device.total_memory_bytes)} · CC ${device.compute_capability}`);
-  if (probe.driver_cuda_version) parts.push(`驱动 CUDA ${(probe.driver_cuda_version / 1000).toFixed(1)}`);
-  const cu = probe.cublaslt;
-  if (cu && cu.error) {
-    nodes.engineDetail.className = "hint bad";
-    nodes.engineDetail.textContent = `${parts.join(" · ")}\n缺少 cuBLASLt：换 bundled 引擎包，或把 cublasLt64_13.dll 放进引擎 bin 目录`;
-    return;
-  }
-  nodes.engineDetail.className = "hint";
-  nodes.engineDetail.textContent = parts.join(" · ");
-}
-
-function renderCurrent(data) {
-  const { engine, jobs, progress } = data;
-  if (engine.active) {
-    const info = progress?.[engine.active.jobId] ?? {};
-    const percent = typeof info.percent === "number" ? info.percent : 0;
-    nodes.currentLabel.textContent = `${info.label ?? "准备中"}${info.total ? ` ${info.step}/${info.total}` : ""}`;
-    nodes.currentEta.textContent = info.etaMs ? `约剩 ${Math.round(info.etaMs / 1000)} 秒` : "";
-    nodes.currentBar.style.width = `${percent}%`;
-    const job = jobs.find((item) => item.id === engine.active.jobId);
-    nodes.currentPrompt.textContent = job?.prompt ?? "";
-    nodes.cancel.disabled = false;
-  } else if (data.queue.length) {
-    nodes.currentLabel.textContent = `队列中 ${data.queue.length} 个`;
-    nodes.currentEta.textContent = "";
-    nodes.currentBar.style.width = "0%";
-    nodes.currentPrompt.textContent = data.queue[0]?.prompt ?? "";
-    nodes.cancel.disabled = true;
+function renderProgress(data) {
+  const active = data.engine.active;
+  if (!active) {
+    nodes.progressBand.hidden = true;
   } else {
-    nodes.currentLabel.textContent = "空闲";
-    nodes.currentEta.textContent = "";
-    nodes.currentBar.style.width = "0%";
-    nodes.currentPrompt.textContent = "";
-    nodes.cancel.disabled = true;
+    const progress = active.progress ?? {};
+    nodes.progressBand.hidden = false;
+    nodes.bandLabel.textContent = `${progress.phase ?? "准备中"}${progress.total ? ` · ${progress.step}/${progress.total}` : ""}`;
+    const percent = typeof progress.percent === "number" ? progress.percent : 0;
+    nodes.bandBar.classList.toggle("indeterminate", percent <= 0);
+    nodes.bandBar.querySelector("i").style.width = percent > 0 ? `${percent}%` : "36%";
+    nodes.bandEta.textContent = progress.etaMs ? `约剩 ${formatDuration(progress.etaMs)}` : progress.elapsedMs ? `已跑 ${formatDuration(progress.elapsedMs)}` : "";
   }
-  nodes.generate.disabled = Boolean(engine.active) || data.queue.length > 0;
+  nodes.canvasMeta.textContent = `协议 v${data.upstream.protocolVersion ?? "?"} · 上游 ${data.upstream.commit ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
 
-function tileFor(job) {
-  const tile = document.createElement("div");
-  tile.className = "tile";
-  if (job.status === "done" && job.output) {
-    const url = imageCache.get(job.output);
-    if (url) {
-      const node = document.createElement("img");
-      node.src = url;
-      node.alt = job.prompt.slice(0, 40);
-      node.addEventListener("click", () => openLightbox(url, node.alt));
-      tile.appendChild(node);
-    }
-    const caption = document.createElement("div");
-    caption.className = "caption";
-    caption.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
-    tile.appendChild(caption);
-  } else if (job.status === "error") {
-    tile.classList.add("placeholder", "failed");
-    tile.textContent = job.error ?? "生成失败";
-  } else {
-    tile.classList.add("placeholder");
-    const spin = document.createElement("span");
-    spin.className = "spin";
-    tile.appendChild(spin);
-    const text = document.createElement("span");
-    text.textContent = job.status === "queued" ? "排队中" : "生成中";
-    tile.appendChild(text);
+function latestDone(data) {
+  if (selectedId) {
+    const picked = data.jobs.find((job) => job.id === selectedId && job.status === "done" && job.output);
+    if (picked) return picked;
   }
-  return tile;
+  return data.jobs.find((job) => job.status === "done" && job.output) ?? null;
 }
 
-async function loadImage(name) {
-  if (imageCache.has(name)) return imageCache.get(name);
-  try {
-    const response = await hana.api.fetch(`/output?name=${encodeURIComponent(name)}`);
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    imageCache.set(name, url);
-    return url;
-  } catch {
-    return null;
-  }
+function loadImage(name) {
+  if (!name) return null;
+  if (!imageCache.has(name)) imageCache.set(name, outputUrl(name));
+  return imageCache.get(name);
 }
 
-async function renderGallery(data) {
-  if (!data) return;
-  const visible = data.jobs.filter((job) => job.status !== "cancelled");
-  await Promise.all(visible.filter((job) => job.status === "done" && job.output).map((job) => loadImage(job.output)));
-  nodes.grid.replaceChildren();
-  if (!visible.length) {
-    const empty = document.createElement("p");
-    empty.className = "empty";
-    empty.textContent = "还没有出过图。写下提示词，按「开始生成」。";
-    nodes.grid.appendChild(empty);
-    return;
-  }
-  for (const job of visible) nodes.grid.appendChild(tileFor(job));
-}
-
-function openLightbox(src, alt) {  nodes.lightboxImage.src = src;
-  nodes.lightboxImage.alt = alt ?? "";
+function openLightbox(src) {
+  nodes.lightboxImage.src = src;
   nodes.lightbox.hidden = false;
 }
 
-const ROLE_LABEL = { dit: "主模型", text_encoder: "文本编码器", vae: "VAE", support: "流水线" };
-
-function formatSize(bytes) {
-  if (!bytes) return "未知";
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
-  return `${Math.round(bytes / 1024)} KB`;
-}
-
-function renderPlan(data) {
-  const plan = data.plan;
-  if (!plan || !plan.components?.length) {
-    nodes.planTotal.textContent = "没有读到模型目录快照。";
-    nodes.planList.replaceChildren();
+async function renderCanvas(data) {
+  const job = latestDone(data);
+  if (!job) {
+    nodes.result.hidden = true;
+    nodes.canvasEmpty.hidden = false;
     return;
   }
-  nodes.planTotal.textContent = `完整跑起来需要 ${plan.components.length} 个组件，合计约 ${formatSize(plan.totalBytes)}。`;
-  nodes.planList.replaceChildren();
-  for (const item of plan.components) {
-    const row = document.createElement("li");
-    const name = document.createElement("span");
-    name.textContent = `${ROLE_LABEL[item.role] ?? item.role} · ${item.name}`;
-    const size = document.createElement("span");
-    size.className = "size";
-    size.textContent = formatSize(item.sizeBytes);
-    row.append(name, size);
-    nodes.planList.appendChild(row);
+  const url = await loadImage(job.output);
+  if (!url) {
+    nodes.result.hidden = true;
+    nodes.canvasEmpty.hidden = false;
+    return;
   }
-  const upstream = data.upstream ?? {};
-  nodes.upstreamNote.textContent = `上游快照 ${upstream.commit ?? "?"}（${(upstream.commitDate ?? "").slice(0, 10)}），协议 v${upstream.protocolVersion ?? "?"}，引擎仓 ${upstream.engineRepo ?? "?"}。`;
+  nodes.canvasEmpty.hidden = true;
+  nodes.result.hidden = false;
+  if (nodes.resultImage.getAttribute("src") !== url) nodes.resultImage.src = url;
+  const seed = job.report?.seedUsed ?? job.seed;
+  nodes.resultCaption.textContent = `${job.width}×${job.height} · ${job.steps} 步 · CFG ${job.cfg} · 种子 ${seed} · ${formatDuration(job.elapsedMs)}`;
+  nodes.resultImage.onclick = () => openLightbox(url);
+}
+
+async function renderGallery(data) {
+  const visible = data.jobs.filter((job) => job.status !== "cancelled");
+  await Promise.all(visible.filter((job) => job.status === "done" && job.output).map((job) => loadImage(job.output)));
+  nodes.thumbs.replaceChildren();
+  nodes.galleryCount.textContent = visible.length ? `${visible.length} 张` : "";
+  if (!visible.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-line";
+    empty.textContent = "还没有出过图。";
+    nodes.thumbs.appendChild(empty);
+    return;
+  }
+  for (const job of visible) {
+    const tile = document.createElement("div");
+    tile.className = "thumb";
+    const shown = latestDone(data);
+    if (job.status === "done" && job.output) {
+      if (shown && shown.id === job.id) tile.classList.add("on");
+      const url = imageCache.get(job.output);
+      if (url) {
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = job.prompt.slice(0, 40);
+        image.loading = "lazy";
+        image.addEventListener("click", () => {
+          selectedId = job.id;
+          renderedJobsKey = null;
+          void refresh();
+        });
+        tile.appendChild(image);
+        const meta = document.createElement("div");
+        meta.className = "thumb-meta";
+        meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
+        tile.appendChild(meta);
+      }
+    } else if (job.status === "error") {
+      tile.classList.add("placeholder", "bad");
+      tile.textContent = job.error ?? "生成失败";
+    } else {
+      tile.classList.add("placeholder");
+      const spinner = document.createElement("span");
+      spinner.className = "spinner";
+      const text = document.createElement("span");
+      text.textContent = job.status === "queued" ? "排队中" : "生成中";
+      tile.append(spinner, text);
+    }
+    nodes.thumbs.appendChild(tile);
+  }
 }
 
 function render(data) {
   latest = data;
-  applySettings(data.settings);
   renderEngine(data);
-  renderCurrent(data);
-  renderPlan(data);
-  void renderGallery(data);
+  renderProgress(data);
+  // 新的一张落定时回到它，用户先前在画廊里点选的那张不挡住新结果。
+  const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;
+  if (newest && newest !== lastNewestId) {
+    lastNewestId = newest;
+    selectedId = null;
+  }
+  void renderCanvas(data);
+  const key = data.jobs.map((job) => `${job.id}:${job.status}`).join("|");
+  if (key !== renderedJobsKey) {
+    renderedJobsKey = key;
+    // 新任务落定时回到最新一张，旧的选择不挡住新结果。
+    if (selectedId && !data.jobs.some((job) => job.id === selectedId && job.status === "done")) selectedId = null;
+    void renderGallery(data);
+  }
 }
 
 async function refresh() {
   try {
-    const data = await api("/state");
-    render(data);
+    render(await api("/state"));
   } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-  }
-}
-
-async function onGenerate() {
-  const prompt = nodes.prompt.value.trim();
-  if (!prompt) {
-    say("先写一句提示词。", "bad");
-    return;
-  }
-  nodes.generate.disabled = true;
-  say("已提交，等待引擎…");
-  try {
-    const seed = nodes.seed.value.trim();
-    const payload = {
-      prompt,
-      negativePrompt: nodes.negative.value,
-      width: Number(nodes.width.value),
-      height: Number(nodes.height.value),
-      steps: Number(nodes.steps.value),
-      cfg: Number(nodes.cfg.value),
-    };
-    if (seed) payload.seed = Number(seed);
-    const result = await api("/generate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    say(`已入队 ${result.job.id}`, "ok");
-    render(result.state);
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-    nodes.generate.disabled = false;
-  }
-}
-
-async function onCancel() {
-  if (!latest?.engine?.active) return;
-  try {
-    await api("/cancel", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: latest.engine.active.jobId }),
-    });
-    say("已请求取消");
-    void refresh();
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-  }
-}
-
-async function onEngineToggle() {
-  const running = latest?.engine?.running;
-  nodes.engineToggle.disabled = true;
-  say(running ? "正在停止引擎…" : "正在启动引擎（首次会做 GPU 探测）…");
-  try {
-    const data = await api(running ? "/engine/stop" : "/engine/start", { method: "POST" });
-    render(data);
-    say(running ? "引擎已停止" : "引擎已启动", "ok");
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-    void refresh();
-  } finally {
-    nodes.engineToggle.disabled = false;
-  }
-}
-
-async function onSaveSettings() {
-  try {
-    const data = await api("/settings", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        serverPath: nodes.serverPath.value.trim() || null,
-        modelPath: nodes.modelPath.value.trim() || null,
-        memoryMode: nodes.memoryMode.value,
-        tier: nodes.tier.value,
-        defaults: {
-          width: Number(nodes.width.value),
-          height: Number(nodes.height.value),
-          steps: Number(nodes.steps.value),
-          cfg: Number(nodes.cfg.value),
-        },
-      }),
-    });
-    render(data);
-    say("设置已保存", "ok");
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
+    nodes.stageText.textContent = error instanceof Error ? error.message : String(error);
+    nodes.stageDot.className = "dot err";
   }
 }
 
 async function onClearJobs() {
   try {
-    const data = await api("/jobs/clear", { method: "POST" });
-    render(data);
-    say("记录已清理", "ok");
+    render(await post("/jobs/clear"));
+    renderedJobsKey = null;
   } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
+    nodes.stageText.textContent = error instanceof Error ? error.message : String(error);
+    nodes.stageDot.className = "dot err";
   }
 }
 
-nodes.generate.addEventListener("click", onGenerate);
-nodes.cancel.addEventListener("click", onCancel);
-nodes.engineToggle.addEventListener("click", onEngineToggle);
-nodes.saveSettings.addEventListener("click", onSaveSettings);
 nodes.clearJobs.addEventListener("click", onClearJobs);
 nodes.lightbox.addEventListener("click", () => {
   nodes.lightbox.hidden = true;
 });
-
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !nodes.lightbox.hidden) nodes.lightbox.hidden = true;
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    if (!nodes.generate.disabled) void onGenerate();
-  }
 });
 
 async function boot() {
-  await hana.ready();
+  syncTheme();
+  try {
+    hana.theme?.subscribe?.(() => syncTheme());
+  } catch {
+    /* 老宿主没有主题订阅 */
+  }
+  try {
+    // 宿主握手可能卡住，不能让它把首帧也拖死。
+    await withTimeout(hana.ready(), 5000);
+  } catch {
+    /* 非宿主环境 */
+  }
   await refresh();
-  pollTimer = setInterval(() => {
-    if (!document.hidden) void refresh();
-  }, 1500);
+  startLive({
+    hana,
+    onState: (state) => render(state),
+    fetchState: () => api("/state"),
+    source: "studio",
+    onError: (error) => {
+      if (latest) return;
+      nodes.stageText.textContent = error instanceof Error ? error.message : String(error);
+      nodes.stageDot.className = "dot err";
+    },
+  });
 }
 
 void boot();

@@ -1,0 +1,266 @@
+/* 苔室公共主题层：把宿主主题变量映射成页面自己的语义 token，再给一套最小控件样式。
+   取值顺序统一是「宿主 --hana-* → 旧主题名 → 本地兜底」，宿主不给变量时靠 t-dark 切换兜底。 */
+
+:root {
+  --fb-bg: #f6f6f4;
+  --fb-surface: #fcfcfb;
+  --fb-sidebar: #efefed;
+  --fb-text: #33363b;
+  --fb-text-2: #5f646c;
+  --fb-text-3: #83888f;
+  --fb-line: #d5d8dc;
+  --fb-accent: #5b6b8c;
+  --fb-accent-hover: #4a5877;
+  --fb-accent-tint: rgba(91, 107, 140, 0.1);
+  --fb-ok: #4f8a6a;
+  --fb-bad: #9b4a44;
+  --fb-warn: #a9762c;
+  --fb-overlay: rgba(0, 0, 0, 0.06);
+  --fb-overlay-strong: rgba(0, 0, 0, 0.14);
+}
+
+:root.t-dark {
+  color-scheme: dark;
+  --fb-bg: #191b1f;
+  --fb-surface: #202329;
+  --fb-sidebar: #1c1f24;
+  --fb-text: #e9eef7;
+  --fb-text-2: #a8b2c1;
+  --fb-text-3: #717b8a;
+  --fb-line: rgba(255, 255, 255, 0.12);
+  --fb-accent: #8ab6ff;
+  --fb-accent-hover: #a9c7ff;
+  --fb-accent-tint: rgba(138, 182, 255, 0.14);
+  --fb-ok: #7fbf9b;
+  --fb-bad: #e0968f;
+  --fb-warn: #d9b169;
+  --fb-overlay: rgba(255, 255, 255, 0.06);
+  --fb-overlay-strong: rgba(255, 255, 255, 0.14);
+}
+
+:root {
+  /* 宿主主题把当前主题的变量注入到文档根（:root）上，所以取值顺序是
+     「宿主注入的 --bg / --text / … → 少数 --hana-* 别名 → 本地兜底」。 */
+  color-scheme: light;
+  --ui-font: var(--font-ui, var(--hana-font-ui, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif));
+  --ui-mono: var(--font-mono, var(--hana-font-mono, "Cascadia Code", Consolas, monospace));
+  --ui-bg: var(--bg, var(--hana-bg, var(--fb-bg)));
+  --ui-surface: var(--bg-card, var(--hana-bg-card, var(--fb-surface)));
+  --ui-glass: var(--bg-glass, var(--ui-bg));
+  --ui-sidebar: var(--sidebar-bg, var(--hana-sidebar-bg, var(--fb-sidebar)));
+  --ui-text: var(--text, var(--fb-text));
+  --ui-text-2: var(--text-light, var(--fb-text-2));
+  --ui-text-3: var(--text-muted, var(--fb-text-3));
+  --ui-line-strong: var(--border, var(--fb-line));
+  --ui-line: color-mix(in srgb, var(--ui-line-strong) 62%, transparent);
+  --ui-accent: var(--accent, var(--fb-accent));
+  --ui-accent-hover: var(--accent-hover, var(--fb-accent-hover));
+  --ui-tint: var(--accent-light, var(--fb-accent-tint));
+  --ui-ok: var(--green, var(--fb-ok));
+  --ui-bad: var(--danger, var(--fb-bad));
+  --ui-warn: var(--coral, var(--fb-warn));
+  --ui-overlay: var(--overlay-subtle, var(--fb-overlay));
+  --ui-overlay-strong: var(--overlay-medium, var(--fb-overlay-strong));
+  --ui-radius: var(--radius-card, 10px);
+  --ui-radius-control: var(--radius-input, 6px);
+  --ui-fast: 120ms;
+  --ui-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* 宿主 shell 的卡片语义（--panel-card-*）。它们定义在宿主的 app-ui 样式里，
+     App 文档默认拿不到，这里按同一语义兜一份：卡面取卡白。 */
+  --panel-card-bg: var(--bg-card, var(--bg, #f9fbf7));
+  --panel-card-radius: var(--radius-lg, 12px);
+  --panel-card-border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: var(--ui-font);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { overflow-x: hidden; }
+
+/* ── 控件 ───────────────────────────────────────────────────────────── */
+.btn {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--ui-radius-control);
+  border: 1px solid var(--ui-line-strong);
+  background: transparent;
+  color: var(--ui-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--ui-fast) var(--ui-ease), border-color var(--ui-fast) var(--ui-ease), opacity var(--ui-fast) var(--ui-ease);
+}
+
+.btn:hover:not(:disabled) { background: var(--ui-overlay); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; }
+
+.btn.primary {
+  background: var(--ui-accent);
+  border-color: transparent;
+  color: var(--ui-bg);
+  font-weight: 600;
+}
+
+.btn.primary:hover:not(:disabled) { background: var(--ui-accent-hover); }
+
+.btn.ghost { border-color: transparent; color: var(--ui-text-2); }
+.btn.ghost:hover:not(:disabled) { border-color: var(--ui-line); color: var(--ui-text); }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+.btn.wide { width: 100%; }
+.btn.danger { color: var(--ui-bad); border-color: color-mix(in srgb, var(--ui-bad) 40%, transparent); }
+
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field > .label { font-size: 12px; color: var(--ui-text-2); }
+.field > .label .sub { color: var(--ui-text-3); }
+
+input[type="text"],
+input[type="number"],
+textarea,
+select {
+  font: inherit;
+  font-size: 13px;
+  width: 100%;
+  padding: 6px 9px;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  outline: none;
+  transition: border-color var(--ui-fast) var(--ui-ease), box-shadow var(--ui-fast) var(--ui-ease);
+}
+
+textarea { resize: vertical; line-height: 1.6; }
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-tint);
+}
+
+select {
+  appearance: none;
+  padding-right: 26px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ui-text-3) 50%), linear-gradient(135deg, var(--ui-text-3) 50%, transparent 50%);
+  background-position: calc(100% - 14px) calc(50% + 1px), calc(100% - 9px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* ── 状态与信息件 ───────────────────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--ui-overlay);
+  color: var(--ui-text-2);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.chip.run { background: var(--ui-tint); color: var(--ui-accent); }
+.chip.ok { background: color-mix(in srgb, var(--ui-ok) 16%, transparent); color: var(--ui-ok); }
+.chip.bad { background: color-mix(in srgb, var(--ui-bad) 16%, transparent); color: var(--ui-bad); }
+.chip.warn { background: color-mix(in srgb, var(--ui-warn) 18%, transparent); color: var(--ui-warn); }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ui-text-3); flex: none; }
+.dot.on { background: var(--ui-ok); }
+.dot.busy { background: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-tint); }
+.dot.err { background: var(--ui-bad); }
+
+.mono { font-family: var(--ui-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--ui-text-3); }
+.secondary { color: var(--ui-text-2); }
+
+.bar {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ui-overlay-strong);
+  overflow: hidden;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--ui-accent);
+  transition: width 320ms var(--ui-ease);
+}
+
+.bar.indeterminate > i {
+  width: 36%;
+  animation: ui-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes ui-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--ui-overlay-strong);
+  border-top-color: var(--ui-accent);
+  animation: ui-turn 0.9s linear infinite;
+  flex: none;
+}
+
+@keyframes ui-turn { to { transform: rotate(360deg); } }
+
+.hint { margin: 0; font-size: 12px; color: var(--ui-text-3); }
+.hint.bad { color: var(--ui-bad); }
+.hint.ok { color: var(--ui-ok); }
+
+.divider { height: 1px; background: var(--ui-line); border: 0; margin: 0; }
+
+.panel {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: color-mix(in srgb, var(--ui-text) 78%, transparent);
+  cursor: zoom-out;
+}
+
+.lightbox[hidden] { display: none; }
+.lightbox img { max-width: 100%; max-height: 100%; border-radius: var(--ui-radius); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bar.indeterminate > i,
+  .spinner { animation-duration: 3s; }
+}

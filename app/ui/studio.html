@@ -4,128 +4,49 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>苔室</title>
+  <script src="./assets/theme-boot.js"></script>
+  <link rel="stylesheet" href="./assets/hana-theme.css">
   <link rel="stylesheet" href="./assets/studio.css">
 </head>
 <body>
-  <div class="app">
-    <aside class="composer">
-      <header class="brand">
-        <span class="mark"></span>
-        <div>
-          <h1>苔室</h1>
-          <p class="sub">MOSS-Image 本机出图</p>
-        </div>
-      </header>
+  <main class="canvas-column">
+    <div class="canvas-bar">
+      <span class="chip" id="stage-chip"><span class="dot" id="stage-dot"></span><span id="stage-text">读取状态…</span></span>
+      <span class="canvas-meta mono" id="canvas-meta"></span>
+      <span class="spacer"></span>
+      <button class="btn ghost small" id="clear-jobs" type="button">清理记录</button>
+    </div>
 
-      <section class="engine-bar" id="engine-bar">
-        <span class="dot" id="engine-dot"></span>
-        <span id="engine-text">正在读取引擎状态…</span>
-        <button class="ghost" id="engine-toggle" type="button">启动</button>
-      </section>
-      <p class="hint" id="engine-detail"></p>
-
-      <label class="field">
-        <span>提示词</span>
-        <textarea id="prompt" rows="6" placeholder="苔石上的一盏白兰花，晨雾，柔光，浅景深"></textarea>
-      </label>
-
-      <label class="field">
-        <span>反向提示词</span>
-        <textarea id="negative" rows="2" placeholder="模糊，畸变，水印"></textarea>
-      </label>
-
-      <div class="grid-two">
-        <label class="field">
-          <span>宽</span>
-          <input id="width" type="number" min="256" max="2048" step="64" value="768">
-        </label>
-        <label class="field">
-          <span>高</span>
-          <input id="height" type="number" min="256" max="2048" step="64" value="768">
-        </label>
-        <label class="field">
-          <span>步数</span>
-          <input id="steps" type="number" min="1" max="80" value="8">
-        </label>
-        <label class="field">
-          <span>CFG</span>
-          <input id="cfg" type="number" min="0" max="20" step="0.5" value="3">
-        </label>
+    <div class="canvas" id="canvas">
+      <figure class="result" id="result" hidden>
+        <img id="result-image" alt="最近一次出图">
+        <figcaption id="result-caption"></figcaption>
+      </figure>
+      <div class="canvas-empty" id="canvas-empty">
+        <p class="canvas-empty-title">画布还空着</p>
+        <p class="hint">在左侧栏写下提示词，按「开始生成」。出图会落在这里，旧图收进画廊。</p>
       </div>
+    </div>
 
-      <label class="field">
-        <span>种子（留空随机）</span>
-        <input id="seed" type="number" min="0" placeholder="随机">
-      </label>
+    <div class="progress-band" id="progress-band" hidden>
+      <span class="band-label" id="band-label">准备中</span>
+      <div class="bar" id="band-bar"><i></i></div>
+      <span class="band-eta mono" id="band-eta"></span>
+    </div>
 
-      <div class="actions">
-        <button class="primary" id="generate" type="button">开始生成</button>
-        <button class="ghost" id="cancel" type="button" disabled>取消</button>
-      </div>
-      <p class="hint" id="message" role="status"></p>
+    <details class="gallery" id="gallery" open>
+      <summary class="gallery-head">
+        <span class="gallery-title">
+          <span class="caret" aria-hidden="true"></span>
+          <span class="section-title">画廊</span>
+        </span>
+        <span class="hint" id="gallery-count"></span>
+      </summary>
+      <div class="thumbs" id="thumbs"></div>
+    </details>
+  </main>
 
-      <details class="settings" id="settings-panel">
-        <summary>引擎与模型</summary>
-        <label class="field">
-          <span>moss-server 路径</span>
-          <input id="server-path" type="text" placeholder="…/mossinfer/bin/moss-server.exe">
-        </label>
-        <label class="field">
-          <span>模型目录（diffusers 根）</span>
-          <input id="model-path" type="text" placeholder="含 transformer / text_encoder / vae / model_index.json">
-        </label>
-        <div class="grid-two">
-          <label class="field">
-            <span>显存策略</span>
-            <select id="memory-mode">
-              <option value="min_memory">省显存</option>
-              <option value="balanced">均衡</option>
-              <option value="max_speed">速度优先</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>精度档</span>
-            <select id="tier">
-              <option value="high">高精度 · bf16 + 8bit 注意力</option>
-              <option value="reference">参考档 · 纯 bf16</option>
-              <option value="turbo">INT4 Turbo · 需要 INT4 权重</option>
-            </select>
-          </label>
-        </div>
-        <button class="ghost wide" id="save-settings" type="button">保存设置</button>
-      </details>
-
-      <details class="settings" id="plan-panel">
-        <summary>要下什么</summary>
-        <p class="hint" id="plan-total"></p>
-        <ul class="plan" id="plan-list"></ul>
-        <p class="hint" id="upstream-note"></p>
-      </details>
-    </aside>
-
-    <main class="stage">
-      <section class="current" id="current">
-        <div class="current-head">
-          <span id="current-label">空闲</span>
-          <span class="mono" id="current-eta"></span>
-        </div>
-        <div class="bar"><i id="current-bar"></i></div>
-        <p class="current-prompt" id="current-prompt"></p>
-      </section>
-
-      <section class="gallery">
-        <div class="gallery-head">
-          <h2>画廊</h2>
-          <button class="ghost small" id="clear-jobs" type="button">清理记录</button>
-        </div>
-        <div class="grid" id="grid"></div>
-      </section>
-    </main>
-  </div>
-
-  <div class="lightbox" id="lightbox" hidden>
-    <img id="lightbox-image" alt="">
-  </div>
+  <div class="lightbox" id="lightbox" hidden><img id="lightbox-image" alt=""></div>
 
   <script type="module" src="./assets/studio.js"></script>
 </body>
