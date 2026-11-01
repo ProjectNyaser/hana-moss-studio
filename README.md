@@ -58,7 +58,25 @@ App 需要两条能力：`app/tools.expose-to-model`（模型可调 `moss_genera
 
 跑起来需要四个组件：DiT、文本编码器、VAE、pipeline，合计约 27 GB，来自 Hugging Face。页面里的「要下什么」按上游目录给出当前推荐组合与体积。
 
+拉权重用仓库自带的脚本，它按文件清单走 curl 分段续传：
+
+```powershell
+pwsh -File scripts/fetch-weights.ps1 -Root H:\.hanako\app-data\moss-studio\models\moss-image-sft
+```
+
+不走 `huggingface_hub` 的原因是它在部分网络下会走 Xet 的 CAS 通道，连接建起来但读不动，反复 `The read operation timed out`。同一个镜像用 curl 单连接能到 8–11 MB/s。脚本按大小校验完整性，中断重跑会接着下。
+
 `moss-server` 的 `load` 参数取 diffusers 目录根（含 `transformer/`、`text_encoder/`、`vae/`、`model_index.json`）。
+
+## 验证
+
+绕开 App 与 UI，直接对引擎跑完整链路：
+
+```powershell
+node scripts/smoke-generate.mjs --engine <moss-server.exe> --model <diffusers 目录> --out out.png
+```
+
+它会打印 hello 里的设备与 cuBLASLt 状态、load 耗时、逐阶段进度、`timings_s` 与最终文件位置。UI 出问题时先用它分辨「引擎坏了」还是「界面坏了」。
 
 ## 已知边界
 
