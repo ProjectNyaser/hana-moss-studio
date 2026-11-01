@@ -1,0 +1,3 @@
+[submodule "vendor/MossStudio"]
+	path = vendor/MossStudio
+	url = https://github.com/CloverIris/MossStudio
