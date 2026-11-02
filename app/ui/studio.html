@@ -13,7 +13,9 @@
     <nav class="studio-tabs" id="studio-tabs" role="tablist">
       <button class="studio-tab on" type="button" role="tab" data-view="canvas">画布</button>
       <button class="studio-tab" type="button" role="tab" data-view="gallery">画廊<span class="tab-count" id="tab-count"></span></button>
-      <button class="studio-tab" type="button" role="tab" data-view="manage">下载管理</button>
+      <button class="studio-tab" type="button" role="tab" data-view="queue">队列<span class="tab-count" id="tab-queue"></span></button>
+      <button class="studio-tab" type="button" role="tab" data-view="versions">版本</button>
+      <button class="studio-tab" type="button" role="tab" data-view="download">下载</button>
       <span class="spacer"></span>
       <span class="chip" id="stage-chip"><span class="dot" id="stage-dot"></span><span id="stage-text">读取状态…</span></span>
       <span class="canvas-meta mono" id="canvas-meta"></span>
@@ -48,47 +50,88 @@
       <div class="thumbs gallery-grid" id="thumbs"></div>
     </section>
 
-    <section class="studio-view" id="view-manage" hidden>
+    <section class="studio-view" id="view-queue" hidden>
+      <div class="manage-scroll">
+        <section class="manage-block">
+          <header class="manage-head">
+            <h2>正在跑</h2>
+            <span class="hint" id="queue-running-state"></span>
+          </header>
+          <div class="manage-list" id="queue-running"></div>
+        </section>
+
+        <section class="manage-block">
+          <header class="manage-head">
+            <h2>排队</h2>
+            <span class="hint" id="queue-count"></span>
+          </header>
+          <div class="manage-list" id="queue-list"></div>
+        </section>
+
+        <section class="manage-block">
+          <header class="manage-head">
+            <h2>最近的失败</h2>
+            <span class="hint" id="queue-failed-count"></span>
+          </header>
+          <div class="manage-list" id="queue-failed"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="studio-view" id="view-versions" hidden>
       <div class="manage-scroll">
         <section class="manage-block">
           <header class="manage-head">
             <h2>引擎</h2>
-            <span class="hint" id="manage-engine-state"></span>
+            <span class="hint" id="versions-engine-state"></span>
             <span class="spacer"></span>
-            <button class="btn small" id="manage-engine-toggle" type="button">启动引擎</button>
+            <button class="btn small" id="versions-engine-toggle" type="button">启动引擎</button>
           </header>
-          <p class="hint" id="manage-engine-note"></p>
-          <div class="manage-list" id="manage-installed"></div>
-
-          <div class="manage-actions">
-            <button class="btn ghost small" id="manage-install-engine" type="button">装最新引擎</button>
-            <button class="btn ghost small" id="manage-install-weights" type="button">下载权重</button>
-            <button class="btn ghost small" id="manage-cancel" type="button" hidden>取消</button>
-          </div>
-          <div class="bar" id="manage-bar" hidden><i></i></div>
-          <p class="hint" id="manage-download"></p>
-
-          <details class="manage-more" id="manage-releases">
-            <summary>其他版本</summary>
-            <div class="manage-list" id="manage-available"></div>
-          </details>
+          <p class="hint" id="versions-engine-note"></p>
+          <div class="manage-list" id="versions-installed"></div>
         </section>
 
         <section class="manage-block">
           <header class="manage-head">
             <h2>模型</h2>
-            <span class="hint" id="manage-model-state"></span>
+            <span class="hint" id="versions-model-state"></span>
             <span class="spacer"></span>
-            <button class="btn ghost small" id="manage-remove-model" type="button">卸载</button>
+            <button class="btn ghost small" id="versions-remove-model" type="button">卸载</button>
           </header>
-          <div class="manage-list" id="manage-model"></div>
+          <div class="manage-list" id="versions-model"></div>
         </section>
 
         <section class="manage-block">
           <header class="manage-head">
             <h2>这台机器</h2>
           </header>
-          <div class="manage-list" id="manage-host"></div>
+          <div class="manage-list" id="versions-host"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="studio-view" id="view-download" hidden>
+      <div class="manage-scroll">
+        <section class="manage-block">
+          <header class="manage-head">
+            <h2>下载</h2>
+            <span class="hint" id="download-state"></span>
+          </header>
+          <div class="manage-actions">
+            <button class="btn small" id="download-engine" type="button">装最新引擎</button>
+            <button class="btn ghost small" id="download-weights" type="button">下载权重</button>
+            <button class="btn ghost small" id="download-cancel" type="button" hidden>取消</button>
+          </div>
+          <div class="bar" id="download-bar" hidden><i></i></div>
+          <p class="hint" id="download-message"></p>
+        </section>
+
+        <section class="manage-block">
+          <header class="manage-head">
+            <h2>可装版本</h2>
+            <span class="hint" id="download-available-state"></span>
+          </header>
+          <div class="manage-list" id="download-available"></div>
         </section>
       </div>
     </section>

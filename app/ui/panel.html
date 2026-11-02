@@ -273,7 +273,7 @@
       <p class="hint" id="pn-message" role="status"></p>
     </div>
 
-    <div class="pn-block" id="pn-job-block" data-pane="canvas" hidden>
+    <div class="pn-block" id="pn-job-block" hidden>
       <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-task"/></svg>当前任务</span> <button class="btn ghost small" id="pn-cancel" type="button">取消</button></div>
       <div class="pn-job">
         <span class="pn-job-prompt" id="pn-job-prompt"></span>
@@ -285,7 +285,7 @@
       </div>
     </div>
 
-    <div class="pn-block" data-pane="canvas">
+    <div class="pn-block">
       <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>提示词</span></div>
       <label class="field">
         <textarea id="pn-prompt" rows="4" placeholder="苔石上的一盏白兰花，晨雾，柔光，浅景深"></textarea>
@@ -296,7 +296,7 @@
       </label>
     </div>
 
-    <div class="pn-block" data-pane="canvas">
+    <div class="pn-block">
       <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-sliders"/></svg>生成参数</span></div>
       <div class="pn-slider" id="pn-ratio-slider">
         <div class="pn-slider-rail"><i class="pn-slider-fill" id="pn-ratio-fill"></i></div>
@@ -333,94 +333,29 @@
         </label>
         <label class="field"><span class="label">修正步数</span><input id="pn-hires-steps" type="number" min="0" max="80" value="0" placeholder="跟主步数"></label>
       </div>
-      <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
-    </div>
-
-    <div class="pn-block" data-pane="canvas">
-      <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-queue"/></svg>队列</span> <span class="mono" id="pn-queue-count"></span></div>
-      <ul class="pn-list" id="pn-queue"></ul>
-    </div>
-
-    <details class="pn-fold" id="pn-fold-engine" data-pane="manage">
-      <summary><svg class="ic"><use href="#i-engine"/></svg>引擎与模型</summary>
-      <div class="fold-body">
-        <div class="pn-install" id="pn-install">
-          <div class="pn-install-actions">
-            <button class="btn small" id="pn-install-engine" type="button">装引擎</button>
-            <button class="btn ghost small" id="pn-install-weights" type="button">下权重</button>
-            <button class="btn ghost small" id="pn-install-cancel" type="button" hidden>取消</button>
-          </div>
-          <div class="bar" id="pn-install-bar" hidden><i></i></div>
-          <p class="hint" id="pn-install-message"></p>
-        </div>
-        <div class="pn-facts" id="pn-facts"></div>
-        <p class="hint" id="pn-engine-detail"></p>
-        <label class="field" id="pn-engine-pick" hidden>
-          <span class="label">引擎版本</span>
-          <select id="pn-engine-select"></select>
+      <div class="pn-grid">
+        <label class="field">
+          <span class="label">显存策略</span>
+          <select id="pn-memory-mode">
+            <option value="min_memory">省显存</option>
+            <option value="balanced">均衡</option>
+            <option value="max_speed">速度优先</option>
+          </select>
         </label>
-        <div class="pn-row" id="pn-engine-actions">
-          <button class="btn ghost small" id="pn-engine-remove" type="button" hidden>卸载当前版本</button>
-          <button class="btn ghost small" id="pn-engine-more" type="button">装其他版本</button>
-        </div>
-        <div class="pn-rel-list" id="pn-engine-list" hidden></div>
-        <div class="pn-row" id="pn-model-actions" hidden>
-          <button class="btn ghost small" id="pn-model-remove" type="button">卸载模型</button>
-        </div>
-        <details class="pn-adv" id="pn-fold-adv">
-          <summary>自定义</summary>
-          <div class="fold-body">
-            <label class="field">
-              <span class="label">引擎 CUDA 版本</span>
-              <select id="pn-engine-cuda">
-                <option value="auto">自动（按驱动判断）</option>
-                <option value="cu13">CUDA 13</option>
-                <option value="cu12">CUDA 12</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="label">moss-server 路径</span>
-              <input id="pn-server-path" type="text" placeholder="一般不用填，点上面的「装引擎」">
-            </label>
-            <label class="field">
-              <span class="label">模型目录（diffusers 根）</span>
-              <input id="pn-model-path" type="text" placeholder="一般不用填，点上面的「下权重」">
-            </label>
-          </div>
-        </details>
-        <div class="pn-grid">
-          <label class="field">
-            <span class="label">显存策略</span>
-            <select id="pn-memory-mode">
-              <option value="min_memory">省显存</option>
-              <option value="balanced">均衡</option>
-              <option value="max_speed">速度优先</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="label">精度档</span>
-            <select id="pn-tier">
-              <option value="high">高精度</option>
-              <option value="reference">参考档</option>
-              <option value="turbo">INT4 Turbo</option>
-            </select>
-          </label>
-        </div>
-        <div class="pn-row">
-          <button class="btn small" id="pn-engine" type="button"><svg class="ic"><use href="#i-power"/></svg>启动引擎</button>
-          <button class="btn ghost small" id="pn-save" type="button">保存设置</button>
-        </div>
+        <label class="field">
+          <span class="label">精度档</span>
+          <select id="pn-tier">
+            <option value="high">高精度</option>
+            <option value="reference">参考档</option>
+            <option value="turbo">INT4 Turbo</option>
+          </select>
+        </label>
       </div>
-    </details>
-
-    <details class="pn-fold" id="pn-fold-plan" data-pane="manage">
-      <summary><svg class="ic"><use href="#i-download"/></svg>要下什么</summary>
-      <div class="fold-body">
-        <p class="hint" id="pn-plan-total"></p>
-        <ul class="pn-list" id="pn-plan-list"></ul>
-        <p class="hint" id="pn-engine-note"></p>
+      <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
+      <div class="pn-row">
+        <button class="btn ghost small" id="pn-save" type="button">保存设置</button>
       </div>
-    </details>
+    </div>
 
     <div class="pn-foot">
       <span id="pn-errors"></span>

@@ -1,5 +1,4 @@
-// 苔室工作区：画布、画廊、下载管理三个视图。生成设置在左侧栏（panel.html），
-// 侧栏会跟着这里切换的分页变（同一源的 BroadcastChannel）。
+// 苔室工作区：画布、画廊、队列、版本、下载五个视图。生成设置在左侧栏（panel.html）。
 import { hana } from "./sdk.js";
 import { startLive, outputUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
@@ -10,6 +9,7 @@ const el = (id) => document.getElementById(id);
 const nodes = {
   tabs: el("studio-tabs"),
   tabCount: el("tab-count"),
+  tabQueue: el("tab-queue"),
   stageChip: el("stage-chip"),
   stageDot: el("stage-dot"),
   stageText: el("stage-text"),
@@ -28,25 +28,34 @@ const nodes = {
   clearJobs: el("clear-jobs"),
   lightbox: el("lightbox"),
   lightboxImage: el("lightbox-image"),
-  // 下载管理
-  engineState: el("manage-engine-state"),
-  engineToggle: el("manage-engine-toggle"),
-  engineNote: el("manage-engine-note"),
-  installed: el("manage-installed"),
-  installEngine: el("manage-install-engine"),
-  installWeights: el("manage-install-weights"),
-  cancelInstall: el("manage-cancel"),
-  bar: el("manage-bar"),
-  download: el("manage-download"),
-  releases: el("manage-releases"),
-  available: el("manage-available"),
-  modelState: el("manage-model-state"),
-  modelList: el("manage-model"),
-  removeModel: el("manage-remove-model"),
-  host: el("manage-host"),
+  // 队列
+  queueRunningState: el("queue-running-state"),
+  queueRunning: el("queue-running"),
+  queueCount: el("queue-count"),
+  queueList: el("queue-list"),
+  queueFailedCount: el("queue-failed-count"),
+  queueFailed: el("queue-failed"),
+  // 版本
+  engineState: el("versions-engine-state"),
+  engineToggle: el("versions-engine-toggle"),
+  engineNote: el("versions-engine-note"),
+  installed: el("versions-installed"),
+  modelState: el("versions-model-state"),
+  modelList: el("versions-model"),
+  removeModel: el("versions-remove-model"),
+  host: el("versions-host"),
+  // 下载
+  downloadState: el("download-state"),
+  downloadEngine: el("download-engine"),
+  downloadWeights: el("download-weights"),
+  downloadCancel: el("download-cancel"),
+  downloadBar: el("download-bar"),
+  downloadMessage: el("download-message"),
+  downloadAvailableState: el("download-available-state"),
+  downloadAvailable: el("download-available"),
 };
 
-const views = ["canvas", "gallery", "manage"];
+const views = ["canvas", "gallery", "queue", "versions", "download"];
 const imageCache = new Map();
 let latest = null;
 let renderedJobsKey = null;
@@ -54,9 +63,6 @@ let selectedId = null;
 let lastNewestId = null;
 let currentView = "canvas";
 let releasesLoaded = false;
-
-/** 同源广播：侧栏据此切自己的分组。 */
-const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
 
 async function withTimeout(promise, ms) {
   let timer = null;
@@ -133,8 +139,7 @@ function showView(view) {
     const section = el(`view-${name}`);
     if (section) section.hidden = name !== view;
   }
-  channel?.postMessage({ type: "view", view });
-  if (view === "manage") void loadReleases();
+  if (view === "download") void loadReleases();
 }
 
 // ── 画布 ───────────────────────────────────────────────────────────────
@@ -258,7 +263,6 @@ async function renderGallery(data) {
         meta.className = "thumb-meta";
         meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
         tile.appendChild(meta);
-        // 单条删除：悬停才露出，点一下变「删?」，再点才真删。
         const remove = document.createElement("button");
         remove.className = "thumb-remove";
         remove.type = "button";
@@ -282,8 +286,7 @@ async function renderGallery(data) {
   }
 }
 
-// ── 下载管理 ───────────────────────────────────────────────────────────
-/** 一行：名字、附注、右侧按钮。 */
+// ── 行与确认 ───────────────────────────────────────────────────────────
 function manageRow({ name, meta, on, actions = [], remove }) {
   const row = document.createElement("div");
   row.className = on ? "manage-row on" : "manage-row";
@@ -339,14 +342,55 @@ const runSafe = async (fn, label) => {
     const next = await fn();
     if (next) render(next);
   } catch (error) {
-    nodes.download.textContent = `${label}失败：${error instanceof Error ? error.message : String(error)}`;
+    nodes.downloadMessage.textContent = `${label}失败：${error instanceof Error ? error.message : String(error)}`;
   }
 };
 
-function renderManage(data) {
+// ── 队列 ───────────────────────────────────────────────────────────────
+function renderQueue(data) {
+  const active = data.engine.active;
+  const queue = Array.isArray(data.queue) ? data.queue : [];
+  const failed = data.jobs.filter((job) => job.status === "error");
+  nodes.tabQueue.textContent = active || queue.length ? ` ${queue.length + (active ? 1 : 0)}` : "";
+
+  nodes.queueRunningState.textContent = active ? `${active.prompt?.slice(0, 24) ?? ""}…` : "空闲";
+  nodes.queueRunning.replaceChildren(
+    ...(active
+      ? [
+          manageRow({
+            name: active.prompt || "(无提示词)",
+            meta: `${active.phase ?? "生成中"}${active.progress?.total ? ` ${active.progress.step}/${active.progress.total}` : ""}`,
+            on: true,
+          }),
+        ]
+      : [manageRow({ name: "没有正在跑的任务" })]),
+  );
+
+  nodes.queueCount.textContent = queue.length ? `${queue.length} 条` : "";
+  nodes.queueList.replaceChildren(
+    ...(queue.length
+      ? queue.map((job, index) => manageRow({ name: `${index + 1}. ${job.prompt || "(无提示词)"}`, meta: "排队中" }))
+      : [manageRow({ name: "队列是空的" })]),
+  );
+
+  nodes.queueFailedCount.textContent = failed.length ? `${failed.length} 条` : "";
+  nodes.queueFailed.replaceChildren(
+    ...(failed.length
+      ? failed.slice(0, 8).map((job) =>
+          manageRow({
+            name: job.prompt || "(无提示词)",
+            meta: (job.error ?? "失败").slice(0, 40),
+            remove: { label: "删除", armedLabel: "确认", run: () => removeJob(job.id) },
+          }),
+        )
+      : [manageRow({ name: "没有失败的记录" })]),
+  );
+}
+
+// ── 版本 ───────────────────────────────────────────────────────────────
+function renderVersions(data) {
   const { engine } = data;
 
-  // 引擎状态
   nodes.engineState.textContent = engine.running
     ? engine.loaded
       ? "运行中 · 模型已加载"
@@ -357,9 +401,10 @@ function renderManage(data) {
   nodes.engineToggle.textContent = engine.running ? "停止引擎" : "启动引擎";
   nodes.engineToggle.disabled = !engine.serverFound && !engine.running;
   const cublasError = engine.device?.cublaslt?.error;
-  nodes.engineNote.textContent = cublasError ? `缺 cuBLASLt：这个包能启动但出不了图，换 bundled 版本` : (engine.lastError ?? "");
+  nodes.engineNote.textContent = cublasError
+    ? "缺 cuBLASLt：这个包能启动但出不了图，换 bundled 版本"
+    : (engine.lastError ?? "");
 
-  // 已装引擎
   const engines = Array.isArray(data.engines) ? data.engines : [];
   nodes.installed.replaceChildren(
     ...(engines.length
@@ -368,7 +413,9 @@ function renderManage(data) {
             name: `${item.version} · ${item.cuda ?? ""}${item.variant === "system-cuda" ? " · system-cuda" : ""}`,
             meta: formatSize(item.bytes),
             on: item.current,
-            actions: item.current ? [] : [{ label: "切换", run: () => runSafe(() => post("/engine/use", { name: item.name }), "切换") }],
+            actions: item.current
+              ? []
+              : [{ label: "切换", run: () => runSafe(() => post("/engine/use", { name: item.name }), "切换") }],
             remove: {
               label: "卸载",
               armedLabel: "确认卸载",
@@ -376,10 +423,9 @@ function renderManage(data) {
             },
           }),
         )
-      : [manageRow({ name: "还没有装引擎" })]),
+      : [manageRow({ name: "还没有装引擎，去「下载」页装一个" })]),
   );
 
-  // 模型
   const modelDir = data.settings?.modelPath;
   nodes.modelState.textContent = engine.modelFound ? "已就位" : "未安装";
   nodes.removeModel.hidden = !engine.modelFound;
@@ -391,47 +437,50 @@ function renderManage(data) {
     }),
   );
 
-  // 这台机器
-  const gpu = data.gpu;
   const hostRows = [];
-  if (gpu) {
-    hostRows.push(manageRow({ name: gpu.name, meta: `驱动 ${gpu.driver}` }));
-  }
-  if (engine.device?.totalMemoryBytes) {
-    hostRows.push(manageRow({ name: "显存", meta: formatSize(engine.device.totalMemoryBytes) }));
-  }
+  if (data.gpu) hostRows.push(manageRow({ name: data.gpu.name, meta: `驱动 ${data.gpu.driver}` }));
+  if (engine.device?.totalMemoryBytes) hostRows.push(manageRow({ name: "显存", meta: formatSize(engine.device.totalMemoryBytes) }));
   hostRows.push(manageRow({ name: "引擎协议", meta: `v${data.mossimage?.protocolVersion ?? "?"}` }));
   nodes.host.replaceChildren(...hostRows);
-
-  // 下载
-  const job = data.install;
-  if (!job) {
-    nodes.bar.hidden = true;
-    nodes.cancelInstall.hidden = true;
-    nodes.download.textContent = "";
-  } else {
-    const percent = Math.max(0, Math.min(100, job.percent ?? 0));
-    nodes.bar.hidden = false;
-    nodes.bar.querySelector("i").style.width = `${percent || 4}%`;
-    nodes.cancelInstall.hidden = Boolean(job.finishedAt);
-    nodes.download.textContent = job.error
-      ? `${job.phase}：${job.error}`
-      : `${job.label ?? ""} ${job.phase}${job.message ? `｜${job.message}` : ""}${job.totalBytes ? ` ${formatSize(job.bytes)} / ${formatSize(job.totalBytes)}` : ""}`;
-  }
 }
 
-async function loadReleases() {
-  if (nodes.releases.open && releasesLoaded) return;
-  nodes.available.replaceChildren(manageRow({ name: "读取版本列表…" }));
+// ── 下载 ───────────────────────────────────────────────────────────────
+function renderDownload(data) {
+  const job = data.install;
+  nodes.downloadEngine.disabled = Boolean(job && !job.finishedAt);
+  nodes.downloadWeights.disabled = Boolean(job && !job.finishedAt);
+  if (!job) {
+    nodes.downloadBar.hidden = true;
+    nodes.downloadCancel.hidden = true;
+    nodes.downloadState.textContent = "";
+    nodes.downloadMessage.textContent = "";
+    return;
+  }
+  const percent = Math.max(0, Math.min(100, job.percent ?? 0));
+  nodes.downloadBar.hidden = false;
+  nodes.downloadBar.querySelector("i").style.width = `${percent || 4}%`;
+  nodes.downloadCancel.hidden = Boolean(job.finishedAt);
+  nodes.downloadState.textContent = job.phase ?? "";
+  nodes.downloadMessage.textContent = job.error
+    ? `${job.phase}：${job.error}`
+    : `${job.label ?? ""} ${job.message ?? ""}${job.totalBytes ? ` ${formatSize(job.bytes)} / ${formatSize(job.totalBytes)}` : ""}`.trim();
+}
+
+async function loadReleases(force = false) {
+  if (releasesLoaded && !force) return;
+  nodes.downloadAvailableState.textContent = "读取中…";
+  nodes.downloadAvailable.replaceChildren(manageRow({ name: "读取版本列表…" }));
   try {
     const data = await api("/engines/available");
     const items = Array.isArray(data?.items) ? data.items : [];
     if (!items.length) {
-      nodes.available.replaceChildren(manageRow({ name: data?.error ?? "没有可装的版本" }));
+      nodes.downloadAvailableState.textContent = "";
+      nodes.downloadAvailable.replaceChildren(manageRow({ name: data?.error ?? "没有可装的版本" }));
       return;
     }
     releasesLoaded = true;
-    nodes.available.replaceChildren(
+    nodes.downloadAvailableState.textContent = `${items.length} 个`;
+    nodes.downloadAvailable.replaceChildren(
       ...items.map((item) =>
         manageRow({
           name: item.version,
@@ -446,7 +495,8 @@ async function loadReleases() {
       ),
     );
   } catch (error) {
-    nodes.available.replaceChildren(
+    nodes.downloadAvailableState.textContent = "";
+    nodes.downloadAvailable.replaceChildren(
       manageRow({ name: `读取失败：${error instanceof Error ? error.message : String(error)}` }),
     );
   }
@@ -457,8 +507,9 @@ function render(data) {
   latest = data;
   renderStage(data);
   renderProgress(data);
-  renderManage(data);
-  // 新的一张落定时回到它，用户先前在画廊里点选的那张不挡住新结果。
+  renderQueue(data);
+  renderVersions(data);
+  renderDownload(data);
   const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;
   if (newest && newest !== lastNewestId) {
     lastNewestId = newest;
@@ -506,18 +557,17 @@ nodes.tabs.addEventListener("click", (event) => {
   const tab = event.target.closest(".studio-tab");
   if (tab?.dataset.view) showView(tab.dataset.view);
 });
-nodes.releases.addEventListener("toggle", () => {
-  if (nodes.releases.open) void loadReleases();
-});
 nodes.engineToggle.addEventListener("click", () => {
   const running = latest?.engine?.running;
   void runSafe(() => post(running ? "/engine/stop" : "/engine/start"), running ? "停止" : "启动");
 });
-nodes.installEngine.addEventListener("click", () => void runSafe(() => post("/install/engine"), "安装"));
-nodes.installWeights.addEventListener("click", () => void runSafe(() => post("/install/weights"), "下载"));
-nodes.cancelInstall.addEventListener("click", () => void runSafe(() => post("/install/cancel"), "取消"));
+nodes.downloadEngine.addEventListener("click", () => void runSafe(() => post("/install/engine"), "安装"));
+nodes.downloadWeights.addEventListener("click", () => void runSafe(() => post("/install/weights"), "下载"));
+nodes.downloadCancel.addEventListener("click", () => void runSafe(() => post("/install/cancel"), "取消"));
 nodes.removeModel.addEventListener("click", () =>
-  armable(nodes.removeModel, "再点一次删 25 GiB", "卸载", () => runSafe(() => post("/models/remove", { confirm: true }), "删除模型")),
+  armable(nodes.removeModel, "再点一次删 25 GiB", "卸载", () =>
+    runSafe(() => post("/models/remove", { confirm: true }), "删除模型"),
+  ),
 );
 nodes.clearJobs.addEventListener("click", onClearJobs);
 nodes.lightbox.addEventListener("click", () => {

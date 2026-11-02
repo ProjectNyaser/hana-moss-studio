@@ -60,35 +60,11 @@ const nodes = {
   seed: el("pn-seed"),
   reroll: el("pn-reroll"),
   generate: el("pn-generate"),
-  queue: el("pn-queue"),
-  queueCount: el("pn-queue-count"),
-  facts: el("pn-facts"),
-  engineDetail: el("pn-engine-detail"),
-  serverPath: el("pn-server-path"),
-  modelPath: el("pn-model-path"),
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
-  engine: el("pn-engine"),
-  enginePick: el("pn-engine-pick"),
-  engineSelect: el("pn-engine-select"),
-  engineRemove: el("pn-engine-remove"),
-  engineMore: el("pn-engine-more"),
-  engineList: el("pn-engine-list"),
-  modelActions: el("pn-model-actions"),
-  modelRemove: el("pn-model-remove"),
-  cuda: el("pn-engine-cuda"),
-  adv: el("pn-fold-adv"),
   save: el("pn-save"),
-  planTotal: el("pn-plan-total"),
-  planList: el("pn-plan-list"),
-  engineNote: el("pn-engine-note"),
   errors: el("pn-errors"),
   engineVersion: el("pn-engine-version"),
-  installEngine: el("pn-install-engine"),
-  installWeights: el("pn-install-weights"),
-  installCancel: el("pn-install-cancel"),
-  installBar: el("pn-install-bar"),
-  installMessage: el("pn-install-message"),
 };
 
 let latest = null;
@@ -170,8 +146,6 @@ function formatSize(bytes) {
 function setSettings(settings) {
   if (settingsLoaded) return;
   settingsLoaded = true;
-  nodes.serverPath.value = settings.serverPath ?? "";
-  nodes.modelPath.value = settings.modelPath ?? "";
   nodes.memoryMode.value = settings.memoryMode;
   nodes.tier.value = settings.tier;
   nodes.width.value = settings.defaults.width;
@@ -341,18 +315,7 @@ function bindSizeSliders() {
 }
 
 /** serverPath → 引擎目录（去掉 bin/moss-server[.exe]）。 */
-function engineDirOf(serverPath) {
-  if (!serverPath) return null;
-  return String(serverPath).replace(/[\\/]bin[\\/]moss-server(\.exe)?$/i, "");
-}
-
-/** 从目录名里读实际装的版本：mossinfer-2.1.1-windows-cu13-x86_64 → 2.1.1。 */
-function installedVersion(serverPath) {
-  const name = engineDirOf(serverPath)?.split(/[\\/]/).pop() ?? "";
-  const match = name.match(/^mossinfer-([0-9][0-9.]*[^-]*)-/);
-  return match ? match[1].replace(/-$/, "") : null;
-}
-
+/** 侧栏只报状态：引擎跑没跑、模型加载了没。管理与下载都在主区域。 */
 function renderEngine(data) {
   const { engine } = data;
   let dotClass = "dot";
@@ -373,81 +336,8 @@ function renderEngine(data) {
   nodes.dot.className = dotClass;
   nodes.state.textContent = label;
   nodes.state.title = engine.lastError ?? "";
-  nodes.engine.textContent = engine.running ? "停止引擎" : "启动引擎";
-  nodes.engine.disabled = !engine.serverFound && !engine.running;
-
-  const device = engine.device;
-  const rows = [];
-  if (device) {
-    rows.push(["显卡", device.name]);
-    if (device.totalMemoryBytes) rows.push(["显存", formatGb(device.totalMemoryBytes)]);
-    if (device.computeCapability) rows.push(["算力", `CC ${device.computeCapability}`]);
-  } else if (data.gpu) {
-    // 引擎没启动时用探测结果，免得面板上什么硬件信息都没有。
-    rows.push(["显卡", data.gpu.name]);
-    rows.push(["驱动", data.gpu.driver]);
-  }
-  // 引擎与模型都由 App 装，这里只报“装的是什么”，路径收在自定义里。
-  // 精度档与显存策略不在事实列表里重复，下面就是它们的选择器。
-  const tail = (p) => (p ? String(p).split(/[\\/]/).filter(Boolean).pop() : null);
-  rows.push(["引擎", engine.serverFound ? `${installedVersion(data.settings.serverPath) ?? "?"} · ${tail(engineDirOf(data.settings.serverPath)) ?? "已定位"}` : "未安装"]);
-  rows.push(["模型", engine.modelFound ? tail(data.settings.modelPath) ?? "已就位" : "未安装"]);
-  nodes.facts.replaceChildren();
-  for (const [key, value] of rows) {
-    const line = document.createElement("div");
-    line.className = "row-line";
-    const keyNode = document.createElement("span");
-    keyNode.textContent = key;
-    const valueNode = document.createElement("span");
-    valueNode.textContent = String(value);
-    valueNode.title = String(value);
-    line.append(keyNode, valueNode);
-    nodes.facts.appendChild(line);
-  }
-
-  // 装过多个版本时给一个切换入口；只有一个就藏起来，不添噪声。
-  const engines = Array.isArray(data.engines) ? data.engines : [];
-  nodes.enginePick.hidden = engines.length < 2;
-  nodes.engineRemove.hidden = engines.length === 0;
-  nodes.modelActions.hidden = !engine.modelFound;
-  if (engines.length >= 2) {
-    const wanted = engines.map((item) => item.name).join("|");
-    if (nodes.engineSelect.dataset.list !== wanted) {
-      nodes.engineSelect.dataset.list = wanted;
-      nodes.engineSelect.replaceChildren(
-        ...engines.map((item) => {
-          const option = document.createElement("option");
-          option.value = item.name;
-          option.textContent = `${item.version ?? "?"} · ${item.cuda ?? ""}${item.variant === "system-cuda" ? " system" : ""}${item.sm ? ` ${item.sm}` : ""}`;
-          return option;
-        }),
-      );
-    }
-    const current = engines.find((item) => item.current);
-    if (current) nodes.engineSelect.value = current.name;
-  }
-
-  // 「自动」到底会选什么，直接写在选项里，不用用户猜。
-  if (data.gpu && nodes.cuda.options.length) {
-    const auto = data.gpu.driverMajor && data.gpu.driverMajor < 580 ? "cu12" : "cu13";
-    nodes.cuda.options[0].textContent = `自动（会选 ${auto}）`;
-  }
-
-  const detail = [];
-  if (device?.cublaslt?.error) {
-    // 直接告诉用户该切到哪个版本，不要只丢一句技术原因。
-    const alt = (data.engines ?? []).find((item) => !item.current && item.variant === "bundled");
-    detail.push(
-      alt
-        ? `这个包缺 cuBLASLt，能启动但出不了图。切回 ${alt.version} 的 bundled 版（就在上面的引擎版本里）即可。`
-        : "缺少 cuBLASLt：换自带 CUDA 的引擎包，或把 cublasLt64_13.dll 放进引擎 bin 目录",
-    );
-  } else if (!engine.running && engine.lastError) {
-    detail.push(engine.lastError);
-  }
-  nodes.engineDetail.textContent = detail.join("\n");
-  nodes.engineDetail.hidden = !detail.length;
-  nodes.engineDetail.className = device?.cublaslt?.error ? "hint bad" : "hint";
+  nodes.engineVersion.textContent = `引擎 ${data.mossimage?.version ?? "?"}`;
+  nodes.engineVersion.title = `${data.mossimage?.repo ?? ""} · protocol ${data.mossimage?.protocolVersion ?? "?"}`;
 }
 
 function renderJob(data) {
@@ -468,57 +358,6 @@ function renderJob(data) {
   nodes.cancel.disabled = false;
 }
 
-function renderQueue(data) {
-  nodes.queueCount.textContent = data.queue.length ? String(data.queue.length) : "";
-  nodes.queue.replaceChildren();
-  if (!data.queue.length) {
-    const line = document.createElement("li");
-    line.className = "empty";
-    line.textContent = "队列空着。";
-    nodes.queue.appendChild(line);
-    return;
-  }
-  data.queue.slice(0, 5).forEach((job, index) => {
-    const line = document.createElement("li");
-    const idx = document.createElement("span");
-    idx.className = "idx";
-    idx.textContent = String(index + 1).padStart(2, "0");
-    const text = document.createElement("span");
-    text.className = "txt";
-    text.textContent = job.prompt;
-    text.title = job.prompt;
-    line.append(idx, text);
-    nodes.queue.appendChild(line);
-  });
-}
-
-function renderPlan(data) {
-  const plan = data.plan;
-  if (!plan?.components?.length) {
-    nodes.planTotal.textContent = "没有读到模型目录快照。";
-    nodes.planList.replaceChildren();
-  } else {
-    nodes.planTotal.textContent = `${plan.components.length} 个组件，合计约 ${formatSize(plan.totalBytes)}。`;
-    nodes.planList.replaceChildren();
-    for (const item of plan.components) {
-      const line = document.createElement("li");
-      const name = document.createElement("span");
-      name.className = "txt";
-      name.textContent = `${ROLE_LABEL[item.role] ?? item.role} · ${item.name}`;
-      name.title = item.name;
-      const size = document.createElement("span");
-      size.className = "idx";
-      size.textContent = formatSize(item.sizeBytes);
-      line.append(name, size);
-      nodes.planList.appendChild(line);
-    }
-  }
-  const mossimage = data.mossimage ?? {};
-  nodes.engineNote.textContent = `引擎 ${mossimage.repo ?? "mossimage.cpp"} ${mossimage.version ?? "?"}（protocol ${mossimage.protocolVersion ?? "?"}）。`;
-  nodes.engineVersion.textContent = `引擎 ${mossimage.version ?? "?"}`;
-  nodes.engineVersion.title = `${mossimage.repo ?? ""} · protocol ${mossimage.protocolVersion ?? "?"}`;
-}
-
 const PHASE_LABEL = {
   starting: "准备",
   probing: "探测显卡",
@@ -533,50 +372,11 @@ const PHASE_LABEL = {
 };
 
 /** 安装区：没有任务时给一句提示，有任务时给进度与取消。 */
-function renderInstall(data) {
-  const job = data.install ?? null;
-  const busy = Boolean(job) && !job.finishedAt;
-  nodes.installEngine.disabled = busy;
-  nodes.installWeights.disabled = busy;
-  nodes.installCancel.hidden = !busy;
-  nodes.installBar.hidden = !busy;
-  nodes.installBar.querySelector("i").style.width = `${job?.percent ?? 0}%`;
-
-  if (!job) {
-    // 没有安装记录时，文案要跟“到底装了没有”对得上，而不是一律说没装。
-    const hasEngine = Boolean(data.engine?.serverFound);
-    const hasModel = Boolean(data.engine?.modelFound);
-    nodes.installMessage.textContent =
-      hasEngine && hasModel
-        ? "引擎与权重都已就位。"
-        : hasEngine
-          ? "引擎已就位，权重还没下。"
-          : hasModel
-            ? "权重已就位，引擎还没装。"
-            : "还没装引擎与权重，装完这两个就能出图。";
-    nodes.installMessage.className = "hint";
-    return;
-  }
-  const phase = PHASE_LABEL[job.phase] ?? job.phase;
-  const size = job.totalBytes ? ` ${formatSize(job.bytes)} / ${formatSize(job.totalBytes)}` : "";
-  const head = job.error ? `${phase}：${job.error}` : `${job.label} · ${phase}${size}`;
-  // 引擎下载失败多半是 GitHub 链路，给一句可执行的出路。
-  const tip = job.error && job.target === "engine" ? "（网络不行时把 zip 放进 app-data/hana-moss-studio/incoming 再装）" : "";
-  nodes.installMessage.textContent = `${job.message ? `${head}｜${job.message}` : head}${tip}`;
-  nodes.installMessage.className = job.error ? "hint bad" : job.phase === "done" ? "hint ok" : "hint";
-
-  // 没读到显卡时，手动选 CUDA 版本的入口就在下面，直接展开给人看。
-  if (job.target === "engine" && /没读到显卡/.test(job.message ?? "")) nodes.adv.open = true;
-}
-
 function render(data) {
   latest = data;
   setSettings(data.settings);
   renderEngine(data);
   renderJob(data);
-  renderQueue(data);
-  renderPlan(data);
-  renderInstall(data);
   nodes.generate.disabled = submitting;
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。
   const busy = Boolean(data.engine.active) || data.queue.length > 0;
@@ -649,27 +449,10 @@ async function onCancel() {
   }
 }
 
-async function onEngineToggle() {
-  const running = latest?.engine?.running;
-  nodes.engine.disabled = true;
-  say(running ? "正在停止引擎…" : "正在启动引擎（首次要做 GPU 探测）…");
-  try {
-    render(await post(running ? "/engine/stop" : "/engine/start"));
-    say(running ? "引擎已停止" : "引擎已启动", "ok");
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-    void refresh();
-  } finally {
-    nodes.engine.disabled = false;
-  }
-}
-
 async function onSaveSettings() {
   try {
     render(
       await post("/settings", {
-        serverPath: nodes.serverPath.value.trim() || null,
-        modelPath: nodes.modelPath.value.trim() || null,
         memoryMode: nodes.memoryMode.value,
         tier: nodes.tier.value,
         defaults: {
@@ -690,191 +473,7 @@ async function onSaveSettings() {
 
 nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
-nodes.engine.addEventListener("click", onEngineToggle);
 nodes.save.addEventListener("click", onSaveSettings);
-
-async function onInstall(kind) {
-  try {
-    // 引擎装哪份由 cuda 选择器决定；权重不需要这个参数。
-    render(await post(`/install/${kind}`, kind === "engine" ? { preferCuda: nodes.cuda.value } : undefined));
-    say(kind === "engine" ? "开始装引擎" : "开始下权重", "ok");
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-  }
-}
-
-async function onCancelInstall() {
-  try {
-    render(await post("/install/cancel"));
-    say("已取消安装", "bad");
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-  }
-}
-
-/** 两段式确认：再点一次才真删，四秒不复位就恢复原样。 */
-function armable(button, armedLabel, idleLabel, run) {
-  if (button.dataset.armed === "1") {
-    delete button.dataset.armed;
-    button.textContent = idleLabel;
-    void run();
-    return;
-  }
-  button.dataset.armed = "1";
-  button.textContent = armedLabel;
-  setTimeout(() => {
-    if (button.dataset.armed !== "1") return;
-    delete button.dataset.armed;
-    button.textContent = idleLabel;
-  }, 4000);
-}
-
-async function onListReleases() {
-  if (nodes.engineList.dataset.open === "1") {
-    nodes.engineList.hidden = true;
-    delete nodes.engineList.dataset.open;
-    nodes.engineMore.textContent = "装其他版本";
-    return;
-  }
-  nodes.engineMore.textContent = "收起";
-  nodes.engineList.dataset.open = "1";
-  nodes.engineList.hidden = false;
-  nodes.engineList.replaceChildren(buildLine("读取版本列表…"));
-  try {
-    const data = await api("/engines/available");
-    const items = Array.isArray(data?.items) ? data.items : [];
-    if (!items.length) {
-      nodes.engineList.replaceChildren(buildLine(data?.error ?? "没有可装的版本"));
-      return;
-    }
-    nodes.engineList.replaceChildren(
-      ...items.map((item) => {
-        const line = document.createElement("div");
-        line.className = "pn-rel";
-        const name = document.createElement("span");
-        name.textContent = item.version;
-        const tag = document.createElement("span");
-        tag.className = "tag";
-        tag.textContent = [
-          item.publishedAt?.slice(0, 10),
-          item.bundledBytes ? formatSize(item.bundledBytes) : null,
-          item.windowsAssets ? `${item.windowsAssets} 个变体` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        name.append(tag);
-        line.append(name);
-        if (item.installed) {
-          const done = document.createElement("span");
-          done.className = "tag";
-          done.textContent = "已装";
-          line.append(done);
-        } else {
-          const install = document.createElement("button");
-          install.className = "btn ghost small";
-          install.type = "button";
-          install.textContent = "装";
-          install.addEventListener("click", () => void onInstallTag(item.tag, install));
-          line.append(install);
-        }
-        return line;
-      }),
-    );
-  } catch (error) {
-    nodes.engineList.replaceChildren(buildLine(error instanceof Error ? error.message : String(error)));
-  }
-}
-
-function buildLine(text) {
-  const line = document.createElement("div");
-  line.className = "pn-rel";
-  const span = document.createElement("span");
-  span.textContent = text;
-  line.append(span);
-  return line;
-}
-
-async function onInstallTag(tag, button) {
-  button.disabled = true;
-  button.textContent = "开始…";
-  try {
-    render(await post("/install/engine", { tag, preferCuda: nodes.cuda.value }));
-    say(`开始装 ${tag}`, "ok");
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-    button.disabled = false;
-    button.textContent = "装";
-  }
-}
-
-nodes.installEngine.addEventListener("click", () => void onInstall("engine"));
-nodes.engineMore.addEventListener("click", () => void onListReleases());
-nodes.engineRemove.addEventListener("click", () =>
-  armable(nodes.engineRemove, "再点一次确认卸载", "卸载当前版本", async () => {
-    const current = (latest?.engines ?? []).find((item) => item.current);
-    if (!current) return say("没有当前版本", "bad");
-    try {
-      render(await post("/engines/remove", { name: current.name }));
-      say(`已卸载 ${current.version}`, "ok");
-    } catch (error) {
-      say(error instanceof Error ? error.message : String(error), "bad");
-    }
-  }),
-);
-nodes.modelRemove.addEventListener("click", () =>
-  armable(nodes.modelRemove, "再点一次删 25 GiB", "卸载模型", async () => {
-    try {
-      render(await post("/models/remove", { confirm: true }));
-      say("模型已删除", "ok");
-    } catch (error) {
-      say(error instanceof Error ? error.message : String(error), "bad");
-    }
-  }),
-);
-nodes.engineSelect.addEventListener("change", async () => {
-  const name = nodes.engineSelect.value;
-  if (!name) return;
-  nodes.engineSelect.disabled = true;
-  try {
-    render(await post("/engine/use", { name }));
-    say(`已切到 ${name}`, "ok");
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-  } finally {
-    nodes.engineSelect.disabled = false;
-  }
-});
-nodes.installWeights.addEventListener("click", () => void onInstall("weights"));
-nodes.installCancel.addEventListener("click", () => void onCancelInstall());
-nodes.reroll.addEventListener("click", () => {
-  nodes.seed.value = "";
-  nodes.seed.placeholder = String(Math.floor(Math.random() * 4294967295));
-});
-bindSizeSliders();
-window.addEventListener("resize", renderSize);
-nodes.width.addEventListener("change", renderSize);
-nodes.height.addEventListener("change", renderSize);
-nodes.prompt.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    if (!nodes.generate.disabled) void onGenerate();
-  }
-});
-
-// ── 跟随主视图 ─────────────────────────────────────────────────────────
-// 主页切分页时广播一声，这里把不属于当前视图的整块收起。默认画布。
-const viewChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
-
-function applyPane(view) {
-  for (const node of document.querySelectorAll("[data-pane]")) {
-    node.classList.toggle("pn-pane-off", node.dataset.pane !== view);
-  }
-}
-
-viewChannel?.addEventListener("message", (event) => {
-  if (event.data?.type === "view") applyPane(event.data.view);
-});
-applyPane("canvas");
 
 async function boot() {
   syncTheme();
