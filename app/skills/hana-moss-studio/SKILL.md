@@ -61,7 +61,7 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 
 ## 三条硬边界
 
-1. **单张上限 4.2 百万像素、单边 4096**。4K（3840×2160 = 8.3MP）**出不了**，引擎直接以 `invalid_params` 拒绝。要更大的图只能走 `hiresScale`，而修正目标同样受这条限制。
+1. **单张上限 4.2 百万像素、单边 4096**。4K（3840×2160 = 8.3MP）**出不了**，引擎直接以 `invalid_params` 拒绝。这个上限对基础图和高清修正目标**一视同仁**，所以高清修正不能把图做大，它只做两段式采样（小图定构图、放大后补细节）。
 2. **`hires` 与基础图共用这条上限**，所以 2048×2048 已经贴着天花板。
 3. **MOSS-Image 不是蒸馏模型**，步数太少会明显发糊。8 步是「能看」的底线，16～24 步是常用区间。步数成本很低：每多一步只多约 1 秒级的固定增量，而文本编码每次都要几十秒。
 
@@ -112,7 +112,7 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 | `arena overflow: need X MiB, have Y MiB` | 显存策略太省余量。切 `min_memory`，或降低像素量 |
 | 出图很糊、像没画完 | 步数太少。8 步是底线，抬到 16～24 |
 | 每次都要等三十多秒才动 | 文本编码器在从盘上重读（`te_weight_load`）。模型放 NVMe 会快五倍 |
-| `invalid_params: the size must be at most 4096 / 4.2 megapixels` | 撞硬限。降像素或改走 `hiresScale` |
+| `invalid_params: the size must be at most 4096 / 4.2 megapixels` | 撞硬限。降像素；改走 `hiresScale` 也绕不过去 |
 | 引擎未启动 / 模型未加载 | 在苔室工作区或左侧面板点「启动引擎」；路径未配就先装或去填 |
 | 报找不到 `cublasLt64_*.dll` | 装的是 `system-cuda` 包，库里没有；补库或换 `bundled` 包（`references/platform.md`） |
 | 换了机器或换了显卡就起不来 | 包与平台的组合不对（驱动、算力），重新选包（`references/platform.md`） |

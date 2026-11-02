@@ -287,7 +287,7 @@ export default defineApp(async (sdk) => {
     };
   }
 
-  // 引擎硬限制：单张基础图不超过 4.2 百万像素（侧长也按 16 对齐）。超出的分辨率走高清修正。
+  // 引擎硬限制：基础图与高清修正共用一个上限（侧长 4096、总 4.2 百万像素）。
   const MAX_PIXELS = 4_200_000;
   const MAX_SIDE = 4096;
   const MIN_SIDE = 256;
@@ -299,7 +299,7 @@ export default defineApp(async (sdk) => {
     if (width * height > MAX_PIXELS) {
       throw new Error(
         `MOSS-Image 单张最大 4.2 百万像素（例如 2048×2048、2560×1600）。` +
-          `${width}×${height} 是 ${((width * height) / 1e6).toFixed(1)} 百万像素，要更大请用高清修正（hiresScale）分两步出图`,
+          `${width}×${height} 是 ${((width * height) / 1e6).toFixed(1)} 百万像素。高清修正受同一个上限，只能分两段提升细节，不能再把尺寸做大`,
       );
     }
     return { width, height };
@@ -970,7 +970,7 @@ export default defineApp(async (sdk) => {
         seed: { type: "integer", description: "随机种子，缺省随机" },
         hiresScale: {
           type: "number",
-          description: "高清修正倍数：0 关闭（缺省），2 表示先按基础尺寸生成再放大 2 倍精修。4K 就走这条路",
+          description: "高清修正倍数：0 关闭（缺省），2 表示先按基础尺寸生成、再放大 2 倍细化。不改变尺寸上限，目标尺寸同样受 4.2 百万像素 / 单边 4096 限制",
         },
         hiresSteps: { type: "integer", description: "高清修正的步数，缺省跟主采样步数一致" },
         hiresStrength: { type: "number", description: "高清修正的重绘强度，缺省 0.45，越小越贴近原图" },

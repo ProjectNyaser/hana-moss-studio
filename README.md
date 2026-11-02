@@ -166,7 +166,7 @@ node scripts/smoke-generate.mjs --engine <moss-server 路径> --model <diffusers
 ## 已知边界
 
 - **只支持 Windows x64**。引擎上游也有 Linux x64 资产，但苔室只在这个平台验证过；macOS 没有任何引擎构建。非 Windows 平台上启动引擎会直接报平台不支持。
-- 单张上限 4.2 百万像素、单边 4096。4K 出不了，要更大的图只能走 `hiresScale`，而修正目标同样受这条限制。
-- 只吃 MOSS-Image 那套目录结构，不吃单文件 checkpoint，不吃 LoRA。
+- 单张上限 4.2 百万像素、单边 4096。4K 出不了；`hiresScale` 受同一个上限，只做两段式细化，不能把图做大。
+- 只吃 MOSS-Image 那套目录结构，不吃单文件 checkpoint。LoRA 协议里支持，苔室还没接。
 - 一次只跑一个任务。单卡小显存下并发只会互相拖慢。
 - 6 GB 卡上 `balanced` 策略在 1024² 及以上会 arena overflow，大图必须切 `min_memory`。
