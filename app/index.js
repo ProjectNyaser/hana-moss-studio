@@ -809,6 +809,13 @@ export default defineApp(async (sdk) => {
       if (!found) return c.json({ ...state(), error: `没有已装版本 ${name || "（未指定）"}` }, 404);
       if (found.current) return c.json(state());
       applySettings({ serverPath: found.serverPath });
+      // 等它真站起来再返回：前端在选择期间是禁用的，这样就不会出现“上一次 hello
+      // 还在路上又被下一次 stop 打断”的竞态。装不装得成也能当场看到。
+      try {
+        await engine.start();
+      } catch (error) {
+        sdk.logger.warn(`切版本后启动失败：${message(error)}`);
+      }
       schedulePush(0);
       return c.json(state());
     });

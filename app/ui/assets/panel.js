@@ -428,7 +428,13 @@ function renderEngine(data) {
 
   const detail = [];
   if (device?.cublaslt?.error) {
-    detail.push("缺少 cuBLASLt：换自带 CUDA 的引擎包，或把 cublasLt64_13.dll 放进引擎 bin 目录");
+    // 直接告诉用户该切到哪个版本，不要只丢一句技术原因。
+    const alt = (data.engines ?? []).find((item) => !item.current && item.variant === "bundled");
+    detail.push(
+      alt
+        ? `这个包缺 cuBLASLt，能启动但出不了图。切回 ${alt.version} 的 bundled 版（就在上面的引擎版本里）即可。`
+        : "缺少 cuBLASLt：换自带 CUDA 的引擎包，或把 cublasLt64_13.dll 放进引擎 bin 目录",
+    );
   } else if (!engine.running && engine.lastError) {
     detail.push(engine.lastError);
   }

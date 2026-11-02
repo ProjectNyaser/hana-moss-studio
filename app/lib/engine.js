@@ -267,11 +267,14 @@ export class Engine {
       }
     });
     child.on("error", (error) => {
+      // 主动 stop 之后旧进程的事件会晚一步到，不判归属会把新进程的状态一起清掉。
+      if (this.child !== child) return;
       this.lastError = error instanceof Error ? error.message : String(error);
       this.pushStderr(this.lastError);
       this.teardown();
     });
     child.on("close", (code, signal) => {
+      if (this.child !== child) return;
       const reason = signal ? `信号 ${signal}` : `退出码 ${code}`;
       this.pushStderr(`引擎进程结束（${reason}）`);
       const active = this.active;
