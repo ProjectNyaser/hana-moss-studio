@@ -1189,7 +1189,8 @@ function openMenu(event, job) {
     items.push({ sep: true });
   }
   items.push({
-    label: job.output ? "删除记录与图片" : "删除记录",
+    // 记录就在 PNG 的元数据里，删图即删记录。
+    label: job.output ? "删除这张图" : "删除这条记录",
     danger: true,
     run: () => removeJob(job.id),
   });
