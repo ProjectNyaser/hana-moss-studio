@@ -40,8 +40,9 @@ const RATIO_SNAPS = [
   { value: 16 / 9, label: "16:9" },
 ];
 const SNAP_TOLERANCE = 0.03;
-/** 对齐到 16 后实际比例会略偏（短边越小偏得越多），标签要认这个偏差。 */
-const LABEL_TOLERANCE = 0.04;
+/** 对齐到 16 之后比例会有千分之几的偏移，这点偏差仍然报标准名。
+ *  再大就是真的不同了：1872×1936 是 3.3% 的偏离，不能再写 1:1。 */
+const LABEL_TOLERANCE = 0.02;
 /** 滑块宽 42px，轨道两端要预留它的一半。 */
 const THUMB = 42;
 const ROLE_LABEL = { dit: "主模型", text_encoder: "文本编码器", vae: "VAE", support: "流水线" };
@@ -221,21 +222,12 @@ function tToRatio(t) {
   return ratio;
 }
 
-/** 先认标准比，认不出才用连分数还原：宽高对齐到 16 之后，16:9 实际是 25:14 这种鬼数。 */
+/** 先认标准比，认不出就报数值：宽高对齐到 16 之后，16:9 实际可能是 1088×608。 */
 function ratioLabel(ratio) {
   for (const snap of RATIO_SNAPS) {
     if (Math.abs(ratio - snap.value) / snap.value <= LABEL_TOLERANCE) return snap.label;
   }
-  let best = { n: 1, d: 1, err: Infinity };
-  for (let d = 1; d <= 24; d += 1) {
-    const n = Math.round(ratio * d);
-    if (n < 1) continue;
-    const err = Math.abs(ratio - n / d);
-    if (err < best.err) best = { n, d, err };
-  }
-  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
-  const g = gcd(best.n, best.d) || 1;
-  return `${best.n / g}:${best.d / g}`;
+  return ratio >= 1 ? `${ratio.toFixed(2)}:1` : `1:${(1 / ratio).toFixed(2)}`;
 }
 
 function placeThumb(container, thumb, pct) {
