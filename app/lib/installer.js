@@ -96,6 +96,25 @@ async function fetchText(network, url, timeoutMs = 40_000) {
   return await response.text();
 }
 
+/** XML 里的命名实体，够 atom 用。 */
+const XML_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+
+function decodeXml(text) {
+  return String(text).replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, body) => {
+    if (body[0] === "#") {
+      const code = body[1] === "x" || body[1] === "X" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : whole;
+    }
+    return XML_ENTITIES[body] ?? whole;
+  });
+}
+
+/** 取一段 XML 里第一个同名标签的文本内容，去实体。 */
+function firstTag(xml, name) {
+  const match = new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)</${name}>`).exec(xml);
+  return match ? decodeXml(match[1]).trim() : "";
+}
+
 /**
  * nvidia-smi 的定位顺序。
  *
@@ -335,15 +354,20 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
 
   /**
    * 发布记录的 Atom feed。GitHub 的 API 匿名限流时还能用，代价是没有资产信息。
+   *
+   * tag 名从 <id> 尾部取（tag:github.com,2008:Repository/<id>/<tag>）。
+   * <title> 是发布者自己写的标题，改过名字就跟 tag 没关系了，只当傅用。
    */
   async function listReleasesViaAtom() {
     const xml = await fetchText(network, `https://github.com/${ENGINE_REPO}/releases.atom`);
     const items = [];
-    for (const match of xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {
+    for (const match of xml.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/g)) {
       const block = match[1];
-      const tag = (block.match(/<title>([^<]+)<\/title>/) ?? [])[1] ?? "";
+      const id = firstTag(block, "id");
+      const title = firstTag(block, "title");
+      const tag = id.includes("/") ? id.slice(id.lastIndexOf("/") + 1) : title;
       if (!tag) continue;
-      const publishedAt = (block.match(/<updated>([^<]+)<\/updated>/) ?? [])[1] ?? null;
+      const publishedAt = firstTag(block, "updated") || null;
       items.push({
         tag,
         version: tag.replace(/^v/, ""),
