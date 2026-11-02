@@ -738,9 +738,12 @@ body {
   max-height: none;
   border-radius: 4px;
   display: block;
-  /* 左键留给「点空白关闭」，不让浏览器把图拖出去。 */
-  -webkit-user-drag: none;
   user-select: none;
+}
+
+/* 放大到超视口时，左键改为平移，原生拖拽让位。 */
+.viewer-stage.can-pan img {
+  -webkit-user-drag: none;
 }
 
 .viewer-info {

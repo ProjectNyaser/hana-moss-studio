@@ -1334,24 +1334,27 @@ nodes.viewerZoomActual.addEventListener("click", () => {
   layoutViewerImage();
 });
 // 点图的周围空白处关掉；点图本身不关。
+let panMoved = false;
 nodes.viewerStage.addEventListener("click", (event) => {
+  // 平移结束时浏览器也会补一个 click，那一下不该当成「点空白」。
+  if (panMoved) {
+    panMoved = false;
+    return;
+  }
   if (event.target === nodes.viewerStage) closeViewer();
 });
 
 /**
- * 放大后右键按住平移。左键留给「点空白关闭」，所以抓取放在右键；
- * 拖拽过程中用 setPointerCapture，光标滑出图片也不会丢事件。
+ * 左键按住平移，仅限图超出视口时（can-pan）。
+ *
+ * 图装得下时保留浏览器原生的图片拖拽，那是把图拖到别的程序的正规路径；
+ * 放大后左键让给平移，否则一拖就飞。原生拖放只能由左键发起，右键做不了。
  */
 let panning = null;
 
-nodes.viewerStage.addEventListener("contextmenu", (event) => {
-  if (!nodes.viewer.hidden) event.preventDefault();
-});
-
 nodes.viewerStage.addEventListener("pointerdown", (event) => {
-  if (event.button !== 2 || nodes.viewer.hidden) return;
-  event.preventDefault();
   const stage = nodes.viewerStage;
+  if (event.button !== 0 || nodes.viewer.hidden || !stage.classList.contains("can-pan")) return;
   panning = { x: event.clientX, y: event.clientY, left: stage.scrollLeft, top: stage.scrollTop };
   stage.classList.add("panning");
   stage.setPointerCapture(event.pointerId);
@@ -1359,9 +1362,12 @@ nodes.viewerStage.addEventListener("pointerdown", (event) => {
 
 nodes.viewerStage.addEventListener("pointermove", (event) => {
   if (!panning) return;
+  const dx = event.clientX - panning.x;
+  const dy = event.clientY - panning.y;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panMoved = true;
   const stage = nodes.viewerStage;
-  stage.scrollLeft = panning.left - (event.clientX - panning.x);
-  stage.scrollTop = panning.top - (event.clientY - panning.y);
+  stage.scrollLeft = panning.left - dx;
+  stage.scrollTop = panning.top - dy;
 });
 
 function endPan(event) {
@@ -1378,6 +1384,10 @@ function endPan(event) {
 
 nodes.viewerStage.addEventListener("pointerup", endPan);
 nodes.viewerStage.addEventListener("pointercancel", endPan);
+// 查看器里的右键不弹系统菜单，也不做别的。
+nodes.viewerStage.addEventListener("contextmenu", (event) => {
+  if (!nodes.viewer.hidden) event.preventDefault();
+});
 // 滚轮缩放：以光标所在位置为锚，这才是看图时的直觉。
 nodes.viewerStage.addEventListener(
   "wheel",
