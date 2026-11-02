@@ -84,13 +84,15 @@ async function curlText(url) {
   try {
     const { stdout } = await runFile(
       "curl.exe",
-      ["-sL", "--fail", "--retry", "3", "--connect-timeout", "20", url],
+      // -sS：静默但保留错误文字。只用 -s 时 --fail 的失败原因会被吞掉，
+      // 上层只能拿到一个空字符串，看着就像「失败：」后面什么都没有。
+      ["-sS", "-L", "--fail", "--retry", "3", "--connect-timeout", "20", url],
       { timeout: 60_000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
     );
     return stdout;
   } catch (error) {
     const detail = String(error?.stderr ?? error?.message ?? error).trim().slice(0, 200);
-    throw new Error(`取 ${url} 失败：${detail}`);
+    throw new Error(`取 ${url} 失败：${detail || "没有返回内容（可能是限流或网络不通）"}`);
   }
 }
 
@@ -323,24 +325,38 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   let releaseCache = null;
   async function listReleases() {
     if (!releaseCache || Date.now() - releaseCache.at > 10 * 60_000) {
-      const raw = JSON.parse(await curlText(`${ENGINE_API.replace(/\/latest$/, "")}?per_page=20`));
-      const items = (Array.isArray(raw) ? raw : []).map((rel) => ({
-        tag: rel.tag_name ?? "",
-        version: String(rel.tag_name ?? "").replace(/^v/, ""),
-        publishedAt: rel.published_at ?? null,
-        prerelease: Boolean(rel.prerelease),
-        windowsAssets: (rel.assets ?? []).filter((asset) => /windows.*x86_64.*\.zip$/i.test(asset.name ?? "")).length,
-        bundledBytes: Math.max(
-          0,
-          ...(rel.assets ?? [])
-            .filter((asset) => /windows.*x86_64.*\.zip$/i.test(asset.name ?? "") && !/system-cuda/i.test(asset.name ?? ""))
-            .map((asset) => asset.size ?? 0),
-        ),
-      }));
-      releaseCache = { at: Date.now(), items };
+      try {
+        const raw = JSON.parse(await curlText(`${ENGINE_API.replace(/\/latest$/, "")}?per_page=20`));
+        const items = (Array.isArray(raw) ? raw : []).map((rel) => ({
+          tag: rel.tag_name ?? "",
+          version: String(rel.tag_name ?? "").replace(/^v/, ""),
+          publishedAt: rel.published_at ?? null,
+          prerelease: Boolean(rel.prerelease),
+          windowsAssets: (rel.assets ?? []).filter((asset) => /windows.*x86_64.*\.zip$/i.test(asset.name ?? "")).length,
+          bundledBytes: Math.max(
+            0,
+            ...(rel.assets ?? [])
+              .filter((asset) => /windows.*x86_64.*\.zip$/i.test(asset.name ?? "") && !/system-cuda/i.test(asset.name ?? ""))
+              .map((asset) => asset.size ?? 0),
+          ),
+        }));
+        releaseCache = { at: Date.now(), items, stale: false };
+      } catch (error) {
+        // 拉不到时用上一次的结果，并标明是旧的。GitHub 匿名接口每小时 60 次，
+        // 用完会直接 403，这时候列表还是能用的（版本不会几分钟一换）。
+        if (releaseCache?.items?.length) {
+          releaseCache = { ...releaseCache, stale: true, error: brief(error) };
+        } else {
+          throw new Error(`拿不到版本列表（GitHub 接口可能限流了，稍后再试）：${brief(error)}`);
+        }
+      }
     }
     const installed = new Set(listEngines().map((entry) => entry.version));
-    return releaseCache.items.map((item) => ({ ...item, installed: installed.has(item.version) }));
+    return releaseCache.items.map((item) => ({
+      ...item,
+      installed: installed.has(item.version),
+      stale: Boolean(releaseCache.stale),
+    }));
   }
 
   /** 删掉一个已装版本。正在用的那个先清路径（会顺带停引擎），再删目录。 */
