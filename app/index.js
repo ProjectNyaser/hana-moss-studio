@@ -651,7 +651,7 @@ export default defineApp(async (sdk) => {
   }, 1500).unref?.();
 
   /** 缩略图缓存路径。画廊与预览都按这个规则落盘。 */
-function thumbPath(file, size) {
+  function thumbPath(file, size) {
   return join(thumbsDir, `${basename(file).replace(/\.png$/i, "")}-${size}.webp`);
 }
 
@@ -903,8 +903,8 @@ function state() {
 
     app.get(`/${APP_ID}/state`, (c) => c.json(state()));
 
-  // 画廊分页：state 只带最近 24 条，剩下的从这里拉。
-  app.get(`/${APP_ID}/jobs`, (c) => {
+    // 画廊分页：state 只带最近十几条，全量从这里拉。
+    app.get(`/${APP_ID}/jobs`, (c) => {
     const all = store.listJobs();
     const offset = Math.max(0, Number(c.req.query("offset")) || 0);
     const limit = Math.min(200, Math.max(1, Number(c.req.query("limit")) || 60));

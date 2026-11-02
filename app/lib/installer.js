@@ -662,6 +662,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       const total = totalBytes || items.reduce((sum, item) => sum + item.size, 0);
       control = { port: session.port, secret: session.secret, gids: new Map(items.map((item) => [item.out, item.gid])) };
       let stall = 0;
+      let rpcFailures = 0;
       let lastBytes = -1;
       let lastDone = -1;
       let speedAt = 0;
@@ -703,10 +704,17 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
           ]);
           snapshot = new Map([...active, ...waiting, ...stopped].map((state) => [state.gid, state]));
           waitingStates = waiting;
-        } catch {
+        } catch (error) {
           // 这一轮没读到就跳过，不把上一轮的进度写成 0。
+          // 但连续读不到说明 aria2 已经不在了，不能无限轮下去。
+          rpcFailures += 1;
+          if (rpcFailures >= 60) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new Error(`下载器无响应（连续 ${rpcFailures} 次读不到状态）：${reason}`);
+          }
           continue;
         }
+        rpcFailures = 0;
 
         // 只统计 aria2 自报的 completedLength。查不到状态的按 0 算，绝不当已完成：
         // 新加的 gid 还没进 tellActive 时，当已完成会让进度一步跳到 100%。
