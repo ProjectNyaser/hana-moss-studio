@@ -1102,6 +1102,11 @@ function layoutViewerImage() {
   }
   img.style.width = `${Math.max(1, Math.round(natW * viewerZoom))}px`;
   img.style.height = `${Math.max(1, Math.round(natH * viewerZoom))}px`;
+  // 图超出视口才有东西可平移，光标跟着变。
+  stage.classList.toggle(
+    "can-pan",
+    stage.scrollWidth > stage.clientWidth + 1 || stage.scrollHeight > stage.clientHeight + 1,
+  );
   nodes.viewerIndex.textContent = `${viewerIndex + 1} / ${viewerList.length} · ${Math.round(viewerZoom * 100)}%`;
 }
 
@@ -1332,6 +1337,47 @@ nodes.viewerZoomActual.addEventListener("click", () => {
 nodes.viewerStage.addEventListener("click", (event) => {
   if (event.target === nodes.viewerStage) closeViewer();
 });
+
+/**
+ * 放大后右键按住平移。左键留给「点空白关闭」，所以抓取放在右键；
+ * 拖拽过程中用 setPointerCapture，光标滑出图片也不会丢事件。
+ */
+let panning = null;
+
+nodes.viewerStage.addEventListener("contextmenu", (event) => {
+  if (!nodes.viewer.hidden) event.preventDefault();
+});
+
+nodes.viewerStage.addEventListener("pointerdown", (event) => {
+  if (event.button !== 2 || nodes.viewer.hidden) return;
+  event.preventDefault();
+  const stage = nodes.viewerStage;
+  panning = { x: event.clientX, y: event.clientY, left: stage.scrollLeft, top: stage.scrollTop };
+  stage.classList.add("panning");
+  stage.setPointerCapture(event.pointerId);
+});
+
+nodes.viewerStage.addEventListener("pointermove", (event) => {
+  if (!panning) return;
+  const stage = nodes.viewerStage;
+  stage.scrollLeft = panning.left - (event.clientX - panning.x);
+  stage.scrollTop = panning.top - (event.clientY - panning.y);
+});
+
+function endPan(event) {
+  if (!panning) return;
+  panning = null;
+  const stage = nodes.viewerStage;
+  stage.classList.remove("panning");
+  try {
+    stage.releasePointerCapture(event.pointerId);
+  } catch {
+    /* 指针已经没了 */
+  }
+}
+
+nodes.viewerStage.addEventListener("pointerup", endPan);
+nodes.viewerStage.addEventListener("pointercancel", endPan);
 // 滚轮缩放：以光标所在位置为锚，这才是看图时的直觉。
 nodes.viewerStage.addEventListener(
   "wheel",

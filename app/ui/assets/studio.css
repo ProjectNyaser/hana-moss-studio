@@ -720,11 +720,27 @@ body {
   padding: 12px 64px;
 }
 
+/* 放大到超窗口后右键按住平移，光标提示可抓。 */
+.viewer-stage.can-pan {
+  cursor: grab;
+}
+
+.viewer-stage.can-pan.panning {
+  cursor: grabbing;
+}
+
+.viewer-stage.panning {
+  user-select: none;
+}
+
 .viewer-stage img {
   max-width: none;
   max-height: none;
   border-radius: 4px;
   display: block;
+  /* 左键留给「点空白关闭」，不让浏览器把图拖出去。 */
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .viewer-info {
