@@ -1471,10 +1471,17 @@ async function boot() {
     /* 非宿主环境 */
   }
   showView("canvas");
-  await refresh();
+  // 首屏靠事件流的首帧，不再单独拉一次 /state。万一流一时连不上，两秒后再补一次。
+  let gotFrame = false;
+  setTimeout(() => {
+    if (!gotFrame) void refresh();
+  }, 2000);
   startLive({
     hana,
-    onState: (state) => render(state),
+    onState: (state) => {
+      gotFrame = true;
+      render(state);
+    },
     onEvent: (name, payload) => {
       // 预览走事件，不靠 state 轮询。
       if (name !== "preview") return;

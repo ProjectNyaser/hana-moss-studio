@@ -693,9 +693,8 @@ async function boot() {
   } catch {
     /* 非宿主环境 */
   }
-  await refresh();
-  // 主界面会把它收到的整帧状态广播过来。同源推送比自己开连接便宜得多，
-  // 收到一帧就把自己的通道关掉；主界面关了（单独开侧栏）再自己接管。
+  // 主界面会把它收到的整帧状态广播过来。侧栏主动去开连接是白费：
+  // 主界面本来就在拉，拉完一推就完事。所以这里先等广播，等不到再自己接管。
   const startOwnLive = () =>
     startLive({
       hana,
@@ -708,23 +707,35 @@ async function boot() {
         nodes.dot.className = "dot err";
       },
     });
-  let ownLive = startOwnLive();
+  let ownLive = null;
   const stopOwnLive = () => {
     ownLive?.();
     ownLive = null;
   };
   let lastBroadcast = 0;
+  const takeOver = async () => {
+    if (ownLive) return;
+    await refresh().catch(() => {});
+    ownLive = startOwnLive();
+  };
+
   reuseChannel?.addEventListener("message", (event) => {
     if (event.data?.type !== "state" || !event.data.state) return;
     lastBroadcast = Date.now();
     stopOwnLive();
     render(event.data.state);
   });
+
+  // 两秒内没等到广播（主界面还没起来、或者跨 origin 发不过来）就自己接管。
+  setTimeout(() => {
+    if (!lastBroadcast) void takeOver();
+  }, 2000);
   // 主界面关闭后广播会断，超过十五秒没收到就自己重新接上。
   setInterval(() => {
     if (ownLive) return;
+    if (!lastBroadcast) return;
     if (Date.now() - lastBroadcast < 15000) return;
-    ownLive = startOwnLive();
+    void takeOver();
   }, 5000);
 }
 
