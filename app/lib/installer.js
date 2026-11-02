@@ -647,7 +647,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       patch({
         phase: "release",
         message: gpu
-          ? `${gpu.name} · 驱动 ${gpu.driver}${gpu.computeCapability ? ` · 算力 ${gpu.computeCapability}` : "（WMI 读的）"}`
+          ? `${gpu.name} · 驱动 ${gpu.driver}${gpu.computeCapability ? ` · 算力 ${gpu.computeCapability}` : ""}`
           : "没读到显卡信息，按 cu13 选包（驱动不到 R580 就在自定义里选 cu12）",
         detail: gpu,
       });
