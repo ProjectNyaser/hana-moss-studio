@@ -64,6 +64,7 @@
     /* 参数：两列在窄栏里会自动落成一列。minmax(0,…) 是必需的，否则数字输入框的
        min-content 宽度会把两列顶出侧栏。 */
     .pn-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+    .pn-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .pn-grid > .field { min-width: 0; }
     .pn input, .pn select, .pn textarea { min-width: 0; max-width: 100%; }
 
@@ -306,6 +307,7 @@
       </div>
       <div class="pn-head">
         <span>画幅比例</span>
+        <span class="hint" id="pn-ratio-note">1:1</span>
       </div>
       <div class="pn-slider" id="pn-ratio-slider">
         <div class="pn-slider-rail"><i class="pn-slider-fill" id="pn-ratio-fill"></i></div>
@@ -314,15 +316,12 @@
       </div>
       <div class="pn-head">
         <span>图像大小</span>
+        <span class="hint" id="pn-mp-note">0.30MP</span>
       </div>
       <div class="pn-slider" id="pn-slider">
         <div class="pn-slider-rail"><i class="pn-slider-fill" id="pn-slider-fill"></i></div>
         <span class="pn-slider-thumb" id="pn-slider-thumb" role="slider" tabindex="0"
               aria-label="图像大小，百万像素" aria-valuemin="0.3" aria-valuemax="4.2">1.0</span>
-      </div>
-      <div class="pn-grid">
-        <label class="field"><span class="label">宽</span><input id="pn-width" type="number" min="256" max="4096" step="16" value="768"></label>
-        <label class="field"><span class="label">高</span><input id="pn-height" type="number" min="256" max="4096" step="16" value="768"></label>
       </div>
       <div class="pn-head">
         <span>高清修正</span>
@@ -333,8 +332,12 @@
         <span class="pn-slider-thumb" id="pn-hires-thumb" role="slider" tabindex="0"
               aria-label="高清修正倍率" aria-valuemin="1" aria-valuemax="3">×1.0</span>
       </div>
-      <div class="pn-grid">
+      <div class="pn-grid three">
+        <label class="field"><span class="label">宽</span><input id="pn-width" type="number" min="256" max="4096" step="16" value="768"></label>
+        <label class="field"><span class="label">高</span><input id="pn-height" type="number" min="256" max="4096" step="16" value="768"></label>
         <label class="field"><span class="label">步数</span><input id="pn-steps" type="number" min="1" max="80" value="8"></label>
+      </div>
+      <div class="pn-grid three">
         <label class="field"><span class="label">CFG</span><input id="pn-cfg" type="number" min="0" max="20" step="0.5" value="3"></label>
         <label class="field"><span class="label">修正步数</span><input id="pn-hires-steps" type="number" min="0" max="80" value="0" placeholder="跟主步数"></label>
       </div>

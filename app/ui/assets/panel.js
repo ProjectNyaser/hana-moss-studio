@@ -47,6 +47,8 @@ const nodes = {
   ratioSlider: el("pn-ratio-slider"),
   ratioFill: el("pn-ratio-fill"),
   ratioThumb: el("pn-ratio-thumb"),
+  ratioNote: el("pn-ratio-note"),
+  mpNote: el("pn-mp-note"),
   slider: el("pn-slider"),
   sliderFill: el("pn-slider-fill"),
   sliderThumb: el("pn-slider-thumb"),
@@ -250,12 +252,14 @@ function renderSize() {
   nodes.ratioFill.style.width = `${rx}px`;
   nodes.ratioThumb.textContent = ratioLabel(ratio);
   nodes.ratioThumb.setAttribute("aria-valuenow", Math.log2(ratio).toFixed(2));
+  nodes.ratioNote.textContent = ratioLabel(ratio);
 
   const mpPct = Math.min(1, Math.max(0, (megapixels - MIN_MP) / (MAX_MP - MIN_MP)));
   const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
   nodes.sliderFill.style.width = `${mx}px`;
   nodes.sliderThumb.textContent = megapixels.toFixed(1);
   nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(1));
+  nodes.mpNote.textContent = `${megapixels.toFixed(2)}MP`;
 
   // 这个位置报的是**最终出图尺寸**：含高清修正收后的结果，而不只是基础图。
   const base = fitToEngine(width, height);
@@ -267,8 +271,10 @@ function renderSize() {
   nodes.hiresThumb.textContent = `×${hiresScale.toFixed(1)}`;
   nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
   nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
-  nodes.hiresNote.textContent = maxScale <= 1.001
-    ? "这张图已在上限"
+  // 右侧报当前格，上限信息放在悬停里，不占位置。
+  nodes.hiresNote.textContent = hiresScale > 1.001 ? `×${hiresScale.toFixed(1)}` : "关闭";
+  nodes.hiresThumb.title = maxScale <= 1.001
+    ? "这张图已经贴到引擎上限，没法再放大"
     : `最多 ×${maxScale.toFixed(1)}`;
 
   let finalW = base.width;
