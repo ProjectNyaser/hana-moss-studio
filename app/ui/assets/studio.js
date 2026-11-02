@@ -27,7 +27,6 @@ const nodes = {
   thumbs: el("thumbs"),
   clearJobs: el("clear-jobs"),
   ctxMenu: el("ctx-menu"),
-  previewImage: el("preview-image"),
   viewer: el("viewer"),
   viewerStage: el("viewer-stage"),
   viewerImage: el("viewer-image"),
@@ -71,7 +70,9 @@ const imageCache = new Map();
 let latest = null;
 let renderedJobsKey = null;
 let selectedId = null;
-let lastNewestId = null;
+let newestJobId = null;
+/** 首次渲染不算「刚生成完」：打开 App 时画布应该是空的。 */
+let bootstrapped = false;
 let currentView = "canvas";
 let releasesLoaded = false;
 
@@ -181,24 +182,6 @@ function renderStage(data) {
   nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
 
-/** 采样预览：有 active 且有 previewAt 就显示那张图，换 URL 避开缓存。
- *  这里一并把结果图与空状态让开：preview 事件是单独推的，不走整帧渲染，
- *  不在这里处理就会和上一张结果叠在画布上。 */
-function renderPreview(data) {
-  const active = data?.engine?.active;
-  const at = active?.previewAt;
-  const img = nodes.previewImage;
-  const showPreview = Boolean(active && at);
-  img.hidden = !showPreview;
-  if (!showPreview) return;
-  nodes.result.hidden = true;
-  nodes.canvasEmpty.hidden = true;
-  if (img.dataset.at !== String(at)) {
-    img.dataset.at = String(at);
-    img.src = previewUrl(at);
-  }
-}
-
 function renderProgress(data) {
   const active = data.engine.active;
   if (!active) {
@@ -218,12 +201,10 @@ function renderProgress(data) {
       : "";
 }
 
-function latestDone(data) {
-  if (selectedId) {
-    const picked = data.jobs.find((job) => job.id === selectedId && job.status === "done" && job.output);
-    if (picked) return picked;
-  }
-  return data.jobs.find((job) => job.status === "done" && job.output) ?? null;
+/** 画布上要显示的那张：只有显式载入或刚生成完才有，初始是空的。 */
+function shownJob(data) {
+  if (!selectedId) return null;
+  return data.jobs.find((job) => job.id === selectedId && job.status === "done" && job.output) ?? null;
 }
 
 function loadImage(name) {
@@ -233,13 +214,34 @@ function loadImage(name) {
 }
 
 async function renderCanvas(data) {
-  // 采样过程有预览图时，画布让给它，不必再显示上一张结果。
-  if (data?.engine?.active?.previewAt) {
-    nodes.result.hidden = true;
+  const active = data?.engine?.active;
+  const img = nodes.resultImage;
+
+  // 生成中：画面交给采样预览，下面那行换成参数与实时用时（排队时间不算）。
+  if (active) {
     nodes.canvasEmpty.hidden = true;
+    nodes.result.hidden = false;
+    if (active.previewAt && img.dataset.preview !== String(active.previewAt)) {
+      img.dataset.preview = String(active.previewAt);
+      img.src = previewUrl(active.previewAt);
+    }
+    img.classList.toggle("preview", Boolean(active.previewAt));
+    img.onclick = null;
+    const parts = [];
+    if (active.width && active.height) parts.push(`${active.width}×${active.height}`);
+    if (active.steps) parts.push(`${active.steps} 步`);
+    if (active.cfg) parts.push(`CFG ${active.cfg}`);
+    if (active.seed != null) parts.push(`种子 ${active.seed}`);
+    const used = formatDuration(active.progress?.elapsedMs ?? 0);
+    if (used) parts.push(`已用 ${used}`);
+    nodes.resultCaption.textContent = parts.join(" · ");
     return;
   }
-  const job = latestDone(data);
+
+  img.classList.remove("preview");
+  delete img.dataset.preview;
+
+  const job = shownJob(data);
   if (!job) {
     nodes.result.hidden = true;
     nodes.canvasEmpty.hidden = false;
@@ -253,10 +255,10 @@ async function renderCanvas(data) {
   }
   nodes.canvasEmpty.hidden = true;
   nodes.result.hidden = false;
-  if (nodes.resultImage.getAttribute("src") !== url) nodes.resultImage.src = url;
+  if (img.getAttribute("src") !== url) img.src = url;
   const seed = job.report?.seedUsed ?? job.seed;
   nodes.resultCaption.textContent = `${job.width}×${job.height} · ${job.steps} 步 · CFG ${job.cfg} · 种子 ${seed} · ${formatDuration(job.elapsedMs)}`;
-  nodes.resultImage.onclick = () => openViewer(job.id);
+  img.onclick = () => openViewer(job.id);
 }
 
 // ── 画廊 ───────────────────────────────────────────────────────────────
@@ -308,7 +310,7 @@ async function renderGallery(data) {
   for (const job of visible) {
     const tile = document.createElement("div");
     tile.className = "thumb";
-    const shown = latestDone(data);
+    const shown = shownJob(data);
     if (job.status === "done" && job.output) {
       if (shown && shown.id === job.id) tile.classList.add("on");
       const url = imageCache.get(job.output);
@@ -744,16 +746,16 @@ function loadJob(job) {
 function render(data) {
   latest = data;
   renderStage(data);
-  renderPreview(data);
   renderProgress(data);
   renderQueue(data);
   renderVersions(data);
   renderDownload(data);
   const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;
-  if (newest && newest !== lastNewestId) {
-    lastNewestId = newest;
-    selectedId = null;
+  if (newest && newest !== newestJobId) {
+    newestJobId = newest;
+    if (bootstrapped) selectedId = newest;
   }
+  bootstrapped = true;
   void renderCanvas(data);
   const key = data.jobs.map((job) => `${job.id}:${job.status}`).join("|");
   if (key !== renderedJobsKey) {
@@ -886,7 +888,13 @@ async function boot() {
       const active = latest?.engine?.active;
       if (!active) return;
       active.previewAt = payload.at;
-      renderPreview(latest);
+      // 画布上的预览图直接换，不必等下一帧 state。
+      const img = nodes.resultImage;
+      if (img.dataset.preview !== String(payload.at)) {
+        img.dataset.preview = String(payload.at);
+        img.src = previewUrl(payload.at);
+        img.classList.add("preview");
+      }
       // 画廊里那张正在采样的缩略图也跟着换，不重建整个网格。
       const thumb = nodes.thumbs.querySelector("img.preview-thumb");
       if (thumb) thumb.src = previewUrl(payload.at);

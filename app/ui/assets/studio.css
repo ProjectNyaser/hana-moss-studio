@@ -157,19 +157,6 @@ body {
 }
 
 /* ── 画布 ──────────────────────────────────────────────────────────── */
-/* 采样预览：低分辨率的中间结果，替掉画布上的占位。
-   尺寸与结果图用同一套盒子，生成开始/结束时画面不会跳一下。 */
-.preview-image {
-  max-width: min(100%, 900px);
-  max-height: calc(100vh - 300px);
-  border-radius: var(--ui-radius);
-  border: 1px solid var(--ui-line);
-  box-shadow: 0 8px 28px -18px var(--ui-overlay-strong);
-  background: var(--ui-surface);
-  object-fit: contain;
-  filter: blur(0.6px);
-}
-
 .canvas {
   flex: 1;
   min-height: 0;
@@ -202,6 +189,9 @@ body {
   cursor: zoom-in;
   background: var(--ui-surface);
 }
+
+/* 采样中的那张：尺寸与结果图一致，只多一层柔化。 */
+.result img.preview { filter: blur(0.6px); }
 
 .result figcaption {
   font-size: 11px;

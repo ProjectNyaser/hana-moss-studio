@@ -500,6 +500,11 @@ export default defineApp(async (sdk) => {
           ? {
               jobId: active.id,
               prompt: active.prompt,
+              width: active.width,
+              height: active.height,
+              steps: active.steps,
+              cfg: active.cfg,
+              seed: active.report?.seedUsed ?? active.seed ?? null,
               phase: active.phase,
               progress: taskProgress(active),
               previewAt: active.previewAt ?? null,
