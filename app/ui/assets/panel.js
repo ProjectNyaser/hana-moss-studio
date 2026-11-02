@@ -488,7 +488,9 @@ function renderInstall(data) {
   const phase = PHASE_LABEL[job.phase] ?? job.phase;
   const size = job.totalBytes ? ` ${formatSize(job.bytes)} / ${formatSize(job.totalBytes)}` : "";
   const head = job.error ? `${phase}：${job.error}` : `${job.label} · ${phase}${size}`;
-  nodes.installMessage.textContent = job.message ? `${head}｜${job.message}` : head;
+  // 引擎下载失败多半是 GitHub 链路，给一句可执行的出路。
+  const tip = job.error && job.target === "engine" ? "（网络不行时把 zip 放进 app-data/hana-moss-studio/incoming 再装）" : "";
+  nodes.installMessage.textContent = `${job.message ? `${head}｜${job.message}` : head}${tip}`;
   nodes.installMessage.className = job.error ? "hint bad" : job.phase === "done" ? "hint ok" : "hint";
 }
 
