@@ -6,7 +6,7 @@ import { Engine } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
 import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
 import { createInstaller, probeGpu, probeGpuDetailed } from "./lib/installer.js";
-import { shrinkPng } from "./lib/image.js";
+import { shrinkToWebp } from "./lib/image.js";
 
 export const name = "hana-moss-studio";
 
@@ -612,7 +612,7 @@ export default defineApp(async (sdk) => {
 
   /** 缩略图缓存路径。画廊与预览都按这个规则落盘。 */
 function thumbPath(file, size) {
-  return join(cacheDir, "thumbs", `${basename(file).replace(/\.png$/i, "")}-${size}.png`);
+  return join(cacheDir, "thumbs", `${basename(file).replace(/\.png$/i, "")}-${size}.webp`);
 }
 
 /** 确保缩略图存在。已存在就直接返回，不重复转。 */
@@ -620,8 +620,7 @@ async function ensureThumb(file, size = 320) {
   const dst = thumbPath(file, size);
   if (existsSync(dst) || !existsSync(file)) return;
   try {
-    mkdirSync(dirname(dst), { recursive: true });
-    shrinkPng(file, dst, size);
+    await shrinkToWebp(file, dst, size);
   } catch {
     /* 转不出来就等路由那里退回原图 */
   }
@@ -1196,7 +1195,7 @@ function state() {
       if (!existsSync(dst)) {
         return c.body(readFileSync(file), 200, { "content-type": "image/png", "cache-control": "private, max-age=30" });
       }
-      return c.body(readFileSync(dst), 200, { "content-type": "image/png", "cache-control": "private, max-age=86400" });
+      return c.body(readFileSync(dst), 200, { "content-type": "image/webp", "cache-control": "private, max-age=86400" });
     });
 
     // 采样预览：引擎在采样过程中不断重写同一个文件。
@@ -1204,7 +1203,7 @@ function state() {
     app.get(`/${APP_ID}/preview`, (c) => {
       const file = engine.previewFile();
       if (!existsSync(file)) return c.text("not found", 404);
-      const type = file.endsWith(".jpg") ? "image/jpeg" : "image/png";
+      const type = file.endsWith(".webp") ? "image/webp" : "image/png";
       return c.body(readFileSync(file), 200, { "content-type": type, "cache-control": "no-store" });
     });
 

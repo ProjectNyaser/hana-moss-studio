@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, dirname, delimiter } from "node:path";
-import { shrinkPng } from "./image.js";
+import { shrinkToWebp } from "./image.js";
 
 /**
  * moss-server 是一个外部 C++/CUDA 进程，协议为 stdio JSON-lines：
@@ -58,7 +58,7 @@ export class Engine {
     /** 采样预览图：每次生成覆盖同一张，不堆文件。 */
     this.previewPath = join(cacheDir, "preview.png");
     /** 预览的缩小版：全尺寸 PNG 一张十兆，界面只需要看清形状。 */
-    this.previewSmallPath = join(cacheDir, "preview-small.png");
+    this.previewSmallPath = join(cacheDir, "preview-small.webp");
     this.previewIsSmall = false;
     this.previewBusy = false;
     this.onEvent = onEvent ?? (() => {});
@@ -153,7 +153,7 @@ export class Engine {
     this.previewBusy = true;
     let small = false;
     try {
-      small = Boolean(shrinkPng(this.previewPath, this.previewSmallPath, 640));
+      small = Boolean(await shrinkToWebp(this.previewPath, this.previewSmallPath, 640));
     } catch {
       small = false;
     } finally {

@@ -138,18 +138,23 @@ function deriveMinAppVersion(version, changes) {
 
 /**
  * 运行时依赖也以文件形态跟着 App 走：宿主不会替 App 解析 node_modules。
- * 只复制 lib 与 package.json、LICENSE，其余读进来没用，白占体积。
+ * keep 决定哪些文件值得带，package.json 与 LICENSE 总会带上。
  */
-const RUNTIME_DEPS = ["pngjs"];
+const RUNTIME_DEPS = [
+  { pkg: "pngjs", keep: (name) => name.startsWith("lib/") },
+  {
+    pkg: "@jsquash/webp",
+    // 只要编码器：解码用不上，simd 版盖了所有能跑这个 App 的 CPU。
+    keep: (name) => /^(utils|meta)\.js$/.test(name) || name.startsWith("codec/enc/webp_enc_simd"),
+  },
+];
 
 function mirrorDeps(changes) {
-  for (const pkg of RUNTIME_DEPS) {
+  for (const { pkg, keep } of RUNTIME_DEPS) {
     const src = path.join(ROOT, "node_modules", pkg);
     const dst = path.join(ROOT, "app", "node_modules", pkg);
     if (!fs.existsSync(src)) fatal(`依赖树里没有 ${pkg}（${rel(src)}）。先 pnpm install`);
-    const wanted = walk(src).filter(
-      (name) => name.startsWith("lib/") || name === "package.json" || name === "LICENSE",
-    );
+    const wanted = walk(src).filter((name) => keep(name) || name === "package.json" || name === "LICENSE");
     const have = fs.existsSync(dst) ? walk(dst) : [];
     for (const name of have) {
       if (!wanted.includes(name)) changes.push(`app/node_modules/${pkg}/${name}（多余，删）`);

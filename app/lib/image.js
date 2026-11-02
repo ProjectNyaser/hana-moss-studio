@@ -2,13 +2,16 @@
 // Copyright (c) 2026 Nyaser
 
 /**
- * app/lib/image.js — 图片降采样。
+ * app/lib/image.js — 图片降采样与 WebP 编码。
  *
  * 两处用到：画廊的缩略图（一屏几十张，不能铺原图），采样预览（全尺寸 PNG 一张
  * 十兆，界面只要看清形状）。
  *
- * PNG 的编解码交给 pngjs（派生在 app/node_modules 里，见 scripts/derive.mjs）；
- * 缩放是自己写的面积平均，比最近邻干净，也不用为它拖一整个图像套件进来。
+ * PNG 解码用 pngjs，WebP 编码用 @jsquash/webp 的 libwebp WASM（都是派生在
+ * app/node_modules 里的，见 scripts/derive.mjs）；缩放自己写，面积平均。
+ *
+ * 为什么不用 sharp：它是 native 模块，跨平台要按平台带二进制，装到宿主里还得
+ * 赌 require 能解析到 .node。WASM 版本没有这些事。
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -16,8 +19,32 @@ import { dirname } from "node:path";
 
 import { PNG } from "pngjs";
 
-/** 小于这个体积的 PNG 不值得处理：小图本来就不大。 */
+/** 小于这个体积的图片不值得处理：小图本来就不大。 */
 const WORTH_RESIZING = 300 * 1024;
+/** 缩略图质量。78 在 320 宽下约 11 KB，肉眼与无损没差别。 */
+const WEBP_QUALITY = 78;
+
+let encoder = null;
+
+/**
+ * 懒加载 libwebp 编码器。首次调用要编译 wasm（几百 KB），之后复用同一个实例。
+ */
+async function getEncoder() {
+  if (encoder) return encoder;
+  const [{ initEmscriptenModule }, { default: factory }, { defaultOptions }] = await Promise.all([
+    import("@jsquash/webp/utils.js"),
+    import("@jsquash/webp/codec/enc/webp_enc_simd.js"),
+    import("@jsquash/webp/meta.js"),
+  ]);
+  const wasmUrl = new URL(
+    "../node_modules/@jsquash/webp/codec/enc/webp_enc_simd.wasm",
+    import.meta.url,
+  );
+  const wasm = await WebAssembly.compile(readFileSync(wasmUrl));
+  const module = await initEmscriptenModule(factory, wasm);
+  encoder = { module, defaultOptions };
+  return encoder;
+}
 
 /**
  * 等比缩小到不超过 maxWidth。只缩不放。
@@ -29,7 +56,7 @@ function downscale(source, maxWidth) {
   const ratio = maxWidth / width;
   const outWidth = Math.max(1, Math.round(width * ratio));
   const outHeight = Math.max(1, Math.round(height * ratio));
-  const out = new PNG({ width: outWidth, height: outHeight });
+  const out = { width: outWidth, height: outHeight, data: new Uint8ClampedArray(outWidth * outHeight * 4) };
   const xRatio = width / outWidth;
   const yRatio = height / outHeight;
   for (let y = 0; y < outHeight; y += 1) {
@@ -64,11 +91,12 @@ function downscale(source, maxWidth) {
 }
 
 /**
- * 等比缩小并写成一个新的 PNG。
+ * 等比缩小并写成一个 WebP。
  *
  * 返回实际写出的尺寸；源图比目标宽度小、或者读不动时返回 null，调用方据此保持原样。
+ * 编码器是异步的，所以这个函数也得 await。
  */
-export function shrinkPng(src, dst, maxWidth) {
+export async function shrinkToWebp(src, dst, maxWidth) {
   if (!existsSync(src)) return null;
   const input = readFileSync(src);
   if (input.length < WORTH_RESIZING) return null;
@@ -81,7 +109,13 @@ export function shrinkPng(src, dst, maxWidth) {
   }
   const small = downscale(image, maxWidth);
   if (!small) return null;
+  const { module, defaultOptions } = await getEncoder();
+  const encoded = module.encode(small.data, small.width, small.height, {
+    ...defaultOptions,
+    quality: WEBP_QUALITY,
+  });
+  if (!encoded) return null;
   mkdirSync(dirname(dst), { recursive: true });
-  writeFileSync(dst, PNG.sync.write(small, { colorType: 6, deflateLevel: 6 }));
+  writeFileSync(dst, Buffer.from(encoded));
   return { width: small.width, height: small.height };
 }
