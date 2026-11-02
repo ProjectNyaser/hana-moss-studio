@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, delimiter } from "node:path";
 
 /**
  * moss-server 是一个外部 C++/CUDA 进程，协议为 stdio JSON-lines：
@@ -212,8 +212,14 @@ export class Engine {
     this.lastError = null;
     const binDir = dirname(exe);
     const env = { ...process.env };
-    const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "Path";
-    env[pathKey] = `${binDir};${env[pathKey] ?? ""}`;
+    // Windows 的变量名不区分大小写，用户环境里通常写成 Path；POSIX 上固定是 PATH。
+    const pathKey =
+      process.platform === "win32"
+        ? Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "Path"
+        : "PATH";
+    // bin/ 进 PATH 是为 Windows 找 exe 旁边的 DLL；POSIX 上 .so 走二进制自带的 RUNPATH，
+    // 这里只是让两边行为一致。分隔符必须跟平台走，写死分号在 Linux 上会把首项拼坏。
+    env[pathKey] = binDir + delimiter + (env[pathKey] ?? "");
     env["MOSS_INFER_BIN"] = binDir;
 
     let child;
