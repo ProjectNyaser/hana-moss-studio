@@ -277,7 +277,8 @@ function renderSize() {
   const draggingMP = draggingName === "mp";
   const draggingHires = draggingName === "hires";
 
-  if (!draggingRatio) {
+  // 拖动中只搬手上那个，其余两个不动；松手后一起归位。
+  if (!draggingName || draggingRatio) {
     const rx = placeThumb(nodes.ratioSlider, nodes.ratioThumb, ratioToT(ratio));
     nodes.ratioFill.style.width = `${rx}px`;
     nodes.ratioThumb.textContent = ratioLabel(ratio);
@@ -285,7 +286,7 @@ function renderSize() {
     nodes.ratioNote.textContent = ratioLabel(ratio);
   }
 
-  if (!draggingMP) {
+  if (!draggingName || draggingMP) {
     const mpPct = Math.min(1, Math.max(0, (megapixels - MIN_MP) / (MAX_MP - MIN_MP)));
     const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
     nodes.sliderFill.style.width = `${mx}px`;
@@ -296,18 +297,21 @@ function renderSize() {
 
   // 这个位置报的是**最终出图尺寸**：含高清修正收后的结果，而不只是基础图。
   const base = fitToEngine(width, height);
-  // 基础图变了，可行倍率也跟着变，先把当前倍率收进新上限。
+  // 倍率不在这里收进上限：收一次，拖其他滑块时这一格就会跟着跳。
+  // 拇指位置夹到右端，实际出图由后端按上限收敛。
   const maxScale = hiresMax();
-  hiresScale = quantizeHires(Math.min(Math.max(1, hiresScale), maxScale), maxScale);
-  if (!draggingHires) {
-    const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, maxScale > 1 ? (hiresScale - 1) / (maxScale - 1) : 0);
+  const overLimit = hiresScale > maxScale + 0.001;
+  const hiresPct = maxScale > 1 ? Math.min(1, (hiresScale - 1) / (maxScale - 1)) : 0;
+  if (!draggingName || draggingHires) {
+    const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, hiresPct);
     nodes.hiresFill.style.width = `${hx}px`;
     const hiresLabel = `×${Number(hiresScale.toFixed(2))}`;
     nodes.hiresThumb.textContent = hiresLabel;
     nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
     nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
-    // 右侧报当前倍率，上限信息放悬停里，不占位置。
-    nodes.hiresNote.textContent = hiresScale > 1.001 ? hiresLabel : "关闭";
+    nodes.hiresNote.textContent = hiresScale > 1.001
+      ? (overLimit ? `${hiresLabel} 超上限` : hiresLabel)
+      : "关闭";
     nodes.hiresThumb.title = maxScale <= 1.001
       ? "这张图已经贴到引擎上限，没法再放大"
       : `最多 ×${maxScale.toFixed(2)}`;
