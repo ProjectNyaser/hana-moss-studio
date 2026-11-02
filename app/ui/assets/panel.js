@@ -154,11 +154,12 @@ function currentRatio() {
   return (Number(nodes.width.value) || 768) / (Number(nodes.height.value) || 768);
 }
 
-/** 像素量定了，宽高就定了：短边取 16 的倍数，长边按比例算。 */
+/** 像素量定了，宽高就定了：短边取 16 的倍数，长边按比例算。
+ *  两边都向下取整：向上凑那一刻就会把总像素顶过上限（4.2MP → 2752×1536 = 4.23MP）。 */
 function sizeFor(ratio, megapixels) {
   const spread = ratio >= 1 ? ratio : 1 / ratio;
-  const short = Math.max(256, Math.round(Math.sqrt((megapixels * 1e6) / spread) / 16) * 16);
-  const long = Math.round((short * spread) / 16) * 16;
+  const short = Math.max(256, Math.floor(Math.sqrt((megapixels * 1e6) / spread) / 16) * 16);
+  const long = Math.floor((short * spread) / 16) * 16;
   return ratio >= 1 ? [long, short] : [short, long];
 }
 
