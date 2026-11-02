@@ -329,12 +329,26 @@ async function renderGallery(data) {
       tile.classList.add("placeholder", "bad");
       tile.textContent = job.error ?? "生成失败";
     } else {
-      tile.classList.add("placeholder");
-      const spinner = document.createElement("span");
-      spinner.className = "spinner";
-      const text = document.createElement("span");
-      text.textContent = job.status === "queued" ? "排队中" : "生成中";
-      tile.append(spinner, text);
+      const active = data.engine.active;
+      if (active && job.id === active.jobId && active.previewAt) {
+        // 正在采样的那张也显示中间结果，而不是一个转圈。
+        const preview = document.createElement("img");
+        preview.className = "preview-thumb";
+        preview.src = previewUrl(active.previewAt);
+        preview.alt = "采样中";
+        tile.appendChild(preview);
+        const tag = document.createElement("div");
+        tag.className = "thumb-meta";
+        tag.textContent = "采样中";
+        tile.appendChild(tag);
+      } else {
+        tile.classList.add("placeholder");
+        const spinner = document.createElement("span");
+        spinner.className = "spinner";
+        const text = document.createElement("span");
+        text.textContent = job.status === "queued" ? "排队中" : "生成中";
+        tile.append(spinner, text);
+      }
     }
     // 右键菜单：看大图、用这张的参数、删除。失败的记录也走这里。
     tile.addEventListener("contextmenu", (event) => openMenu(event, job));
@@ -590,7 +604,8 @@ function layoutViewerImage() {
   const natH = img.naturalHeight || 1;
   const boxW = Math.max(120, stage.clientWidth - 128);
   const boxH = Math.max(120, stage.clientHeight - 24);
-  const fit = Math.min(boxW / natW, boxH / natH);
+  // 默认按原始像素显示；只有超出窗口才缩到适应。小图不放大，放大按了算。
+  const fit = Math.min(1, Math.min(boxW / natW, boxH / natH));
   img.style.width = `${Math.round(natW * fit * viewerZoom)}px`;
   img.style.height = `${Math.round(natH * fit * viewerZoom)}px`;
   const zoom = viewerZoom === 1 ? "" : ` · ${Math.round(viewerZoom * 100)}%`;
@@ -870,6 +885,9 @@ async function boot() {
       if (!active) return;
       active.previewAt = payload.at;
       renderPreview(latest);
+      // 画廊里那张正在采样的缩略图也跟着换，不重建整个网格。
+      const thumb = nodes.thumbs.querySelector("img.preview-thumb");
+      if (thumb) thumb.src = previewUrl(payload.at);
     },
     fetchState: () => api("/state"),
     source: "studio",

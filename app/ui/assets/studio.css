@@ -324,6 +324,13 @@ body {
   display: block;
 }
 
+/* 采样中的那张：比例跟图走，不套正方块。 */
+.gallery-grid .thumb img.preview-thumb {
+  width: 100%;
+  height: auto;
+  filter: blur(0.5px);
+}
+
 /* 错误与排队占位没有图，给个正方块保持节奏。 */
 .gallery-grid .thumb.placeholder { aspect-ratio: 1 / 1; }
 
