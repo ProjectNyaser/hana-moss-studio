@@ -313,6 +313,9 @@ function renderSize() {
   // 满格刻度可能仍超过实际上限：刻度 ×1.4 实际只做得到 ×1.35。
   // 拇指位置按刻度铺，右侧报实际能做到的值。
   const maxScale = hiresMax();
+  // 基础尺寸变了，刻度上限也跟着变，旧倍率可能已经超过它。
+  // 这里把值收到新刻度内，否则拇指上的数字会停在早就做不到的值上。
+  hiresScale = quantizeHires(Math.min(Math.max(1, hiresScale), maxScale), maxScale);
   const notchMax = maxScale > 1.001 ? Math.ceil(maxScale * 10 - 1e-9) / 10 : 1;
   const effectiveScale = Math.min(hiresScale, maxScale);
   const hiresPct = notchMax > 1 ? Math.min(1, (hiresScale - 1) / (notchMax - 1)) : 0;
