@@ -55,7 +55,8 @@ body {
 .studio-tabs > .canvas-meta { margin-left: 12px; }
 
 .studio-tabs > .chip,
-.studio-tabs > .chip-action {
+.studio-tabs > .chip-action,
+.studio-tabs > .canvas-meta {
   display: inline-flex;
   align-items: center;
   gap: 6px;

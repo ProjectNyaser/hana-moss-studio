@@ -173,12 +173,12 @@ function renderStage(data) {
     dotClass = "dot busy";
     const progress = engine.active.progress ?? {};
     const head = `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step}/${progress.total}` : ""}`;
-    const tail = progress.etaMs
-      ? ` · 约剩 ${formatDuration(progress.etaMs)}`
-      : progress.elapsedMs
-        ? ` · 已跑 ${formatDuration(progress.elapsedMs)}`
-        : "";
-    label = head + tail;
+    // 已跑与约剩同时给：只剩一个的时候，会让人以为耗时不见了。
+    const bits = [];
+    const ran = liveElapsed(engine.active);
+    if (typeof ran === "number") bits.push(`已跑 ${formatDuration(ran)}`);
+    if (progress.etaMs) bits.push(`约剩 ${formatDuration(progress.etaMs)}`);
+    label = bits.length ? `${head} · ${bits.join(" · ")}` : head;
   } else {
     dotClass = "dot on";
     label = engine.loaded ? "就绪 · 模型已加载" : "就绪 · 模型未加载";
@@ -189,13 +189,6 @@ function renderStage(data) {
   nodes.stageText.textContent = label;
   // 进度条：有百分比就走百分比，算不出来时来回扫。
   const activeProgress = engine.active?.progress ?? null;
-  // 耗时锚点：每次推送对一次表，两次推送之间由定时器补差。
-  if (engine.active && activeProgress) {
-    const measured = activeProgress.liveElapsedMs ?? activeProgress.elapsedMs;
-    if (typeof measured === "number") elapsedAnchor = { at: Date.now(), ms: measured };
-  } else {
-    elapsedAnchor = null;
-  }
   nodes.topProgress.hidden = !engine.active;
   if (activeProgress) {
     const percent = typeof activeProgress.percent === "number" ? activeProgress.percent : 0;
@@ -765,6 +758,14 @@ function loadJob(job) {
 // ── 总渲染 ─────────────────────────────────────────────────────────────
 function render(data) {
   latest = data;
+  // 锚点只在这里对表：定时器重调 renderStage 时不能再改它，否则秒数会被拉回去。
+  const liveProgress = data.engine.active?.progress ?? null;
+  if (liveProgress) {
+    const measured = liveProgress.liveElapsedMs ?? liveProgress.elapsedMs;
+    if (typeof measured === "number") elapsedAnchor = { at: Date.now(), ms: measured };
+  } else {
+    elapsedAnchor = null;
+  }
   renderStage(data);
   renderQueue(data);
   renderVersions(data);
@@ -858,8 +859,10 @@ document.addEventListener("click", () => closeMenu());
 // 引擎回帧间隔可能好几秒，这里每秒把「已用」自己走一格。
 setInterval(() => {
   const active = latest?.engine?.active;
-  if (!active || nodes.result.hidden) return;
+  if (!active) return;
   nodes.resultCaption.textContent = activeCaption(active);
+  // chip 的「已跑」也要走秒。
+  renderStage(latest);
 }, 1000);
 nodes.stageCancel.addEventListener("click", () => {
   const active = latest?.engine?.active;
