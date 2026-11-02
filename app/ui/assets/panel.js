@@ -62,7 +62,6 @@ const nodes = {
   generate: el("pn-generate"),
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
-  save: el("pn-save"),
   errors: el("pn-errors"),
   engineVersion: el("pn-engine-version"),
 };
@@ -369,6 +368,7 @@ function render(data) {
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。
   const busy = Boolean(data.engine.active) || data.queue.length > 0;
   nodes.generate.textContent = busy ? "加入队列" : "开始生成";
+  nodes.generate.title = busy ? "当前有任务在跑，点这里排到它后面" : "";
   const done = data.jobs.filter((job) => job.status === "done").length;
   const failed = data.jobs.filter((job) => job.status === "error").length;
   nodes.errors.textContent = failed ? `完成 ${done} · 失败 ${failed}` : done ? `完成 ${done}` : "";
@@ -437,31 +437,51 @@ async function onCancel() {
   }
 }
 
-async function onSaveSettings() {
-  try {
-    render(
-      await post("/settings", {
-        memoryMode: nodes.memoryMode.value,
-        tier: nodes.tier.value,
-        defaults: {
-          width: Number(nodes.width.value),
-          height: Number(nodes.height.value),
-          steps: Number(nodes.steps.value),
-          cfg: Number(nodes.cfg.value),
-          hiresScale: Number(nodes.hires.value) || 0,
-          hiresSteps: Math.round(Number(nodes.hiresSteps.value) || 0),
-        },
-      }),
-    );
-    say("设置已保存", "ok");
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-  }
+// ── 参数自动保存 ─────────────────────────────────────────────────
+// 参数改了就算默认，不再要求用户理解「保存」这个动作。防抖 800ms，拖动时也不会
+// 把磁盘写穿。
+let saveTimer = null;
+
+function collectDefaults() {
+  return {
+    width: Number(nodes.width.value) || 768,
+    height: Number(nodes.height.value) || 768,
+    steps: Number(nodes.steps.value) || 8,
+    cfg: Number(nodes.cfg.value) || 3,
+    hiresScale: Number(nodes.hires.value) || 0,
+    hiresSteps: Math.round(Number(nodes.hiresSteps.value) || 0),
+  };
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    void post("/settings", {
+      memoryMode: nodes.memoryMode.value,
+      tier: nodes.tier.value,
+      defaults: collectDefaults(),
+    }).catch(() => {
+      /* 存不进去也不打断手头的操作 */
+    });
+  }, 800);
+}
+
+for (const node of [
+  nodes.width,
+  nodes.height,
+  nodes.steps,
+  nodes.cfg,
+  nodes.hires,
+  nodes.hiresSteps,
+  nodes.memoryMode,
+  nodes.tier,
+]) {
+  node.addEventListener("input", scheduleSave);
+  node.addEventListener("change", scheduleSave);
 }
 
 nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
-nodes.save.addEventListener("click", onSaveSettings);
 bindSizeSliders();
 
 // ── 主区域的“用这张的参数” ─────────────────────────────────────
