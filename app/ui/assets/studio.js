@@ -376,9 +376,9 @@ async function renderGallery(data) {
     galleryJobs.filter((job) => !liveIds.has(job.id) && job.status !== "cancelled"),
   );
   await Promise.all(visible.filter((job) => job.status === "done" && job.output).map((job) => loadImage(job.output)));
-  // 首帧还没有 /jobs 的结果，但 state 已经带了总数：角标先按它显示，
-  // 等分页回来自然对齐。
-  const shownCount = data.jobTotal ?? (galleryTotal || visible.length);
+  // 首帧还没有 /jobs 的结果，但 state 已经带了成图数：角标先按它显示，
+  // 等分页回来自然对齐。用 doneTotal 而不是 jobTotal：后者含失败与取消。
+  const shownCount = data.doneTotal ?? (galleryTotal || visible.length);
   nodes.galleryCount.textContent = shownCount ? `${visible.length} / ${shownCount} 张` : "";
   nodes.tabCount.textContent = shownCount ? ` ${shownCount}` : "";
   if (!visible.length) {

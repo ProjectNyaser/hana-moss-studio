@@ -110,7 +110,10 @@ export function readPngText(file) {
   return text;
 }
 
-/** 扫一遍目录，把每张图还原成一条记录。按生成时间倒序。 */
+/** 扫一遍目录，把每张图还原成一条记录。按生成时间倒序。
+ *
+ * 引擎写的 generation JSON 里没有高清修正字段（只有 width/height 是最终尺寸）。
+ * 所以从盘上恢复的记录不带 hires 信息，不要在这里编一个 0 ��充「未开启」。 */
 export function scanOutputs(dir) {
   let names;
   try {
@@ -143,9 +146,6 @@ export function scanOutputs(dir) {
       tier: meta?.engine?.tier ?? null,
       shaper: meta?.sampler ?? null,
       scheduler: meta?.scheduler ?? null,
-      hiresScale: meta?.hires?.width ? 1 : 0,
-      hiresWidth: meta?.hires?.width ?? null,
-      hiresHeight: meta?.hires?.height ?? null,
       status: "done",
       output: name,
       createdAt,

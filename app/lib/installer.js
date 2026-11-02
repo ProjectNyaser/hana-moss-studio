@@ -258,6 +258,9 @@ export function pickEngineAsset(assets, version, gpu, preferCuda) {
   return { asset: picked, cuda, sm75, variant: bundled ? "bundled" : "system-cuda" };
 }
 
+/** 校验值不符。单独一个类，靠类型区分「校验失败」与「拿不到校验值」，不靠错误文案。 */
+class ChecksumMismatch extends Error {}
+
 /** 扫目录总字节，用来算下载进度。 */
 function dirBytes(dir) {
   if (!existsSync(dir)) return 0;
@@ -269,6 +272,26 @@ function dirBytes(dir) {
     else total += stat.size;
   }
   return total;
+}
+
+/**
+ * dirBytes 的带缓存版。state() 每次推送都调 listEngines / listModels，
+ * 而它们要把两个大目录递归 stat 一遍（模型 25 GiB、引擎 0.5 GB）。
+ * 安装、删除与切换后由 invalidateSizes() 清掉。
+ */
+const sizeCache = new Map();
+const SIZE_TTL_MS = 10_000;
+
+function cachedBytes(dir) {
+  const hit = sizeCache.get(dir);
+  if (hit && Date.now() - hit.at < SIZE_TTL_MS) return hit.bytes;
+  const bytes = dirBytes(dir);
+  sizeCache.set(dir, { at: Date.now(), bytes });
+  return bytes;
+}
+
+function invalidateSizes() {
+  sizeCache.clear();
 }
 
 /** 目录名 → 版本与构建。命名规则：mossinfer-<ver>-<os>-<cu>-x86_64[-sm75][-system-cuda]。 */
@@ -336,7 +359,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
    * 已装引擎清单。旧版本装完不删，回滚就是在这里切回去。
    * 只列真带 bin/moss-server.exe 的目录，半途而废的解压残留不会冒充可用版本。
    */
-  function listEngines() {    if (!existsSync(engineDir)) return [];
+  function listEngines() {
+    if (!existsSync(engineDir)) return [];
     const current = String(getSettings().serverPath ?? "");
     return readdirSync(engineDir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -347,7 +371,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
           name: entry.name,
           serverPath,
           current: serverPath === current,
-          bytes: dirBytes(join(engineDir, entry.name)),
+          bytes: cachedBytes(join(engineDir, entry.name)),
           ...parseEngineName(entry.name),
         };
       })
@@ -430,6 +454,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     if (!target) throw new Error(`没有已装版本 ${name}`);
     if (target.current) saveSettings({ serverPath: "" });
     rmSync(join(engineDir, name), { recursive: true, force: true });
+    invalidateSizes();
     return listEngines();
   }
 
@@ -439,6 +464,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     const dir = getSettings().modelPaths?.[key];
     if (!dir || !existsSync(dir)) throw new Error("没有已装模型");
     rmSync(dir, { recursive: true, force: true });
+    invalidateSizes();
     const paths = { ...(getSettings().modelPaths ?? {}), [key]: null };
     const active = getSettings().modelPath === dir ? (paths.sft ?? "") : getSettings().modelPath;
     saveSettings({ modelPaths: paths, modelPath: active });
@@ -503,6 +529,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   }
 
   function finish(update) {
+    invalidateSizes();
     patch({ ...update, percent: 100, finishedAt: new Date().toISOString() });
     setTimeout(startNext, 0);
   }
@@ -830,12 +857,13 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       if (!want) throw new Error("官方校验文件里没有这个包");
       const got = await sha256File(zip);
       if (got.toLowerCase() !== want.toLowerCase()) {
-        throw new Error(`sha256 不符：期望 ${want.slice(0, 12)}…，实际 ${got.slice(0, 12)}…`);
+        throw new ChecksumMismatch(`期望 ${want.slice(0, 12)}…，实际 ${got.slice(0, 12)}…`);
       }
       verified = true;
     } catch (error) {
+      // 校验真不符就必须停下；拉不到校验值才允许跳过比对。
+      if (error instanceof ChecksumMismatch) throw error;
       const text = String(error?.message ?? error);
-      if (text.startsWith("sha256 不符")) throw error;
       patch({ message: `拿不到官方校验值（${text.slice(0, 60)}），跳过比对` });
     }
 
@@ -925,18 +953,28 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       patch({ phase: "verify", message: "校验 sha256" });
       const sumsUrl = asset.browser_download_url.replace(/[^/]+$/, "SHA256SUMS");
       let sums = "";
+      let sumsError = null;
       try {
         sums = await fetchText(network, sumsUrl);
-      } catch {
-        sums = "";
+      } catch (error) {
+        // 网络失败与「文件里没这一条」是两回事，不能都报成后者。
+        sumsError = error instanceof Error ? error.message : String(error);
       }
       const want = sums
         .split(/\r?\n/)
         .map((line) => line.trim().split(/\s+/))
         .find((parts) => parts[1] === asset.name)?.[0];
-      if (!want) throw new Error("Release 里找不到这个包的 SHA256SUMS 条目");
+      if (!want) {
+        throw new Error(
+          sumsError
+            ? `拿不到 SHA256SUMS：${sumsError.slice(0, 160)}`
+            : `Release 里找不到 ${asset.name} 的 SHA256SUMS 条目`,
+        );
+      }
       const got = await sha256File(zip);
-      if (got.toLowerCase() !== want.toLowerCase()) throw new Error(`sha256 不符：期望 ${want}，实际 ${got}`);
+      if (got.toLowerCase() !== want.toLowerCase()) {
+        throw new ChecksumMismatch(`期望 ${want}，实际 ${got}`);
+      }
 
       patch({ phase: "extracting", message: "解压" });
       try {
@@ -1055,7 +1093,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         repo: meta.repo,
         installed,
         path: installed ? dir : null,
-        bytes: installed ? dirBytes(dir) : null,
+        bytes: installed ? cachedBytes(dir) : null,
         // 组件明细：选模型时最常问的就是「这个 27 GB 到底花在哪」。
         components: installed ? modelComponents(dir) : null,
         active: installed && settings.modelPath === dir,
@@ -1076,7 +1114,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     for (const [folder, label] of parts) {
       const sub = join(dir, folder);
       if (!existsSync(sub)) continue;
-      rows.push({ label, bytes: dirBytes(sub) });
+      rows.push({ label, bytes: cachedBytes(sub) });
     }
     return rows.length ? rows : null;
   }

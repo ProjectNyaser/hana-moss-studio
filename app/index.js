@@ -660,7 +660,8 @@ async function ensureThumb(file, size = 320) {
   const dst = thumbPath(file, size);
   if (existsSync(dst) || !existsSync(file)) return;
   try {
-    await shrinkToWebp(file, dst, size);
+    // force：小图不够宽也要转。不转就没有这个文件，每次请求都会重新解一遍 PNG。
+    await shrinkToWebp(file, dst, size, { force: true });
   } catch {
     /* 转不出来就等路由那里退回原图 */
   }
@@ -670,6 +671,8 @@ function state() {
   const settings = store.getSettings();
   const snapshot = engine.snapshot();
   const active = liveActive();
+  // 每帧要三处用到任务列表（画布/队列、记录数、成图数），算一次就够。
+  const allJobs = store.listJobs();
   return {
     settings,
     engine: {
@@ -698,13 +701,14 @@ function state() {
     // 只带界面当场要用的那几条：未收尾的全带（排队、运行、失败），完成的只留最近
     // 两条给画布与首屏。整份历史走 /jobs 分页，不该每帧跟着 state 跑一遍。
     jobs: (() => {
-      const all = store.listJobs();
-      const pending = all.filter((job) => job.status !== "done" && job.status !== "cancelled");
-      const done = all.filter((job) => job.status === "done").slice(0, 2);
+      const pending = allJobs.filter((job) => job.status !== "done" && job.status !== "cancelled");
+      const done = allJobs.filter((job) => job.status === "done").slice(0, 2);
       return [...pending, ...done].map(slimJob);
     })(),
     // 全量记录数：state 只带前面那些，界面上的总数不能跟着它算。
-    jobTotal: store.listJobs().length,
+    jobTotal: allJobs.length,
+    // 真正能看到的图。画廊角标用这个，不能用 jobTotal（它含失败与取消）。
+    doneTotal: allJobs.filter((job) => job.status === "done" && job.output).length,
     // 只算还没收尾的：结束的任务进度已经没意义，四十条堆在每帧里白占体积。
     progress: Object.fromEntries(
       [...live.values()]
@@ -1262,12 +1266,6 @@ function state() {
         }
       }
       store.removeJob(id);
-      schedulePush(0);
-      return c.json(state());
-    });
-
-    app.post(`/${APP_ID}/jobs/clear`, (c) => {
-      // 记录跟着图走，这里只把成功过的任务清出运行态，不动文件。
       schedulePush(0);
       return c.json(state());
     });

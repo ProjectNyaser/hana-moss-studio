@@ -373,13 +373,32 @@ export class Engine {
   async generate(job) {
     if (!this.child) await this.start();
     if (this.active) throw new Error("引擎正忙");
-    await this.ensureLoaded(job);
     const active = { jobId: job.id, phase: "", output: job.output, resolve: null, reject: null };
     const settled = new Promise((resolve, reject) => {
       active.resolve = resolve;
       active.reject = reject;
     });
+    // 先占位再加载模型：加载要几十秒，不占位的话这期间点取消会落空，
+    // 而且第二个 generate 也能穿过「引擎正忙」的检查。
     this.active = active;
+    try {
+      await this.ensureLoaded(job);
+    } catch (error) {
+      if (this.active === active) this.active = null;
+      // 加载失败也要发 done：宿主任务桥靠这个事件结算，不发就一直挂着。
+      // 这里不 reject（settled 还在调用方手里，没人接就是未捕获的 rejection）。
+      const text = error instanceof Error ? error.message : String(error);
+      this.lastError = text;
+      this.onEvent({ type: "done", jobId: job.id, status: "error", error: text });
+      throw error;
+    }
+    if (active.cancelRequested) {
+      this.active = null;
+      const text = "已取消";
+      this.onEvent({ type: "done", jobId: job.id, status: "cancelled" });
+      active.resolve?.({ status: "cancelled", output: job.output });
+      return settled;
+    }
     // 上一张的预览可能是缩图，新任务第一帧之前不能拿它充数。
     this.previewIsSmall = false;
     const params = {
@@ -429,15 +448,21 @@ export class Engine {
 
   async cancel(jobId) {
     if (!this.active || this.active.jobId !== jobId) return false;
+    // 模型加载期间引擎还没拿到 generate，此时发 cancel 它不认。先记下来，
+    // generate 加载完看到这个标记就直接放弃，不再往下提交。
+    this.active.cancelRequested = true;
     try {
       this.send({ id: `cancel-${++this.sequence}`, method: "cancel", params: { id: String(jobId) } });
       return true;
     } catch {
-      return false;
+      return this.active?.cancelRequested === true;
     }
   }
 
   teardown() {
+    // 当前任务的 promise 只有引擎发 done 事件才 settle。进程是被杀掉的、不会再发
+    // 任何事件，不在这里 reject，调用方的 await 就永久挂着，队列也跟着卡死。
+    const active = this.active;
     this.child = null;
     this.active = null;
     this.loadedKey = null;
@@ -447,6 +472,11 @@ export class Engine {
       entry.reject(new Error("引擎进程已结束"));
     }
     this.pending.clear();
+    if (active) {
+      const text = "引擎已停止，任务中断";
+      this.onEvent({ type: "done", jobId: active.jobId, status: "error", error: text });
+      active.reject?.(new Error(text));
+    }
   }
 
   stop() {
