@@ -222,20 +222,19 @@ function tToRatio(t) {
   return ratio;
 }
 
-/** 先认标准比；认不出就约分：2000×2080 是 25:26。
- *  约完两个数都太大（1872×1936 是 117:121）才退回数值写法。 */
-function ratioLabel(ratio, width, height) {
+/** 拇指只报拖动会落到的目标比：标准比优先，否则写数值。 */
+function ratioLabel(ratio) {
   for (const snap of RATIO_SNAPS) {
     if (Math.abs(ratio - snap.value) / snap.value <= LABEL_TOLERANCE) return snap.label;
   }
-  if (width && height) {
-    const gcd = (a, b) => (b ? gcd(b, a % b) : a);
-    const g = gcd(width, height) || 1;
-    const n = width / g;
-    const d = height / g;
-    if (n <= 64 && d <= 64) return `${n}:${d}`;
-  }
   return ratio >= 1 ? `${ratio.toFixed(2)}:1` : `1:${(1 / ratio).toFixed(2)}`;
+}
+
+/** 右侧报实际宽高的约分比，不做标准比匹配、不限位数：2000×2080 就是 25:26。 */
+function simplifyRatio(width, height) {
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  const g = gcd(width, height) || 1;
+  return `${width / g}:${height / g}`;
 }
 
 function placeThumb(container, thumb, pct) {
@@ -296,9 +295,9 @@ function renderSize() {
 
   const rx = placeThumb(nodes.ratioSlider, nodes.ratioThumb, ratioToT(shownRatio));
   nodes.ratioFill.style.width = `${rx}px`;
-  nodes.ratioThumb.textContent = ratioLabel(shownRatio, width, height);
+  nodes.ratioThumb.textContent = ratioLabel(shownRatio);
   nodes.ratioThumb.setAttribute("aria-valuenow", Math.log2(shownRatio).toFixed(2));
-  nodes.ratioNote.textContent = ratioLabel(shownRatio, width, height);
+  nodes.ratioNote.textContent = simplifyRatio(width, height);
 
   const mpNotch = Math.max(MP_NOTCH_MIN, Math.min(MP_NOTCH_MAX, Number((Math.round(megapixels * 10) / 10).toFixed(1))));
   const mpPct = (mpNotch - MP_NOTCH_MIN) / (MP_NOTCH_MAX - MP_NOTCH_MIN);
