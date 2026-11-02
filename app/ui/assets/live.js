@@ -12,6 +12,8 @@ const RECONNECT_DELAY_MS = 2500;
 const FALLBACK_POLL_MS = 5000;
 /** 退化到轮询后隔多久再试一次真流式。 */
 const SSE_RETRY_MS = 45_000;
+/** 连上活不过这个时长，就当这条路不通，不用每两秒再试一次。 */
+const SHORT_LIVED_MS = 30_000;
 
 /**
  * 输出图片的直接地址。带上宿主注入的 surface 会话（appSurfaceSession），
@@ -41,6 +43,10 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
   let reader = null;
   let connecting = false;
   let degraded = false;
+  /** 连续短命连接计数：达到三次就判定流式这条路不通。 */
+  let shortLived = 0;
+  /** 重试窗口的退避倍数。 */
+  let retryRound = 0;
 
   /** 掐掉当前这条流。重复调用无害。 */
   function stopReader() {
@@ -75,13 +81,14 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
     }, FALLBACK_POLL_MS);
     // 轮询只是兜底。一次开流失败不代表以后都不行，过一阵再试一次真流式。
     clearTimeout(retryTimer);
+    retryRound = Math.min(retryRound + 1, 4);
     retryTimer = setTimeout(() => {
       if (disposed) return;
       clearInterval(pollTimer);
       pollTimer = null;
       degraded = false;
       void connect();
-    }, SSE_RETRY_MS);
+    }, SSE_RETRY_MS * 2 ** (retryRound - 1));
   }
 
   async function connect() {
@@ -89,6 +96,7 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
     connecting = true;
     // 进新连接之前先确保旧的那条已经关掉。
     stopReader();
+    const startedAt = Date.now();
     let firstFrame = setTimeout(() => degrade(new Error("事件流没有回帧")), FIRST_FRAME_TIMEOUT_MS);
     try {
       const response = await hana.api.fetch(`${API}/events${source ? `?src=${encodeURIComponent(source)}` : ""}`, {
@@ -135,6 +143,18 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
     }
     if (disposed || degraded) return;
     stopReader();
+    // 宿主那层会把流截断（实测一条十五秒）。拦不住的断没关系，但连上就没命、
+    // 两秒半后又开一条的，就不该继续试了，那是白占连接。
+    if (Date.now() - startedAt < SHORT_LIVED_MS) {
+      shortLived += 1;
+      if (shortLived >= 3) {
+        degrade(new Error("事件流活不长，改用轮询"));
+        return;
+      }
+    } else {
+      shortLived = 0;
+      retryRound = 0;
+    }
     retryTimer = setTimeout(connect, RECONNECT_DELAY_MS);
   }
 

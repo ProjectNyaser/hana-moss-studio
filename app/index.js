@@ -855,7 +855,7 @@ export default defineApp(async (sdk) => {
             } catch {
               cleanup();
             }
-          }, 15000);
+          }, 8000);
           heartbeat.unref?.();
 
           const client = {
