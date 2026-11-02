@@ -11,6 +11,7 @@ const nodes = {
   tabCount: el("tab-count"),
   tabQueue: el("tab-queue"),
   stageChip: el("stage-chip"),
+  stageCancel: el("stage-cancel"),
   topProgress: el("top-progress"),
   topProgressBar: el("top-progress-bar"),
   stageDot: el("stage-dot"),
@@ -193,8 +194,8 @@ function renderStage(data) {
     nodes.topProgress.classList.toggle("indeterminate", percent <= 0);
     nodes.topProgressBar.style.width = percent > 0 ? `${percent}%` : "";
   }
-  // 生成中时这块可以点：点一下就取消，不必回到侧栏。
-  nodes.stageChip.classList.toggle("cancelable", Boolean(engine.active));
+  // 生成中才给一个明确的取消按钮，不做「点状态块就取消」那种隐式交互。
+  nodes.stageCancel.hidden = !engine.active;
   nodes.stageChip.title = engine.lastError ?? "";
   nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
@@ -834,8 +835,7 @@ nodes.viewerStage.addEventListener(
   { passive: false },
 );
 document.addEventListener("click", () => closeMenu());
-// 顶部的进度块可点：生成中点一下就取消。
-nodes.stageChip.addEventListener("click", () => {
+nodes.stageCancel.addEventListener("click", () => {
   const active = latest?.engine?.active;
   if (!active) return;
   void post("/cancel", { id: active.jobId });

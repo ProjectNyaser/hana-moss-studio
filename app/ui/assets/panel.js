@@ -328,7 +328,11 @@ function renderSize() {
   const maxScale = hiresMax();
   // 基础尺寸变了，刻度上限也跟着变，旧倍率可能已经超过它。
   // 这里把值收到新刻度内，否则拇指上的数字会停在早就做不到的值上。
+  const beforeClamp = hiresScale;
   hiresScale = quantizeHires(Math.min(Math.max(1, hiresScale), maxScale), maxScale);
+  // 夹过的值要写回设置：否则工具与卡片提交时还在用旧的、当下做不到的倍率，
+  // 界面显示关闭、引擎却跑了第二阶段。
+  if (hiresScale !== beforeClamp) scheduleSave();
   const notchMax = maxScale > 1.001 ? Math.ceil(maxScale * 10 - 1e-9) / 10 : 1;
   const effectiveScale = Math.min(hiresScale, maxScale);
   const hiresPct = notchMax > 1 ? Math.min(1, (hiresScale - 1) / (notchMax - 1)) : 0;
