@@ -304,10 +304,16 @@
         <span class="pn-head-title"><svg class="ic"><use href="#i-sliders"/></svg>生成参数</span>
         <span class="hint" id="pn-size-note"></span>
       </div>
+      <div class="pn-head">
+        <span>画幅比例</span>
+      </div>
       <div class="pn-slider" id="pn-ratio-slider">
         <div class="pn-slider-rail"><i class="pn-slider-fill" id="pn-ratio-fill"></i></div>
         <span class="pn-slider-thumb" id="pn-ratio-thumb" role="slider" tabindex="0"
               aria-label="画幅比例，中间为方形" aria-valuemin="-1" aria-valuemax="1">1:1</span>
+      </div>
+      <div class="pn-head">
+        <span>图像大小</span>
       </div>
       <div class="pn-slider" id="pn-slider">
         <div class="pn-slider-rail"><i class="pn-slider-fill" id="pn-slider-fill"></i></div>
@@ -317,17 +323,8 @@
       <div class="pn-grid">
         <label class="field"><span class="label">宽</span><input id="pn-width" type="number" min="256" max="4096" step="16" value="768"></label>
         <label class="field"><span class="label">高</span><input id="pn-height" type="number" min="256" max="4096" step="16" value="768"></label>
-        <label class="field"><span class="label">步数</span><input id="pn-steps" type="number" min="1" max="80" value="8"></label>
-        <label class="field"><span class="label">CFG</span><input id="pn-cfg" type="number" min="0" max="20" step="0.5" value="3"></label>
       </div>
-      <div class="field">
-        <span class="label">种子</span>
-        <div class="pn-row">
-          <input id="pn-seed" type="number" min="0" placeholder="留空随机">
-          <button class="btn ghost small" id="pn-reroll" type="button" title="换成随机种子">随机</button>
-        </div>
-      </div>
-      <div class="pn-head" style="margin-top: 14px">
+      <div class="pn-head">
         <span>高清修正</span>
         <span class="hint" id="pn-hires-note">关闭</span>
       </div>
@@ -337,7 +334,16 @@
               aria-label="高清修正倍率" aria-valuemin="1" aria-valuemax="3">×1.0</span>
       </div>
       <div class="pn-grid">
+        <label class="field"><span class="label">步数</span><input id="pn-steps" type="number" min="1" max="80" value="8"></label>
+        <label class="field"><span class="label">CFG</span><input id="pn-cfg" type="number" min="0" max="20" step="0.5" value="3"></label>
         <label class="field"><span class="label">修正步数</span><input id="pn-hires-steps" type="number" min="0" max="80" value="0" placeholder="跟主步数"></label>
+      </div>
+      <div class="field">
+        <span class="label">种子</span>
+        <div class="pn-row">
+          <input id="pn-seed" type="number" min="0" placeholder="留空随机">
+          <button class="btn ghost small" id="pn-reroll" type="button" title="换成随机种子">随机</button>
+        </div>
       </div>
       <div class="pn-grid">
         <label class="field">

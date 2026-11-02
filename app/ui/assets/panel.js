@@ -283,8 +283,10 @@ function renderSize() {
   }
   const finalMP = (finalW * finalH) / 1e6;
   const differs = finalW !== base.width || finalH !== base.height;
-  nodes.sizeNote.textContent = differs || base.adjusted
-    ? `${width}×${height} → ${finalW}×${finalH} · ${finalMP.toFixed(2)}MP`
+  // 写成 w × h × 倍率 → 最终尺寸，一眼看出倍率起了多大作用。
+  const scaleLabel = hiresScale > 1.001 ? ` ×${hiresScale.toFixed(1)}` : "";
+  nodes.sizeNote.textContent = differs || base.adjusted || scaleLabel
+    ? `${width}×${height}${scaleLabel} → ${finalW}×${finalH} · ${finalMP.toFixed(2)}MP`
     : `${width}×${height} · ${finalMP.toFixed(2)}MP`;
   nodes.sizeNote.className = base.adjusted ? "hint bad" : "hint";
 
