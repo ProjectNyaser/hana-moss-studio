@@ -27,6 +27,8 @@ const GLOBALS = new Set([
   "performance", "crypto", "Atomics", "SharedArrayBuffer", "Float16Array",
   "ResizeObserver", "MutationObserver", "IntersectionObserver", "PointerEvent",
   "KeyboardEvent", "MouseEvent", "CustomEvent", "DOMParser", "XMLSerializer",
+  // 动态 import() 会被当成调用，require 同理。两者都有语法或运行时提供的定义。
+  "import", "require",
 ]);
 
 const KEYWORDS = /^(if|for|while|switch|catch|return|typeof|new|await|in|of|do|else|throw|delete|void|yield|async|function|super|this|case|with|default|try|finally|break|continue|instanceof|new|class|const|let|var)$/;
