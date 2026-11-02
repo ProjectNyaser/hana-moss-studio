@@ -28,7 +28,7 @@ scripts/
   derive.mjs            从依赖树展开 app/sdk、ui 侧副本与 manifest#minAppVersion
   package.mjs           产出 build/<appId>/
   pack.mjs              出安装包与市场投稿条目
-  fetch-weights.mjs     按清单续传拉权重（三平台同一份）
+  fetch-weights.mjs     按清单拉权重（aria2c 优先，缺了就 Node fetch）
   smoke-generate.mjs    绕开 UI 直跑引擎
 vendor/mossimage.cpp    引擎源与权威文档（git submodule，shallow）
 vendor/aria2            下载器源（git submodule，shallow，GPLv2）
@@ -143,9 +143,11 @@ dist-extensions/app-<id>-<version>.entry.json   市场投稿条目
 node scripts/fetch-weights.mjs
 ```
 
-默认落到 `<HANA_HOME>/app-data/hana-moss-studio/models/moss-image-sft`，`--root` 改目录，`--endpoint` 换镜像。断点续传按字节范围做，中断重跑接着下，已完整的文件跳过。
+默认落到 `<HANA_HOME>/app-data/hana-moss-studio/models/moss-image-sft`，`--root` 改目录，`--endpoint` 换镜像。
 
-不走 `huggingface_hub` 是因为它在部分网络下会走 Xet 的 CAS 通道，连接建起来但读不动，反复 `The read operation timed out`。同一个镜像用 curl 单连接能到 8–11 MB/s。脚本按大小校验完整性，中断重跑会接着下。
+下载器优先用 aria2c（`--aria2 <path>` > `<app-data>/tools/aria2c.exe` > PATH），多连接 + 自带重连；都没有就走 Node fetch 单连接，慢但能跑。`--bootstrap-aria2` 会从官方 Release 取一份 2.4 MB 的包放到 `tools/`。已完整的文件跳过，中断重跑接着下。
+
+不走 `huggingface_hub` 是因为它在部分网络下会走 Xet 的 CAS 通道，连接建起来但读不动，反复 `The read operation timed out`。
 
 `moss-server` 的 `load` 参数取 diffusers 目录根（含 `transformer/`、`text_encoder/`、`vae/`、`model_index.json`）。
 
