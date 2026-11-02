@@ -194,8 +194,14 @@ function envSummary() {
   };
 }
 
+/** 安装时用的探测：只走 WMI。
+ *
+ * 在 App 进程里 nvidia-smi 固定失败（宿主的 win32-job 沙箱，NVML 起不来），
+ * 先试它只会白花时间，没有成功可能。完整的两条通道对比见 probeGpuDetailed。
+ */
 export async function probeGpu() {
-  return (await probeGpuDetailed()).gpu;
+  const wmi = await probeGpuViaWmi();
+  return wmi.ok ? wmi.gpu : null;
 }
 
 /** 从资产名里挑出一个包。preferCuda 是手动指定的 cu12/cu13，不指定就看驱动。 */
