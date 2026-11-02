@@ -181,16 +181,18 @@ function renderStage(data) {
   nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
 
-/** 采样预览：有 active 且有 previewAt 就显示那张图，换 URL 避开缓存。 */
+/** 采样预览：有 active 且有 previewAt 就显示那张图，换 URL 避开缓存。
+ *  这里一并把结果图与空状态让开：preview 事件是单独推的，不走整帧渲染，
+ *  不在这里处理就会和上一张结果叠在画布上。 */
 function renderPreview(data) {
   const active = data?.engine?.active;
   const at = active?.previewAt;
   const img = nodes.previewImage;
-  if (!active || !at) {
-    img.hidden = true;
-    return;
-  }
-  img.hidden = false;
+  const showPreview = Boolean(active && at);
+  img.hidden = !showPreview;
+  if (!showPreview) return;
+  nodes.result.hidden = true;
+  nodes.canvasEmpty.hidden = true;
   if (img.dataset.at !== String(at)) {
     img.dataset.at = String(at);
     img.src = previewUrl(at);
