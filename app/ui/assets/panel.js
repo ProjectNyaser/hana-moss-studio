@@ -193,9 +193,28 @@ function currentRatio() {
   return (Number(nodes.width.value) || 768) / (Number(nodes.height.value) || 768);
 }
 
-/** 像素量定了，宽高就定了：短边取 16 的倍数，长边按比例算。
- *  两边都向下取整：向上凑那一刻就会把总像素顶过上限（4.2MP → 2752×1536 = 4.23MP）。 */
+/** 标准比对应的最小 16 倍数整数对：16:9 就是 256:144 的倍数。 */
+const RATIO_UNITS = [
+  [256, 144],
+  [48, 32],
+  [64, 48],
+  [16, 16],
+  [48, 64],
+  [32, 48],
+  [144, 256],
+];
+
+/** 像素量定了宽高就定了。
+ *  标准比用整数对成倍放大，比例才能保持精确；
+ *  非标准比只能分别向下取整（会偏离一点，但总像素不超上限）。 */
 function sizeFor(ratio, megapixels) {
+  const unit = RATIO_UNITS.find(([p, q]) => Math.abs(p / q - ratio) < 1e-9);
+  if (unit) {
+    const [p, q] = unit;
+    let m = Math.max(1, Math.round(Math.sqrt((megapixels * 1e6) / (p * q))));
+    while (m > 1 && m * m * p * q > MAX_MP * 1e6) m -= 1;
+    return [p * m, q * m];
+  }
   const spread = ratio >= 1 ? ratio : 1 / ratio;
   const short = Math.max(256, Math.floor(Math.sqrt((megapixels * 1e6) / spread) / 16) * 16);
   const long = Math.floor((short * spread) / 16) * 16;
@@ -215,7 +234,12 @@ function ratioToT(ratio) {
 
 function tToRatio(t) {
   const clamped = Math.min(1, Math.max(0, t));
-  const ratio = 2 ** (RATIO_LOG_LO + clamped * RATIO_LOG_SPAN);
+  return snapRatio(2 ** (RATIO_LOG_LO + clamped * RATIO_LOG_SPAN));
+}
+
+/** 接近标准比就抬到标准比本身。
+ *  拖动中会把它锁存起来重用，不抬的话 53:30 这种偏差会一直带着走。 */
+function snapRatio(ratio) {
   for (const snap of RATIO_SNAPS) {
     if (Math.abs(ratio - snap.value) / snap.value <= SNAP_TOLERANCE) return snap.value;
   }
@@ -374,7 +398,8 @@ function bindSizeSliders() {
   }
 
   function applyMP(clientX) {
-    const ratio = pinnedRatio ?? currentRatio();
+    // 当前比例接近标准比就先抬到标准比：不然 2544×1440 这类偏差会一直传下去。
+    const ratio = snapRatio(pinnedRatio ?? currentRatio());
     const [w, h] = sizeFor(ratio, mpFromNotch(mpNotchAt(pctFromEvent(nodes.slider, clientX))));
     setSize(w, h);
   }
