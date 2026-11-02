@@ -663,8 +663,7 @@ function openMenu(event, job) {
   const menu = nodes.ctxMenu;
   const items = [];
   if (job.status === "done" && job.output) {
-    items.push({ label: "在画布中显示", run: () => focusOnCanvas(job.id) });
-    items.push({ label: "用这张的参数", run: () => reuseParams(job) });
+    items.push({ label: "载入这张", run: () => loadJob(job) });
     items.push({ sep: true });
   }
   items.push({
@@ -701,16 +700,14 @@ function openMenu(event, job) {
   menu.style.top = `${top}px`;
 }
 
-/** 把某一张设为画布上的主角。 */
-function focusOnCanvas(id) {
-  selectedId = id;
+/**
+ * 载入这张：画布上显示它，同时把参数送回侧栏。
+ * 这两件事本来就是同一个意图（拿这张继续改），不拆成两个菜单项。
+ */
+function loadJob(job) {
+  selectedId = job.id;
   renderedJobsKey = null;
   showView("canvas");
-  void refresh();
-}
-
-/** 把这张的提示词与参数送回侧栏，在画布页接着改。 */
-function reuseParams(job) {
   channel?.postMessage({
     type: "reuse",
     job: {
@@ -723,7 +720,7 @@ function reuseParams(job) {
       seed: job.seed,
     },
   });
-  showView("canvas");
+  void refresh();
 }
 
 // ── 总渲染 ─────────────────────────────────────────────────────────────
