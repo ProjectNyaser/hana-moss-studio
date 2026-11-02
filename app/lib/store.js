@@ -127,7 +127,14 @@ export function createStore(dataDir, outputsDir) {
     },
 
     saveJobs(next) {
-      jobs = next.slice(0, 300);
+      // 已完成只留文件里没有的两样：耗时与 report。其余全从 PNG 扫。
+      jobs = next
+        .map((job) =>
+          job.status === "done"
+            ? { id: job.id, status: "done", elapsedMs: job.elapsedMs ?? null, report: job.report ?? null }
+            : job,
+        )
+        .slice(0, 300);
       writeFileSync(jobsFile, JSON.stringify(jobs, null, 2), "utf8");
       return jobs;
     },
