@@ -411,6 +411,7 @@ async function renderGallery(data) {
       const active = data.engine.active;
       if (active && job.id === active.jobId && active.previewAt) {
         // 正在采样的那张也显示中间结果，而不是一个转圈。
+        tile.classList.add("sampling");
         const preview = document.createElement("img");
         preview.className = "preview-thumb";
         preview.src = previewUrl(active.previewAt);
@@ -418,8 +419,13 @@ async function renderGallery(data) {
         tile.appendChild(preview);
         const tag = document.createElement("div");
         tag.className = "thumb-meta";
-        tag.textContent = "采样中";
+        tag.textContent = samplingText(active);
         tile.appendChild(tag);
+        // 底边一条细进度，一眼看出这是半成品、走到哪一步了。
+        const bar = document.createElement("i");
+        bar.className = "thumb-progress";
+        bar.style.width = `${Math.max(2, Math.min(100, active.progress?.percent ?? 0))}%`;
+        tile.appendChild(bar);
       } else {
         tile.classList.add("placeholder");
         const spinner = document.createElement("span");
@@ -1224,14 +1230,30 @@ function render(data) {
   }
 }
 
+/** 采样中那格的文字：阶段、步数、百分比。 */
+function samplingText(active) {
+  const progress = active.progress ?? {};
+  const bits = [progress.phase ?? "采样中"];
+  if (progress.total) bits.push(`${progress.step}/${progress.total}`);
+  if (typeof progress.percent === "number") bits.push(`${Math.round(progress.percent)}%`);
+  return bits.join(" · ");
+}
+
 /** 采样中的那张，缩略图跟着引擎的中间结果走。 */
 function updateGalleryPreview(data) {
   const active = data.engine.active;
   if (!active?.previewAt) return;
-  const tile = nodes.thumbs.querySelector(`[data-job-id="${active.jobId}"] .preview-thumb`);
+  const tile = nodes.thumbs.querySelector(`[data-job-id="${active.jobId}"]`);
   if (!tile) return;
-  const url = previewUrl(active.previewAt);
-  if (tile.getAttribute("src") !== url) tile.src = url;
+  const image = tile.querySelector(".preview-thumb");
+  if (image) {
+    const url = previewUrl(active.previewAt);
+    if (image.getAttribute("src") !== url) image.src = url;
+  }
+  const meta = tile.querySelector(".thumb-meta");
+  if (meta) meta.textContent = samplingText(active);
+  const bar = tile.querySelector(".thumb-progress");
+  if (bar) bar.style.width = `${Math.max(2, Math.min(100, active.progress?.percent ?? 0))}%`;
 }
 
 async function refresh() {
