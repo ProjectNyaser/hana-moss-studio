@@ -861,6 +861,21 @@ nodes.prompt.addEventListener("keydown", (event) => {
   }
 });
 
+// ── 跟随主视图 ─────────────────────────────────────────────────────────
+// 主页切分页时广播一声，这里把不属于当前视图的整块收起。默认画布。
+const viewChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
+
+function applyPane(view) {
+  for (const node of document.querySelectorAll("[data-pane]")) {
+    node.classList.toggle("pn-pane-off", node.dataset.pane !== view);
+  }
+}
+
+viewChannel?.addEventListener("message", (event) => {
+  if (event.data?.type === "view") applyPane(event.data.view);
+});
+applyPane("canvas");
+
 async function boot() {
   syncTheme();
   try {

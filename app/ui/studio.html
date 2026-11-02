@@ -9,41 +9,89 @@
   <link rel="stylesheet" href="./assets/studio.css">
 </head>
 <body>
-  <main class="canvas-column">
-    <div class="canvas-bar">
+  <main class="studio-column">
+    <nav class="studio-tabs" id="studio-tabs" role="tablist">
+      <button class="studio-tab on" type="button" role="tab" data-view="canvas">画布</button>
+      <button class="studio-tab" type="button" role="tab" data-view="gallery">画廊<span class="tab-count" id="tab-count"></span></button>
+      <button class="studio-tab" type="button" role="tab" data-view="manage">下载管理</button>
+      <span class="spacer"></span>
       <span class="chip" id="stage-chip"><span class="dot" id="stage-dot"></span><span id="stage-text">读取状态…</span></span>
       <span class="canvas-meta mono" id="canvas-meta"></span>
-      <span class="spacer"></span>
-      <button class="btn ghost small" id="clear-jobs" type="button">清理记录</button>
-    </div>
+    </nav>
 
-    <div class="canvas" id="canvas">
-      <figure class="result" id="result" hidden>
-        <img id="result-image" alt="最近一次出图">
-        <figcaption id="result-caption"></figcaption>
-      </figure>
-      <div class="canvas-empty" id="canvas-empty">
-        <p class="canvas-empty-title">画布还空着</p>
-        <p class="hint">在左侧栏写下提示词，按「开始生成」。出图会落在这里，旧图收进画廊。</p>
+    <section class="studio-view" id="view-canvas">
+      <div class="canvas" id="canvas">
+        <figure class="result" id="result" hidden>
+          <img id="result-image" alt="最近一次出图">
+          <figcaption id="result-caption"></figcaption>
+        </figure>
+        <div class="canvas-empty" id="canvas-empty">
+          <p class="canvas-empty-title">画布还空着</p>
+          <p class="hint">在左侧栏写下提示词，按「开始生成」。出图会落在这里，旧图收进「画廊」。</p>
+        </div>
       </div>
-    </div>
 
-    <div class="progress-band" id="progress-band" hidden>
-      <span class="band-label" id="band-label">准备中</span>
-      <div class="bar" id="band-bar"><i></i></div>
-      <span class="band-eta mono" id="band-eta"></span>
-    </div>
+      <div class="progress-band" id="progress-band" hidden>
+        <span class="band-label" id="band-label">准备中</span>
+        <div class="bar" id="band-bar"><i></i></div>
+        <span class="band-eta mono" id="band-eta"></span>
+      </div>
+    </section>
 
-    <details class="gallery" id="gallery" open>
-      <summary class="gallery-head">
-        <span class="gallery-title">
-          <span class="caret" aria-hidden="true"></span>
-          <span class="section-title">画廊</span>
-        </span>
+    <section class="studio-view" id="view-gallery" hidden>
+      <div class="view-bar">
+        <span class="section-title">画廊</span>
         <span class="hint" id="gallery-count"></span>
-      </summary>
-      <div class="thumbs" id="thumbs"></div>
-    </details>
+        <span class="spacer"></span>
+        <button class="btn ghost small" id="clear-jobs" type="button">清理记录</button>
+      </div>
+      <div class="thumbs gallery-grid" id="thumbs"></div>
+    </section>
+
+    <section class="studio-view" id="view-manage" hidden>
+      <div class="manage-scroll">
+        <section class="manage-block">
+          <header class="manage-head">
+            <h2>引擎</h2>
+            <span class="hint" id="manage-engine-state"></span>
+            <span class="spacer"></span>
+            <button class="btn small" id="manage-engine-toggle" type="button">启动引擎</button>
+          </header>
+          <p class="hint" id="manage-engine-note"></p>
+          <div class="manage-list" id="manage-installed"></div>
+
+          <div class="manage-actions">
+            <button class="btn ghost small" id="manage-install-engine" type="button">装最新引擎</button>
+            <button class="btn ghost small" id="manage-install-weights" type="button">下载权重</button>
+            <button class="btn ghost small" id="manage-cancel" type="button" hidden>取消</button>
+          </div>
+          <div class="bar" id="manage-bar" hidden><i></i></div>
+          <p class="hint" id="manage-download"></p>
+
+          <details class="manage-more" id="manage-releases">
+            <summary>其他版本</summary>
+            <div class="manage-list" id="manage-available"></div>
+          </details>
+        </section>
+
+        <section class="manage-block">
+          <header class="manage-head">
+            <h2>模型</h2>
+            <span class="hint" id="manage-model-state"></span>
+            <span class="spacer"></span>
+            <button class="btn ghost small" id="manage-remove-model" type="button">卸载</button>
+          </header>
+          <div class="manage-list" id="manage-model"></div>
+        </section>
+
+        <section class="manage-block">
+          <header class="manage-head">
+            <h2>这台机器</h2>
+          </header>
+          <div class="manage-list" id="manage-host"></div>
+        </section>
+      </div>
+    </section>
   </main>
 
   <div class="lightbox" id="lightbox" hidden><img id="lightbox-image" alt=""></div>
