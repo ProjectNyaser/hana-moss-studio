@@ -352,7 +352,7 @@ export default defineApp(async (sdk) => {
       steps: clamp(input?.steps, MIN_STEPS, 80, Math.max(MIN_STEPS, settings.defaults.steps)),
       cfg: clampFloat(input?.cfg, 0, 20, settings.defaults.cfg),
       seed: Number.isInteger(input?.seed) ? input.seed : Math.floor(Math.random() * 4294967295),
-      hiresScale: clamp(input?.hiresScale ?? settings.defaults.hiresScale, 0, 3, 0),
+      hiresScale: clamp(input?.hiresScale ?? settings.defaults.hiresScale, 0, 64, 0),
       hiresSteps: clamp(input?.hiresSteps ?? settings.defaults.hiresSteps, 0, 80, 0),
       hiresStrength: clampFloat(input?.hiresStrength ?? settings.defaults.hiresStrength, 0.05, 1, 0.45),
       initImage: typeof input?.initImage === "string" && input.initImage.trim() ? input.initImage.trim() : null,

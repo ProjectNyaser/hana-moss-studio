@@ -273,27 +273,22 @@ function renderSize() {
   const megapixels = (width * height) / 1e6;
   const ratio = width / height;
 
-  const draggingRatio = draggingName === "ratio";
-  const draggingMP = draggingName === "mp";
-  const draggingHires = draggingName === "hires";
+  // 拖像素量时，16 对齐会让宽高比微变，比例滑块跟着抖。
+  // 这种情况按拖动开始时锁住的比例显示，松手后再回到真实值。
+  const shownRatio = draggingName === "mp" && pinnedRatio ? pinnedRatio : ratio;
 
-  // 拖动中只搬手上那个，其余两个不动；松手后一起归位。
-  if (!draggingName || draggingRatio) {
-    const rx = placeThumb(nodes.ratioSlider, nodes.ratioThumb, ratioToT(ratio));
-    nodes.ratioFill.style.width = `${rx}px`;
-    nodes.ratioThumb.textContent = ratioLabel(ratio);
-    nodes.ratioThumb.setAttribute("aria-valuenow", Math.log2(ratio).toFixed(2));
-    nodes.ratioNote.textContent = ratioLabel(ratio);
-  }
+  const rx = placeThumb(nodes.ratioSlider, nodes.ratioThumb, ratioToT(shownRatio));
+  nodes.ratioFill.style.width = `${rx}px`;
+  nodes.ratioThumb.textContent = ratioLabel(shownRatio);
+  nodes.ratioThumb.setAttribute("aria-valuenow", Math.log2(shownRatio).toFixed(2));
+  nodes.ratioNote.textContent = ratioLabel(shownRatio);
 
-  if (!draggingName || draggingMP) {
-    const mpPct = Math.min(1, Math.max(0, (megapixels - MIN_MP) / (MAX_MP - MIN_MP)));
-    const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
-    nodes.sliderFill.style.width = `${mx}px`;
-    nodes.sliderThumb.textContent = megapixels.toFixed(1);
-    nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(1));
-    nodes.mpNote.textContent = `${megapixels.toFixed(2)}MP`;
-  }
+  const mpPct = Math.min(1, Math.max(0, (megapixels - MIN_MP) / (MAX_MP - MIN_MP)));
+  const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
+  nodes.sliderFill.style.width = `${mx}px`;
+  nodes.sliderThumb.textContent = megapixels < 1 ? megapixels.toFixed(2) : megapixels.toFixed(1);
+  nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(2));
+  nodes.mpNote.textContent = `${megapixels.toFixed(2)}MP`;
 
   // 这个位置报的是**最终出图尺寸**：含高清修正收后的结果，而不只是基础图。
   const base = fitToEngine(width, height);
@@ -302,20 +297,18 @@ function renderSize() {
   const maxScale = hiresMax();
   const overLimit = hiresScale > maxScale + 0.001;
   const hiresPct = maxScale > 1 ? Math.min(1, (hiresScale - 1) / (maxScale - 1)) : 0;
-  if (!draggingName || draggingHires) {
-    const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, hiresPct);
-    nodes.hiresFill.style.width = `${hx}px`;
-    const hiresLabel = `×${Number(hiresScale.toFixed(2))}`;
-    nodes.hiresThumb.textContent = hiresLabel;
-    nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
-    nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
-    nodes.hiresNote.textContent = hiresScale > 1.001
-      ? (overLimit ? `${hiresLabel} 超上限` : hiresLabel)
-      : "关闭";
-    nodes.hiresThumb.title = maxScale <= 1.001
-      ? "这张图已经贴到引擎上限，没法再放大"
-      : `最多 ×${maxScale.toFixed(2)}`;
-  }
+  const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, hiresPct);
+  nodes.hiresFill.style.width = `${hx}px`;
+  const hiresLabel = `×${Number(hiresScale.toFixed(2))}`;
+  nodes.hiresThumb.textContent = hiresLabel;
+  nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
+  nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
+  nodes.hiresNote.textContent = hiresScale > 1.001
+    ? (overLimit ? `${hiresLabel} 超上限` : hiresLabel)
+    : "关闭";
+  nodes.hiresThumb.title = maxScale <= 1.001
+    ? "这张图已经贴到引擎上限，没法再放大"
+    : `最多 ×${maxScale.toFixed(2)}`;
 
   let finalW = base.width;
   let finalH = base.height;
@@ -350,9 +343,7 @@ function pctFromEvent(container, clientX) {
 function bindSizeSliders() {
   // 拖比例时锁住像素量、拖像素量时锁住比例：
   // 每次拿刚取整过的宽高比再算一遍，floor 的误差会一步步累积，
-  // 拖一会儿比例就塌到 1:1。
-  let pinnedMP = null;
-  let pinnedRatio = null;
+  // 拖一会儿比例就塌到 1:1。锁存变量在模块级，renderSize 也要读。
 
   function applyRatio(clientX) {
     const ratio = tToRatio(pctFromEvent(nodes.ratioSlider, clientX));
