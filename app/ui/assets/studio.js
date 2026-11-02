@@ -1384,9 +1384,11 @@ function endPan(event) {
 
 nodes.viewerStage.addEventListener("pointerup", endPan);
 nodes.viewerStage.addEventListener("pointercancel", endPan);
-// 查看器里的右键不弹系统菜单，也不做别的。
+// 查看器里的右键直接关掉。
 nodes.viewerStage.addEventListener("contextmenu", (event) => {
-  if (!nodes.viewer.hidden) event.preventDefault();
+  if (nodes.viewer.hidden) return;
+  event.preventDefault();
+  closeViewer();
 });
 // 滚轮缩放：以光标所在位置为锚，这才是看图时的直觉。
 nodes.viewerStage.addEventListener(
