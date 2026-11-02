@@ -15,7 +15,9 @@
  * 装完只做一件事：把路径写进设置，让 Engine 那边直接用。
  */
 import crypto from "node:crypto";
-import { spawn, spawnSync } from "node:child_process";
+import os from "node:os";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import {
   createReadStream,
   existsSync,
@@ -63,24 +65,39 @@ const sha256File = (file) =>
 const mb = (bytes) => (bytes / 1024 / 1024).toFixed(0);
 const gib = (bytes) => (bytes / 1024 ** 3).toFixed(1);
 
-function curlText(url) {
-  const result = spawnSync("curl.exe", ["-sL", "--fail", "--retry", "3", "--connect-timeout", "20", url], {
-    encoding: "utf8",
-    timeout: 60_000,
-    windowsHide: true,
-  });
-  if (result.status !== 0) throw new Error(`取 ${url} 失败：${(result.stderr || "").trim().slice(0, 200)}`);
-  return result.stdout;
+const runFile = promisify(execFile);
+
+/**
+ * 取一段文本（JSON、SHA256SUMS）。走异步 execFile：同步版会在网络慢时卡住事件循环，
+ * 那段时间 SSE 推不出去、面板跟着停。
+ */
+async function curlText(url) {
+  try {
+    const { stdout } = await runFile(
+      "curl.exe",
+      ["-sL", "--fail", "--retry", "3", "--connect-timeout", "20", url],
+      { timeout: 60_000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
+    );
+    return stdout;
+  } catch (error) {
+    const detail = String(error?.stderr ?? error?.message ?? error).trim().slice(0, 200);
+    throw new Error(`取 ${url} 失败：${detail}`);
+  }
 }
 
-export function probeGpu() {
-  const result = spawnSync(
-    "nvidia-smi",
-    ["--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader"],
-    { encoding: "utf8", timeout: 15_000, windowsHide: true },
-  );
-  if (result.status !== 0 || !result.stdout?.trim()) return null;
-  const [name, driver, cc] = result.stdout.trim().split(/\r?\n/)[0].split(",").map((s) => s.trim());
+export async function probeGpu() {
+  let stdout = "";
+  try {
+    ({ stdout } = await runFile(
+      "nvidia-smi",
+      ["--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader"],
+      { timeout: 15_000, windowsHide: true },
+    ));
+  } catch {
+    return null;
+  }
+  if (!stdout?.trim()) return null;
+  const [name, driver, cc] = stdout.trim().split(/\r?\n/)[0].split(",").map((s) => s.trim());
   const compute = Number(cc);
   return {
     name,
@@ -167,26 +184,52 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
     });
   }
 
-  /** 起一个 aria2c，等它退出；进度靠外部轮询目录体积。 */
-  function runAria2(args) {
+  /**
+   * 起一个 aria2c，等它退出。
+   *
+   * aria2 拿到全部字节后偶尔不退出：某个分片的连接半开着，它在等超时又重试。文件已经完整，
+   * 再等就是白耗时间。传了 watch 就每秒看一次目标体积，够了且 5 秒无新输出便主动收尾；
+   * 真实完整性由调用方校验（sha256 或逐个文件大小），这里只负责不等它。
+   */
+  function runAria2(args, watch) {
     return new Promise((done, reject) => {
       const proc = spawn(ARIA2, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       child = proc;
       let tail = "";
+      let settling = false;
+      let fullSince = 0;
       const collect = (chunk) => {
         tail = (tail + chunk).slice(-1200);
       };
       proc.stdout.on("data", collect);
       proc.stderr.on("data", collect);
+
+      const timer = setInterval(() => {
+        if (!watch || settling) return;
+        if (watch.probe() < watch.totalBytes) {
+          fullSince = 0;
+          return;
+        }
+        // 体积到了就收尾。不看 aria2 的输出：它重试时每半分钟会打一行，光看“无输出”永远等不到。
+        if (!fullSince) fullSince = Date.now();
+        else if (Date.now() - fullSince > 8000) {
+          settling = true;
+          proc.kill();
+        }
+      }, 1000);
+      timer.unref?.();
+
       proc.on("error", (error) => {
+        clearInterval(timer);
         child = null;
         reject(new Error(`无法启动 aria2c：${error.message}`));
       });
       proc.on("close", (code) => {
+        clearInterval(timer);
         child = null;
         if (cancelled) reject(new Error("已取消"));
-        else if (code !== 0) reject(new Error(`aria2c 退出码 ${code}：${tail.trim().split(/\r?\n/).slice(-2).join(" ")}`));
-        else done();
+        else if (settling || code === 0) done();
+        else reject(new Error(`aria2c 退出码 ${code}：${tail.trim().split(/\r?\n/).slice(-2).join(" ")}`));
       });
     });
   }
@@ -206,14 +249,14 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
     begin("engine", "引擎");
     try {
       patch({ phase: "probing", message: "读显卡与驱动" });
-      const gpu = probeGpu();
+      const gpu = await probeGpu();
       patch({
         phase: "release",
         message: gpu ? `${gpu.name} · 驱动 ${gpu.driver} · 算力 ${gpu.computeCapability ?? "?"}` : "没有读到 nvidia-smi",
         detail: gpu,
       });
 
-      const release = JSON.parse(curlText(ENGINE_API));
+      const release = JSON.parse(await curlText(ENGINE_API));
       const version = String(release.tag_name ?? "").replace(/^v/, "");
       if (!version) throw new Error("Release 没有可用的 tag");
       const assets = Array.isArray(release.assets) ? release.assets : [];
@@ -226,27 +269,30 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
       const zip = join(engineDir, `${base}.zip`);
 
       patch({ phase: "download", message: `下载 ${asset.name}（${mb(asset.size ?? 0)} MB）`, totalBytes: asset.size ?? 0 });
-      const stopWatch = watchProgress(() => (existsSync(zip) ? statSync(zip).size : 0), asset.size ?? 0);
+      const probeZip = () => (existsSync(zip) ? statSync(zip).size : 0);
+      const stopWatch = watchProgress(probeZip, asset.size ?? 0);
       try {
-        await runAria2([
-          "-x16",
-          "-s16",
-          "-k1M",
-          "-c",
-          "--file-allocation=none",
-          "--max-tries=5",
-          "--retry-wait=5",
-          // 多分片时偶尔有一个连接挂住，文件已满但 aria2 不退出；低于 10 KB/s 满 60 秒就断开重连。
-          "--lowest-speed-limit=10K",
-          "--timeout=60",
-          "--console-log-level=warn",
-          "--summary-interval=0",
-          "-d",
-          engineDir,
-          "-o",
-          `${base}.zip`,
-          asset.browser_download_url,
-        ]);
+        await runAria2(
+          [
+            "-x16",
+            "-s16",
+            "-k1M",
+            "-c",
+            "--file-allocation=none",
+            "--max-tries=3",
+            "--retry-wait=3",
+            "--lowest-speed-limit=10K",
+            "--timeout=30",
+            "--console-log-level=warn",
+            "--summary-interval=0",
+            "-d",
+            engineDir,
+            "-o",
+            `${base}.zip`,
+            asset.browser_download_url,
+          ],
+          { totalBytes: asset.size ?? 0, probe: probeZip },
+        );
       } finally {
         stopWatch();
       }
@@ -255,7 +301,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
       const sumsUrl = asset.browser_download_url.replace(/[^/]+$/, "SHA256SUMS");
       let sums = "";
       try {
-        sums = curlText(sumsUrl);
+        sums = await curlText(sumsUrl);
       } catch {
         sums = "";
       }
@@ -268,8 +314,12 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
       if (got.toLowerCase() !== want.toLowerCase()) throw new Error(`sha256 不符：期望 ${want}，实际 ${got}`);
 
       patch({ phase: "extracting", message: "解压" });
-      const unzip = spawnSync("tar", ["-xf", zip, "-C", engineDir], { encoding: "utf8", windowsHide: true });
-      if (unzip.status !== 0) throw new Error(`解压失败：${(unzip.stderr || "").trim().slice(0, 200)}`);
+      try {
+        await runFile("tar", ["-xf", zip, "-C", engineDir], { timeout: 300_000, windowsHide: true });
+      } catch (error) {
+        const detail = String(error?.stderr ?? error?.message ?? error).trim().slice(0, 200);
+        throw new Error(`解压失败：${detail}`);
+      }
       rmSync(zip, { force: true });
 
       const serverPath = join(target, "bin", "moss-server.exe");
@@ -287,7 +337,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
     begin("weights", "权重");
     try {
       patch({ phase: "listing", message: "读取文件清单" });
-      const tree = JSON.parse(curlText(`${MODEL_ENDPOINT}/api/models/${MODEL_REPO}/tree/main?recursive=true`));
+      const tree = JSON.parse(await curlText(`${MODEL_ENDPOINT}/api/models/${MODEL_REPO}/tree/main?recursive=true`));
       const wanted = (tree ?? []).filter((entry) => {
         if (entry.type !== "file") return false;
         return MODEL_INCLUDES.some((pattern) =>
@@ -310,7 +360,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
       });
 
       if (missing.length) {
-        const listFile = join(weightsDir, ".aria2-input.txt");
+        const listFile = join(os.tmpdir(), `moss-weights-${Date.now()}.txt`);
         const lines = [];
         for (const entry of missing) {
           mkdirSync(dirname(join(weightsDir, ...entry.path.split("/"))), { recursive: true });
@@ -318,26 +368,31 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
           lines.push(`  out=${entry.path}`);
         }
         writeFileSync(listFile, lines.join("\n") + "\n", "utf8");
-        const stopWatch = watchProgress(() => dirBytes(weightsDir) - (existsSync(listFile) ? statSync(listFile).size : 0), totalBytes);
+        const baseBytes = dirBytes(weightsDir);
+        const probeWeights = () => Math.max(0, dirBytes(weightsDir) - baseBytes);
+        const stopWatch = watchProgress(probeWeights, totalBytes);
         try {
-          await runAria2([
-            "-x16",
-            "-s16",
-            "-k1M",
-            "-j4",
-            "-c",
-            "--file-allocation=none",
-            "--max-tries=5",
-            "--retry-wait=5",
-            "--lowest-speed-limit=10K",
-            "--timeout=60",
-            "--console-log-level=warn",
-            "--summary-interval=0",
-            "-d",
-            weightsDir,
-            "-i",
-            listFile,
-          ]);
+          await runAria2(
+            [
+              "-x16",
+              "-s16",
+              "-k1M",
+              "-j4",
+              "-c",
+              "--file-allocation=none",
+              "--max-tries=3",
+              "--retry-wait=3",
+              "--lowest-speed-limit=10K",
+              "--timeout=30",
+              "--console-log-level=warn",
+              "--summary-interval=0",
+              "-d",
+              weightsDir,
+              "-i",
+              listFile,
+            ],
+            { totalBytes, probe: probeWeights },
+          );
         } finally {
           stopWatch();
           rmSync(listFile, { force: true });
@@ -375,10 +430,6 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
     },
     installEngine,
     installWeights,
-    /** 供 UI 判断环境：aria2c 在不在包里。 */
-    environment() {
-      return { aria2: existsSync(ARIA2), dataDir, weightsDir };
-    },
     getSettings,
   };
 }

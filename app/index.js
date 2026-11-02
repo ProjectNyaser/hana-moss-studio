@@ -44,7 +44,12 @@ export default defineApp(async (sdk) => {
   const installer = createInstaller({
     dataDir,
     getSettings: () => store.getSettings(),
-    saveSettings: (patch) => store.saveSettings(patch),
+    saveSettings: (patch) => {
+      store.saveSettings(patch);
+      // 路径变了：引擎在跑就停掉，旧的那份不能再往上跑；模型下次生成重新 load。
+      if (patch.serverPath && engine.snapshot().running) engine.stop();
+      engine.loadedKey = null;
+    },
     onUpdate: () => schedulePush(0),
   });
   const queue = [];
