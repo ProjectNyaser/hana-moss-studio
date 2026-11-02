@@ -226,19 +226,51 @@ async function renderCanvas(data) {
 }
 
 // ── 画廊 ───────────────────────────────────────────────────────────────
+const GALLERY_GAP = 10;
+const GALLERY_MIN_COL = 208;
+let galleryEntries = [];
+
+/** 把已建好的卡按「当前最矮的一列」分配，列高才不会差太多。 */
+function layoutGallery(entries) {
+  const grid = nodes.thumbs;
+  const width = grid.clientWidth || 900;
+  const columns = Math.max(1, Math.floor((width + GALLERY_GAP) / (GALLERY_MIN_COL + GALLERY_GAP)));
+  const colWidth = (width - GALLERY_GAP * (columns - 1)) / columns;
+  const cols = [];
+  const heights = [];
+  for (let i = 0; i < columns; i += 1) {
+    const col = document.createElement("div");
+    col.className = "gallery-col";
+    cols.push(col);
+    heights.push(0);
+  }
+  for (const { job, tile } of entries) {
+    const w = Number(job.width) || 1;
+    const h = Number(job.height) || 1;
+    // 图未加载时用宽高比估高度，布局不会因为加载完成而跳。
+    const estimate = job.width && job.height ? Math.round((colWidth / w) * h) + 26 : Math.round(colWidth);
+    const index = heights.indexOf(Math.min(...heights));
+    cols[index].appendChild(tile);
+    heights[index] += estimate + GALLERY_GAP;
+  }
+  grid.replaceChildren(...cols);
+}
+
 async function renderGallery(data) {
   const visible = data.jobs.filter((job) => job.status !== "cancelled");
   await Promise.all(visible.filter((job) => job.status === "done" && job.output).map((job) => loadImage(job.output)));
-  nodes.thumbs.replaceChildren();
   nodes.galleryCount.textContent = visible.length ? `${visible.length} 张` : "";
   nodes.tabCount.textContent = visible.length ? ` ${visible.length}` : "";
   if (!visible.length) {
+    galleryEntries = [];
     const empty = document.createElement("p");
     empty.className = "empty-line";
     empty.textContent = "还没有出过图。";
-    nodes.thumbs.appendChild(empty);
+    nodes.thumbs.replaceChildren(empty);
     return;
   }
+
+  const entries = [];
   for (const job of visible) {
     const tile = document.createElement("div");
     tile.className = "thumb";
@@ -252,6 +284,7 @@ async function renderGallery(data) {
         image.alt = job.prompt.slice(0, 40);
         image.loading = "lazy";
         image.title = job.prompt;
+        if (job.width && job.height) image.style.aspectRatio = `${job.width} / ${job.height}`;
         image.addEventListener("click", () => {
           selectedId = job.id;
           renderedJobsKey = null;
@@ -282,8 +315,11 @@ async function renderGallery(data) {
       text.textContent = job.status === "queued" ? "排队中" : "生成中";
       tile.append(spinner, text);
     }
-    nodes.thumbs.appendChild(tile);
+    entries.push({ job, tile });
   }
+
+  galleryEntries = entries;
+  layoutGallery(entries);
 }
 
 // ── 行与确认 ───────────────────────────────────────────────────────────
@@ -575,6 +611,10 @@ nodes.lightbox.addEventListener("click", () => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !nodes.lightbox.hidden) nodes.lightbox.hidden = true;
+});
+// 窗口宽度变了列数跟着变，重排一次。
+window.addEventListener("resize", () => {
+  if (galleryEntries.length) layoutGallery(galleryEntries);
 });
 
 async function boot() {

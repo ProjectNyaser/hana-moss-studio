@@ -280,22 +280,30 @@ body {
   overflow-y: auto;
 }
 
-/* 画廊独立成页：用瀑布流（多列）排，图片按原比例显示，长短不一才不乱。 */
+/* 画廊：真瀑布流——容器纵向滚，内部按列切。
+   不用 CSS multi-column：它靠固定高度才能分列，高度一限就横向溢出，
+   还得按住 Shift 才能滚。列宽由脚本按容器宽度算。 */
 .gallery-grid {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   flex: 1;
   min-height: 0;
-  max-height: none;
   overflow-y: auto;
-  column-width: 208px;
-  column-gap: 10px;
   padding: 0 12px 20px;
 }
 
+.gallery-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .gallery-grid .thumb {
-  break-inside: avoid;
   width: 100%;
-  margin: 0 0 10px;
+  margin: 0;
   aspect-ratio: auto;
   cursor: zoom-in;
 }
@@ -303,7 +311,7 @@ body {
 .gallery-grid .thumb img {
   width: 100%;
   height: auto;
-  object-fit: contain;
+  display: block;
 }
 
 /* 错误与排队占位没有图，给个正方块保持节奏。 */
