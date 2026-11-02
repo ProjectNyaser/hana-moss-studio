@@ -40,7 +40,7 @@ export default defineApp(async (sdk) => {
   const cacheDir = join(dataDir, "cache");
   for (const dir of [outputsDir, cacheDir]) mkdirSync(dir, { recursive: true });
 
-  const store = createStore(dataDir);
+  const store = createStore(dataDir, outputsDir);
   /** 改设置的后置动作：路径变了就停引擎，模型下次生成重新 load。装完与切换版本都走这里。 */
   const applySettings = (patch) => {
     store.saveSettings(patch);
@@ -1006,7 +1006,8 @@ export default defineApp(async (sdk) => {
     });
 
     app.post(`/${APP_ID}/jobs/clear`, (c) => {
-      store.saveJobs(store.listJobs().filter((job) => job.status === "running" || job.status === "queued"));
+      // 记录跟着图走：这里只清掉指向已不存在文件的那部分，不删图。
+      store.pruneMissing();
       schedulePush(0);
       return c.json(state());
     });

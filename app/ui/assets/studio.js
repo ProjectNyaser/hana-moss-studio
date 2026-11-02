@@ -24,7 +24,6 @@ const nodes = {
   canvasEmpty: el("canvas-empty"),
   galleryCount: el("gallery-count"),
   thumbs: el("thumbs"),
-  clearJobs: el("clear-jobs"),
   ctxMenu: el("ctx-menu"),
   viewer: el("viewer"),
   viewerStage: el("viewer-stage"),
@@ -842,15 +841,6 @@ async function refresh() {
   }
 }
 
-async function onClearJobs() {
-  try {
-    render(await post("/jobs/clear"));
-    renderedJobsKey = null;
-  } catch (error) {
-    nodes.stageText.textContent = error instanceof Error ? error.message : String(error);
-    nodes.stageDot.className = "dot err";
-  }
-}
 
 async function removeJob(id) {
   try {
@@ -878,7 +868,6 @@ nodes.removeModel.addEventListener("click", () =>
     runSafe(() => post("/models/remove", { confirm: true }), "删除模型"),
   ),
 );
-nodes.clearJobs.addEventListener("click", onClearJobs);
 nodes.viewerImage.addEventListener("load", layoutViewerImage);
 nodes.viewerClose.addEventListener("click", closeViewer);
 nodes.viewerPrev.addEventListener("click", () => stepViewer(-1));
