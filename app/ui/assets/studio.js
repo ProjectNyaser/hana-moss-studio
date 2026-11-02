@@ -53,6 +53,7 @@ const nodes = {
   removeModel: el("versions-remove-model"),
   host: el("versions-host"),
   // 下载
+  toast: el("toast"),
   downloadState: el("download-state"),
   downloadEngine: el("download-engine"),
   downloadModels: el("download-models"),
@@ -135,6 +136,27 @@ function formatDuration(ms) {
   const seconds = Math.max(0, Math.round(ms / 1000));
   if (seconds < 60) return `${seconds} 秒`;
   return `${Math.floor(seconds / 60)} 分 ${String(seconds % 60).padStart(2, "0")} 秒`;
+}
+
+let toastTimer = null;
+/**
+ * 一句话提示。优先走宿主的 ui.toast（和界面主题一致，不挡内容），
+ * 宿主没这个能力时退回页面内浮层。
+ */
+async function toast(text, type = "info") {
+  try {
+    const result = await post("/toast", { message: text, type });
+    if (result?.ok) return;
+  } catch {
+    // 落到本地浮层
+  }
+  if (!nodes.toast) return;
+  nodes.toast.textContent = text;
+  nodes.toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    nodes.toast.hidden = true;
+  }, 2600);
 }
 
 function formatSize(bytes) {
@@ -493,15 +515,18 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
 function armable(button, armedLabel, idleLabel, run) {
   if (button.dataset.armed === "1") {
     delete button.dataset.armed;
+    button.classList.remove("armed");
     button.textContent = idleLabel;
     void run();
     return;
   }
   button.dataset.armed = "1";
   button.textContent = armedLabel;
+  button.classList.add("armed");
   setTimeout(() => {
     if (button.dataset.armed !== "1") return;
     delete button.dataset.armed;
+    button.classList.remove("armed");
     button.textContent = idleLabel;
   }, 4000);
 }
@@ -661,6 +686,22 @@ function renderQueue(data) {
 }
 
 // ── 版本 ───────────────────────────────────────────────────────────────
+/** 发起一次下载：回一句提示，排队的说清在第几位。 */
+async function startInstall(path, body, label) {
+  try {
+    const result = await post(path, body);
+    if (result?.error) {
+      void toast(`${label}没开始：${result.error}`);
+      return;
+    }
+    if (result?.duplicate) void toast(`${label}已经在队列里（第 ${result.position} 位）`);
+    else if (result?.queued) void toast(`${label}已加入队列，第 ${result.position} 位`);
+    else void toast(`开始${label}`);
+  } catch (error) {
+    void toast(`${label}没开始：${error.message ?? error}`);
+  }
+}
+
 function renderVersions(data) {
   const { engine } = data;
 
@@ -775,9 +816,17 @@ function renderTaskRow(task) {
   const speed = Number(task.speed) || 0;
   const done = task.status === "complete";
   const active = task.status === "active";
+  const paused = task.status === "paused";
+  const waiting = task.status === "waiting";
 
   const row = document.createElement("div");
-  row.className = done ? "dl-row done" : task.status === "error" ? "dl-row bad" : pct < 12 ? "dl-row low" : "dl-row";
+  row.className = done
+    ? "dl-row done"
+    : task.status === "error" || task.status === "removed"
+      ? "dl-row bad"
+      : pct < 12
+        ? "dl-row low"
+        : "dl-row";
 
   const line = document.createElement("div");
   line.className = "dl-line";
@@ -787,12 +836,27 @@ function renderTaskRow(task) {
   name.className = "dl-name";
   name.textContent = task.out.split("/").pop();
   name.title = task.out;
+
   const right = document.createElement("span");
   right.className = "dl-speed";
-  right.textContent = done ? "完成" : active ? (speed > 0 ? `${formatSize(speed)}/s` : "…") : "";
-  line.append(dot, name, right);
+  if (done) right.textContent = "完成";
+  else if (paused) right.textContent = "已暂停";
+  else if (waiting) right.textContent = task.queue ? `排队 ${task.queue}` : "排队";
+  else if (speed > 0) right.textContent = `${formatSize(speed)}/s`;
+  else right.textContent = active ? "…" : "";
 
-  if (!done && task.status !== "waiting") {
+  const acts = document.createElement("span");
+  acts.className = "dl-acts";
+  if (active || paused) {
+    acts.append(actionButton(paused ? "继续" : "暂停", () => taskAction(task.out, paused ? "resume" : "pause")));
+  }
+  if (active || paused || waiting) {
+    acts.append(actionButton("移除", () => taskAction(task.out, "remove")));
+  }
+
+  line.append(dot, name, right, acts);
+
+  if (!done && !waiting) {
     const track = document.createElement("div");
     track.className = "dl-track";
     const fill = document.createElement("i");
@@ -814,6 +878,27 @@ function renderTaskRow(task) {
   row.append(foot);
 
   return row;
+}
+
+function actionButton(label, run) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void run();
+  });
+  return button;
+}
+
+async function taskAction(out, action) {
+  const verb = action === "pause" ? "暂停" : action === "resume" ? "继续" : "移除";
+  try {
+    await post("/install/task", { out, action });
+    void toast(`已${verb} ${out.split("/").pop()}`);
+  } catch (error) {
+    void toast(`${verb}失败：${error.message ?? error}`);
+  }
 }
 
 // ── 下载 ───────────────────────────────────────────────────────────────
@@ -840,7 +925,7 @@ function renderDownload(data) {
         button.type = "button";
         button.textContent = busy ? "排队" : "下载";
         button.addEventListener("click", () =>
-          void runSafe(() => post("/install/weights", { variant: item.variant }), `下载 ${item.label}`),
+          void startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
         );
         row.appendChild(button);
       }
@@ -913,7 +998,7 @@ async function loadReleases(force = false) {
           on: item.installed,
           actions: item.installed
             ? []
-            : [{ label: "装", run: () => runSafe(() => post("/install/engine", { tag: item.tag }), "安装") }],
+            : [{ label: "装", run: () => startInstall("/install/engine", { tag: item.tag }, `安装引擎 ${item.version}`) }],
         }),
       ),
     );
@@ -1148,7 +1233,7 @@ nodes.tabs.addEventListener("click", (event) => {
 nodes.engineToggle.addEventListener("click", () => {
   void runSafe(() => post("/engine/stop"), "停止");
 });
-nodes.downloadEngine.addEventListener("click", () => void runSafe(() => post("/install/engine"), "安装"));
+nodes.downloadEngine.addEventListener("click", () => void startInstall("/install/engine", {}, "安装最新引擎"));
 bindSplitTabs(nodes.versionsTabs);
 nodes.downloadCancel.addEventListener("click", () => void runSafe(() => post("/install/cancel"), "取消"));
 nodes.removeModel.addEventListener("click", () =>

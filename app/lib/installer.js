@@ -276,6 +276,11 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   let job = null;
   let child = null;
   let cancelled = false;
+  /**
+   * 当前 aria2 会话的控制面。下载跑着的时候才有，用来按文件名找 gid，
+   * 做单任务的暂停 / 继续 / 移除。
+   */
+  let control = null;
 
   const engineDir = join(dataDir, "engine");
 
@@ -553,6 +558,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         items.push({ gid, out: entry.out, size: entry.size ?? 0, urls });
       }
       const total = totalBytes || items.reduce((sum, item) => sum + item.size, 0);
+      control = { port: session.port, secret: session.secret, gids: new Map(items.map((item) => [item.out, item.gid])) };
       let stall = 0;
       let lastBytes = -1;
       let lastDone = -1;
@@ -607,8 +613,10 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           const state = snapshot.get(item.gid);
           if (!state) continue;
           bytes += Number(state.completedLength ?? 0);
-          if (state.status === "complete") done += 1;
-          else if (state.status === "error" && !failedIds.has(item.gid)) {
+          const st = state.status;
+          if (st === "complete") done += 1;
+          // removed = 用户单独取消了这一条；跟 error 一样当终态，不再等它。
+          else if ((st === "error" || st === "removed") && !failedIds.has(item.gid)) {
             failedIds.add(item.gid);
             failed.push({ item, state });
           }
@@ -620,18 +628,22 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           const state = snapshot.get(item.gid);
           if (state?.status === "active") connections += Number(state.connections ?? 0);
         }
+        // 排队位置从 tellWaiting 的顺序里取，而不是自己编号。
+        const waitingGids = waiting.map((state) => state.gid);
         // 每个文件的状态都带出去，面板按 aria2 那样一条文件一节。
         const tasks = items.map((item) => {
           const state = snapshot.get(item.gid) ?? {};
           const prev = known.get(item.gid) ?? {};
+          const status = state.status ?? prev.status ?? "waiting";
           const task = {
             out: item.out,
             size: Number(state.totalLength ?? 0) || prev.size || item.size || 0,
             got: Number(state.completedLength ?? 0) || prev.got || 0,
             speed: Number(state.downloadSpeed ?? 0),
-            status: state.status ?? prev.status ?? "waiting",
+            status,
+            queue: status === "waiting" ? waitingGids.indexOf(item.gid) + 1 : null,
           };
-          if (task.status !== "waiting") known.set(item.gid, task);
+          if (status !== "waiting") known.set(item.gid, task);
           return task;
         });
         // 速度直接问 aria2，不自己按字节差分：文件切换那一秒会算出假的高峰再归零。
@@ -656,7 +668,26 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         if (done + failedIds.size === items.length) return { failed };
       }
     } finally {
+      control = null;
       await stopAria2Rpc(session);
+    }
+  }
+
+  /**
+   * 单任务操作：pause / unpause / remove。
+   * 按相对路径（task.out）定位，面板上点的是哪一行就传哪个。
+   */
+  async function taskAction(out, action) {
+    if (!control) return { ok: false, error: "当前没有下载" };
+    const gid = control.gids.get(out);
+    if (!gid) return { ok: false, error: "找不到这个文件" };
+    const method =
+      action === "pause" ? "aria2.pause" : action === "resume" ? "aria2.unpause" : "aria2.forceRemove";
+    try {
+      await aria2Call(control.port, control.secret, method, [gid], 5000);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
 
@@ -956,6 +987,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     },
     installEngine,
     installWeights,
+    taskAction,
     listEngines,
     listModels,
     listReleases,

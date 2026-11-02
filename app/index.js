@@ -910,7 +910,12 @@ export default defineApp(async (sdk) => {
         tag: body?.tag,
       });
       schedulePush(0);
-      return c.json({ ...state(), queued: result.queued, position: result.position });
+      return c.json({
+        ...state(),
+        queued: result.queued,
+        position: result.position,
+        duplicate: Boolean(result.duplicate),
+      });
     });
 
     app.post(`/${APP_ID}/install/weights`, async (c) => {
@@ -920,13 +925,47 @@ export default defineApp(async (sdk) => {
       if (!variant) return c.json({ ...state(), error: `未知模型 ${String(body?.variant)}` }, 400);
       const result = installer.enqueue("weights", { variant });
       schedulePush(0);
-      return c.json({ ...state(), queued: result.queued, position: result.position });
+      return c.json({
+        ...state(),
+        queued: result.queued,
+        position: result.position,
+        duplicate: Boolean(result.duplicate),
+      });
     });
 
     app.post(`/${APP_ID}/install/cancel`, (c) => {
       installer.cancel();
       schedulePush(0);
       return c.json(state());
+    });
+
+    // 单任务：暂停、继续、移除。out 是相对路径，面板上点哪一行传哪个。
+    app.post(`/${APP_ID}/install/task`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const out = String(body?.out ?? "");
+      const action = body?.action;
+      if (!out) return c.json({ ...state(), error: "缺少 out" }, 400);
+      if (!["pause", "resume", "remove"].includes(action)) {
+        return c.json({ ...state(), error: `未知动作 ${String(action)}` }, 400);
+      }
+      const result = await installer.taskAction(out, action);
+      schedulePush(0);
+      if (!result.ok) return c.json({ ...state(), error: result.error }, 400);
+      return c.json(state());
+    });
+
+    // 宿主的气泡提示：页面自己画的那个只作兵底，用宿主的效果与主题一致。
+    app.post(`/${APP_ID}/toast`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const text = String(body?.message ?? "");
+      if (!text) return c.json({ ok: false, error: "缺少 message" }, 400);
+      try {
+        await sdk.ui?.toast?.show({ message: text, type: body?.type ?? "info", duration: 2400 });
+        return c.json({ ok: true });
+      } catch (error) {
+        sdk.logger.warn(`气泡提示没弹出来：${message(error)}`);
+        return c.json({ ok: false, error: message(error) });
+      }
     });
 
     app.get(`/${APP_ID}/engines/available`, async (c) => {
