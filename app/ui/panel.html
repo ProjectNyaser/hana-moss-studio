@@ -343,15 +343,15 @@
           </select>
         </label>
         <label class="field">
-          <span class="label">精度档（只管生图主干）</span>
+          <span class="label">DiT 精度</span>
           <select id="pn-tier">
-            <option value="reference" title="DiT 用 bf16 GEMM + 精确注意力，最准也最慢">bf16 · reference（默认）</option>
-            <option value="high" title="DiT 用蒖重自身精度（bf16 或 INT8）跑 GEMM，注意力用 fp8；不支持 FP8 的卡退成 fp16">fp8 · high</option>
-            <option value="turbo" title="4-bit DiT（INT4 / NVFP4），需要 4-bit 蒖重，否则引擎会拒">int4 · turbo</option>
+            <option value="reference" title="DiT 用 bf16 跑 GEMM，注意力精确计算，最准也最慢">bf16 精确</option>
+            <option value="high" title="DiT 用蒖重自身精度（bf16 或 INT8）跑 GEMM，注意力用 fp8；不支持 FP8 的卡退成 fp16">fp8 注意力</option>
+            <option value="turbo" title="4-bit DiT（INT4 / NVFP4），需要 4-bit 蒖重，否则引擎会拒">int4 权重</option>
           </select>
         </label>
       </div>
-      <p class="hint">文本编码器（Qwen3.5-9B）与 VAE 按自身精度加载，不受这一项影响。</p>
+      <p class="hint">只管 DiT。文本编码器（Qwen3.5-9B）与 VAE 按自身精度加载，不受影响。</p>
       <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
       <div class="pn-row">
         <button class="btn ghost small" id="pn-save" type="button">保存设置</button>
