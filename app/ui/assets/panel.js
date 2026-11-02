@@ -331,6 +331,12 @@ function bindSizeSliders() {
   });
 }
 
+/** serverPath → 引擎目录（去掉 bin/moss-server[.exe]）。 */
+function engineDirOf(serverPath) {
+  if (!serverPath) return null;
+  return String(serverPath).replace(/[\\/]bin[\\/]moss-server(\.exe)?$/i, "");
+}
+
 function renderEngine(data) {
   const { engine } = data;
   let dotClass = "dot";
@@ -363,7 +369,13 @@ function renderEngine(data) {
   }
   rows.push(["精度档", data.settings.tier]);
   rows.push(["显存策略", data.settings.memoryMode]);
-  if (!engine.modelFound) rows.push(["模型目录", "未配置"]);
+  // 引擎与模型都由 App 装，这里只报“装的是什么”，路径收在自定义里。
+  const tail = (p) => (p ? String(p).split(/[\\/]/).filter(Boolean).pop() : null);
+  rows.push([
+    "引擎",
+    engine.serverFound ? `${data.mossimage?.version ?? "?"} · ${tail(engineDirOf(data.settings.serverPath)) ?? "已定位"}` : "未安装",
+  ]);
+  rows.push(["模型", engine.modelFound ? tail(data.settings.modelPath) ?? "已就位" : "未安装"]);
   nodes.facts.replaceChildren();
   for (const [key, value] of rows) {
     const line = document.createElement("div");

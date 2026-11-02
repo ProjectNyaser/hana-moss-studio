@@ -185,6 +185,20 @@
     .pn-install-actions .btn { flex: 1; }
     .pn-install .bar { margin: 0 0 4px; }
 
+    /* 高级：手填路径只是例外，默认收起来 */
+    .pn-adv { border-top: 1px dashed var(--ui-line); padding-top: 6px; }
+    .pn-adv > summary {
+      cursor: pointer;
+      list-style: none;
+      font-size: 11px;
+      color: var(--ui-text-3);
+      user-select: none;
+    }
+    .pn-adv > summary::-webkit-details-marker { display: none; }
+    .pn-adv > summary::after { content: "›"; margin-left: 5px; display: inline-block; transition: transform 160ms var(--ui-ease); }
+    .pn-adv[open] > summary::after { transform: rotate(90deg); }
+    .pn-adv .fold-body { padding-top: 6px; }
+
     @media (max-width: 280px) {
       .pn { padding: 8px 10px 12px; }
       .pn-grid { grid-template-columns: minmax(0, 1fr); }
@@ -317,14 +331,19 @@
         </div>
         <div class="pn-facts" id="pn-facts"></div>
         <p class="hint" id="pn-engine-detail"></p>
-        <label class="field">
-          <span class="label">moss-server 路径</span>
-          <input id="pn-server-path" type="text" placeholder="…/mossinfer/bin/moss-server.exe">
-        </label>
-        <label class="field">
-          <span class="label">模型目录（diffusers 根）</span>
-          <input id="pn-model-path" type="text" placeholder="含 transformer / text_encoder / vae / model_index.json">
-        </label>
+        <details class="pn-adv" id="pn-fold-adv">
+          <summary>自定义路径</summary>
+          <div class="fold-body">
+            <label class="field">
+              <span class="label">moss-server 路径</span>
+              <input id="pn-server-path" type="text" placeholder="一般不用填，点上面的「装引擎」">
+            </label>
+            <label class="field">
+              <span class="label">模型目录（diffusers 根）</span>
+              <input id="pn-model-path" type="text" placeholder="一般不用填，点上面的「下权重」">
+            </label>
+          </div>
+        </details>
         <div class="pn-grid">
           <label class="field">
             <span class="label">显存策略</span>

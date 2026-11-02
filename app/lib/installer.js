@@ -136,7 +136,7 @@ function dirBytes(dir) {
   return total;
 }
 
-export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }) {
+export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, onInstalled }) {
   /** 当前安装任务；null 表示空闲。 */
   let job = null;
   let child = null;
@@ -326,6 +326,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
       message: `引擎就绪：${baseName}${verified ? "" : "（未校验 sha256）"}`,
       detail: { serverPath, verified },
     });
+    onInstalled?.("engine", { serverPath });
   }
 
   async function installEngine(options = {}) {
@@ -435,6 +436,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
       saveSettings({ serverPath });
       const drift = MOSSIMAGE.version === version ? "" : `；app/lib/mossimage.js 里还写着 ${MOSSIMAGE.version}`;
       finish({ phase: "done", message: `引擎就绪：${base}${drift}`, detail: { serverPath, version } });
+      onInstalled?.("engine", { serverPath });
     } catch (error) {
       fail(error);
     }
@@ -530,6 +532,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
 
       saveSettings({ modelPath: weightsDir });
       finish({ phase: "done", message: `权重就绪：${wanted.length} 个文件`, detail: { modelPath: weightsDir } });
+      onInstalled?.("weights", { modelPath: weightsDir });
     } catch (error) {
       fail(error);
     }

@@ -51,6 +51,11 @@ export default defineApp(async (sdk) => {
       engine.loadedKey = null;
     },
     onUpdate: () => schedulePush(0),
+    // 装完直接拉起来，省用户一次点击；失败不影响安装结果。
+    onInstalled: (kind) => {
+      if (kind !== "engine") return;
+      engine.start().catch((error) => sdk.logger.warn(`装完自动启动失败：${message(error)}`));
+    },
   });
   const queue = [];
   /** jobId → 活跃任务快照（进度、阶段、宿主任务 id）。 */
