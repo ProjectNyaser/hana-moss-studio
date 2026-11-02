@@ -73,6 +73,9 @@ const nodes = {
 let latest = null;
 // 高清修正倍率，1 等于关闭。滑块上限按当前基础尺寸算，存的是用户选的倍率。
 let hiresScale = 1;
+// 正在拖哪个滑块（ratio / mp / hires）。拖动中不去搬其他两个的拇指，
+// 否则改一项会看到另两项跟着跳。
+let draggingName = null;
 let settingsLoaded = false;
 /** 正在发 /generate 请求的瞬间，按钮短暂禁用，避免连点堆任务。 */
 let submitting = false;
@@ -223,10 +226,24 @@ function placeThumb(container, thumb, pct) {
   return x;
 }
 
-/** 高清修正倍率量化到 0.05：连续拖动时值太碎，显示与实际对不上。 */
+/** 滑块行程均分成档，而不是把值按 0.1 取整。
+ *  上限只有 ×1.07 时，按值取整会只剩一档、thumb 永远粘在左端；
+ *  按行程分档就均匀，拖到一半就到顶，拇指跟手。 */
+function hiresSteps(maxScale) {
+  return Math.max(1, Math.round((maxScale - 1) / 0.1));
+}
+
+function hiresAt(pct, maxScale) {
+  const steps = hiresSteps(maxScale);
+  const index = Math.min(steps, Math.max(0, Math.round(pct * steps)));
+  return Number((1 + (index / steps) * (maxScale - 1)).toFixed(2));
+}
+
 function quantizeHires(value, maxScale) {
-  const step = 0.05;
-  return Math.min(maxScale, Math.max(1, Math.round(value / step) * step));
+  if (maxScale <= 1.001) return 1;
+  const steps = hiresSteps(maxScale);
+  const pct = Math.min(1, Math.max(0, (value - 1) / (maxScale - 1)));
+  return hiresAt(pct, maxScale);
 }
 
 /** 跟后端同一套收敛规则：单边与总量取更严的缩放系数，比例不变。 */
@@ -253,35 +270,45 @@ function renderSize() {
   const megapixels = (width * height) / 1e6;
   const ratio = width / height;
 
-  const rx = placeThumb(nodes.ratioSlider, nodes.ratioThumb, ratioToT(ratio));
-  nodes.ratioFill.style.width = `${rx}px`;
-  nodes.ratioThumb.textContent = ratioLabel(ratio);
-  nodes.ratioThumb.setAttribute("aria-valuenow", Math.log2(ratio).toFixed(2));
-  nodes.ratioNote.textContent = ratioLabel(ratio);
+  const draggingRatio = draggingName === "ratio";
+  const draggingMP = draggingName === "mp";
+  const draggingHires = draggingName === "hires";
 
-  const mpPct = Math.min(1, Math.max(0, (megapixels - MIN_MP) / (MAX_MP - MIN_MP)));
-  const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
-  nodes.sliderFill.style.width = `${mx}px`;
-  nodes.sliderThumb.textContent = megapixels.toFixed(1);
-  nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(1));
-  nodes.mpNote.textContent = `${megapixels.toFixed(2)}MP`;
+  if (!draggingRatio) {
+    const rx = placeThumb(nodes.ratioSlider, nodes.ratioThumb, ratioToT(ratio));
+    nodes.ratioFill.style.width = `${rx}px`;
+    nodes.ratioThumb.textContent = ratioLabel(ratio);
+    nodes.ratioThumb.setAttribute("aria-valuenow", Math.log2(ratio).toFixed(2));
+    nodes.ratioNote.textContent = ratioLabel(ratio);
+  }
+
+  if (!draggingMP) {
+    const mpPct = Math.min(1, Math.max(0, (megapixels - MIN_MP) / (MAX_MP - MIN_MP)));
+    const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
+    nodes.sliderFill.style.width = `${mx}px`;
+    nodes.sliderThumb.textContent = megapixels.toFixed(1);
+    nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(1));
+    nodes.mpNote.textContent = `${megapixels.toFixed(2)}MP`;
+  }
 
   // 这个位置报的是**最终出图尺寸**：含高清修正收后的结果，而不只是基础图。
   const base = fitToEngine(width, height);
-  // 基础图变了，可行倍率也跟着变，先把滑块与当前倍率对准。
+  // 基础图变了，可行倍率也跟着变，先把当前倍率收进新上限。
   const maxScale = hiresMax();
   hiresScale = quantizeHires(Math.min(Math.max(1, hiresScale), maxScale), maxScale);
-  const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, maxScale > 1 ? (hiresScale - 1) / (maxScale - 1) : 0);
-  nodes.hiresFill.style.width = `${hx}px`;
-  const hiresLabel = `×${Number(hiresScale.toFixed(2))}`;
-  nodes.hiresThumb.textContent = hiresLabel;
-  nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
-  nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
-  // 右侧报当前倍率，上限信息放悬停里，不占位置。
-  nodes.hiresNote.textContent = hiresScale > 1.001 ? hiresLabel : "关闭";
-  nodes.hiresThumb.title = maxScale <= 1.001
-    ? "这张图已经贴到引擎上限，没法再放大"
-    : `最多 ×${maxScale.toFixed(1)}`;
+  if (!draggingHires) {
+    const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, maxScale > 1 ? (hiresScale - 1) / (maxScale - 1) : 0);
+    nodes.hiresFill.style.width = `${hx}px`;
+    const hiresLabel = `×${Number(hiresScale.toFixed(2))}`;
+    nodes.hiresThumb.textContent = hiresLabel;
+    nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
+    nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
+    // 右侧报当前倍率，上限信息放悬停里，不占位置。
+    nodes.hiresNote.textContent = hiresScale > 1.001 ? hiresLabel : "关闭";
+    nodes.hiresThumb.title = maxScale <= 1.001
+      ? "这张图已经贴到引擎上限，没法再放大"
+      : `最多 ×${maxScale.toFixed(2)}`;
+  }
 
   let finalW = base.width;
   let finalH = base.height;
@@ -334,16 +361,16 @@ function bindSizeSliders() {
 
   function applyHires(clientX) {
     const maxScale = hiresMax();
-    const raw = maxScale <= 1.001 ? 1 : 1 + pctFromEvent(nodes.hiresSlider, clientX) * (maxScale - 1);
-    hiresScale = quantizeHires(raw, maxScale);
+    hiresScale = maxScale <= 1.001 ? 1 : hiresAt(pctFromEvent(nodes.hiresSlider, clientX), maxScale);
     renderSize();
     scheduleSave();
   }
 
-  function bindDrag(container, apply) {
+  function bindDrag(container, name, apply) {
     let dragging = false;
     container.addEventListener("pointerdown", (event) => {
       dragging = true;
+      draggingName = name;
       pinnedMP = currentMP();
       pinnedRatio = currentRatio();
       container.setPointerCapture?.(event.pointerId);
@@ -353,17 +380,21 @@ function bindSizeSliders() {
       if (dragging) apply(event.clientX);
     });
     const stop = () => {
+      if (!dragging) return;
       dragging = false;
+      draggingName = null;
       pinnedMP = null;
       pinnedRatio = null;
+      // 松手后把三个滑块一起归位，拖动期间没搬的那两个在这里补上。
+      renderSize();
     };
     container.addEventListener("pointerup", stop);
     container.addEventListener("pointercancel", stop);
   }
 
-  bindDrag(nodes.ratioSlider, applyRatio);
-  bindDrag(nodes.slider, applyMP);
-  bindDrag(nodes.hiresSlider, applyHires);
+  bindDrag(nodes.ratioSlider, "ratio", applyRatio);
+  bindDrag(nodes.slider, "mp", applyMP);
+  bindDrag(nodes.hiresSlider, "hires", applyHires);
 
   nodes.hiresThumb.addEventListener("keydown", (event) => {
     const step = event.shiftKey ? 0.5 : 0.1;
@@ -375,7 +406,6 @@ function bindSizeSliders() {
     renderSize();
     scheduleSave();
   });
-
   nodes.ratioThumb.addEventListener("keydown", (event) => {
     const step = event.shiftKey ? 0.08 : 0.02;
     let t = ratioToT(currentRatio());
