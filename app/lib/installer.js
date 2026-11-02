@@ -428,44 +428,6 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   }
 
   /**
-   * curl 逐文件下载，作为 aria2 失败后的回退。
-   * 在宿主里 aria2 的直连 socket 有时走不通，而 curl.exe 同一个地址能取——
-   * 那种环境下宁可慢也不能停。
-   */
-  async function curlDownload(url, target, size) {
-    const have = existsSync(target) ? statSync(target).size : 0;
-    if (have === size) return;
-    mkdirSync(dirname(target), { recursive: true });
-    await runFile(
-      "curl.exe",
-      [
-        "-L",
-        "--fail",
-        "-C",
-        "-",
-        "--retry",
-        "10",
-        "--retry-all-errors",
-        "--retry-delay",
-        "3",
-        "--connect-timeout",
-        "20",
-        "--speed-time",
-        "90",
-        "--speed-limit",
-        "10240",
-        "-o",
-        target,
-        url,
-      ],
-      { timeout: 0, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
-    );
-    const got = existsSync(target) ? statSync(target).size : 0;
-    rmSync(`${target}.aria2`, { force: true });
-    if (got !== size) throw new Error(`大小不符：期望 ${size}，实际 ${got}`);
-  }
-
-  /**
    * 调 aria2 的 JSON-RPC。走 curl 子进程而不是 App 内 fetch：子进程有自己的网络栈，
    * manifest 不用为回环地址多开一扇门。
    */
@@ -570,9 +532,8 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       "-k1M",
       `-j${concurrency}`,
       "--file-allocation=none",
-      "--max-tries=3",
+      "--max-tries=5",
       "--retry-wait=3",
-      "--lowest-speed-limit=10K",
       "--timeout=30",
       "--console-log-level=warn",
       "--summary-interval=0",
@@ -587,15 +548,15 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           urls,
           { dir, out: entry.out, continue: "true" },
         ]);
-        items.push({ gid, out: entry.out, size: entry.size ?? 0 });
+        items.push({ gid, out: entry.out, size: entry.size ?? 0, urls });
       }
       const total = totalBytes || items.reduce((sum, item) => sum + item.size, 0);
       let stall = 0;
       let lastBytes = -1;
       let lastDone = -1;
       let speedAt = 0;
-      let speedBytes = 0;
       let speed = 0;
+      const failedIds = new Set();
 
       for (;;) {
         if (cancelled) {
@@ -623,73 +584,46 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           continue;
         }
 
+        // 只统计 aria2 自报的 completedLength。查不到状态的按 0 算，绝不当已完成：
+        // 新加的 gid 还没进 tellActive 时，当已完成会让进度一步跳到 100%。
         let bytes = 0;
         let done = 0;
         const failed = [];
         for (const item of items) {
           const state = snapshot.get(item.gid);
-          if (!state) {
-            bytes += item.size;
-            continue;
-          }
+          if (!state) continue;
           bytes += Number(state.completedLength ?? 0);
           if (state.status === "complete") done += 1;
-          else if (state.status === "error") failed.push({ item, state });
+          else if (state.status === "error" && !failedIds.has(item.gid)) {
+            failedIds.add(item.gid);
+            failed.push({ item, state });
+          }
         }
         const pendingItem = items.find((item) => snapshot.get(item.gid)?.status === "active");
+        // 速度直接问 aria2，不自己按字节差分：文件切换那一秒会算出假的高峰再归零。
         const now = Date.now();
-        if (now - speedAt >= 2000) {
-          speed = speedAt ? Math.max(0, (bytes - speedBytes) / ((now - speedAt) / 1000)) : 0;
+        if (now - speedAt >= 1500) {
           speedAt = now;
-          speedBytes = bytes;
+          const gs = await aria2Call(session.port, session.secret, "aria2.getGlobalStat", [], 4000).catch(() => null);
+          speed = Number(gs?.downloadSpeed ?? 0);
         }
-        onTick?.({ bytes, totalBytes: total, done, total: items.length, speed, current: pendingItem?.out ?? null });
+        onTick?.({ bytes, totalBytes: total, done, total: items.length, speed, current: pendingItem?.out ?? null, failed: failed.length });
 
         // 字节和完成数都不再变超过三分钟，就当这条链路已经停了；不能无限等下去。
-        if (bytes === lastBytes && done === lastDone) stall += 1;
+        const settled = done + failedIds.size;
+        if (bytes === lastBytes && settled === lastDone) stall += 1;
         else {
           stall = 0;
           lastBytes = bytes;
-          lastDone = done;
+          lastDone = settled;
         }
         if (stall > 180) throw new Error(`下载停滞：${gib(bytes)} / ${gib(total)} GiB，${done}/${items.length} 个文件`);
 
-        if (failed.length) {
-          const { item, state } = failed[0];
-          throw new Error(`${item.out} 下载失败（aria2 ${state.errorCode}）：${state.errorMessage ?? ""}`.trim());
-        }
-        if (done === items.length) return;
+        if (done + failedIds.size === items.length) return { failed };
       }
     } finally {
       await stopAria2Rpc(session);
     }
-  }
-
-  function watchProgress(getBytes, totalBytes, { speed = false, files = null } = {}) {
-    let lastAt = Date.now();
-    let lastBytes = getBytes();
-    const timer = setInterval(() => {
-      if (!job || job.finishedAt) return;
-      const bytes = getBytes();
-      const now = Date.now();
-      const update = {
-        bytes,
-        totalBytes,
-        percent: totalBytes ? Math.min(99, Math.floor((bytes / totalBytes) * 100)) : 0,
-      };
-      if (speed) {
-        const seconds = (now - lastAt) / 1000;
-        if (seconds > 0.5) {
-          update.speed = Math.max(0, (bytes - lastBytes) / seconds);
-          lastAt = now;
-          lastBytes = bytes;
-        }
-      }
-      if (files) update.files = typeof files === "function" ? files() : files;
-      patch(update);
-    }, 1500);
-    timer.unref?.();
-    return () => clearInterval(timer);
   }
 
   /** 用本机已有的 zip 装：拿得到官方 SHA256SUMS 就校验，拿不到就照装并在结果里注明。 */
@@ -792,25 +726,12 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       const zip = join(engineDir, `${base}.zip`);
 
       patch({ phase: "download", message: `下载 ${asset.name}（${mb(asset.size ?? 0)} MB）`, totalBytes: asset.size ?? 0 });
-      try {
-        await downloadViaRpc([{ url: asset.browser_download_url, out: `${base}.zip`, size: asset.size ?? 0 }], {
-          dir: engineDir,
-          concurrency: 1,
-          totalBytes: asset.size ?? 0,
-          onTick: ({ bytes, totalBytes }) => patch({ bytes, totalBytes }),
-        });
-      } catch (error) {
-        if (cancelled) throw error;
-        // 宿主里 aria2 的直连 socket 可能走不通，而 curl 同一个地址能取。
-        patch({ phase: "download", message: `aria2 走不通，改用 curl：${brief(error)}` });
-        const probeZip = () => (existsSync(zip) ? statSync(zip).size : 0);
-        const stopWatch = watchProgress(probeZip, asset.size ?? 0, { speed: true });
-        try {
-          await curlDownload(asset.browser_download_url, zip, asset.size ?? 0);
-        } finally {
-          stopWatch();
-        }
-      }
+      await downloadViaRpc([{ url: asset.browser_download_url, out: `${base}.zip`, size: asset.size ?? 0 }], {
+        dir: engineDir,
+        concurrency: 1,
+        totalBytes: asset.size ?? 0,
+        onTick: ({ bytes, totalBytes, speed }) => patch({ bytes, totalBytes, speed }),
+      });
 
       patch({ phase: "verify", message: "校验 sha256" });
       const sumsUrl = asset.browser_download_url.replace(/[^/]+$/, "SHA256SUMS");
@@ -887,60 +808,37 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           size: entry.size ?? 0,
         }));
         for (const entry of entries) mkdirSync(dirname(join(weightsDir, ...entry.out.split("/"))), { recursive: true });
-        try {
-          await downloadViaRpc(entries, {
-            dir: weightsDir,
-            concurrency: 4,
-            totalBytes,
-            onTick: ({ bytes, totalBytes: total, done, total: count, speed, current }) =>
-              patch({
-                bytes,
-                totalBytes: total,
-                speed,
-                current,
-                files: [done, count],
-                message: `${done}/${count} 个文件 · ${gib(bytes)} / ${gib(total)} GiB`,
-              }),
-          });
-        } catch (error) {
-          if (cancelled) throw error;
-          patch({ phase: "download", message: `aria2 走不通，改用 curl 逐个下：${brief(error)}` });
-          const baseBytes = dirBytes(weightsDir);
-          const stopWatch = watchProgress(() => Math.max(0, dirBytes(weightsDir) - baseBytes), totalBytes, {
-            speed: true,
-            files: () => [doneCount, entries.length],
-          });
-          try {
-            let doneCount = 0;
-            for (const entry of entries) {
-              if (cancelled) throw new Error("已取消");
-              // 逐个源试：某个镜像走不通就换下一个，全都不行才算失败。
-              let lastError = null;
-              for (const url of entry.urls) {
-                if (cancelled) throw new Error("已取消");
-                try {
-                  await curlDownload(url, join(weightsDir, ...entry.out.split("/")), entry.size);
-                  lastError = null;
-                  break;
-                } catch (error) {
-                  lastError = error;
-                  patch({ phase: "download", message: `${url.split("/")[2]} 不行，换下一个源` });
-                }
-              }
-              if (lastError) throw lastError;
-              doneCount += 1;
-              patch({ files: [doneCount, entries.length] });
-            }
-          } finally {
-            stopWatch();
-          }
+        // aria2 先上（多源、多连接）。它完全起不来或个别文件反复失败，
+        // 都不回退 curl——单连接不可能更快，进度也问不到。
+        const outcome = await downloadViaRpc(entries, {
+          dir: weightsDir,
+          concurrency: 4,
+          totalBytes,
+          onTick: ({ bytes, totalBytes: total, done, total: count, speed, current, failed: failedCount }) =>
+            patch({
+              bytes,
+              totalBytes: total,
+              speed,
+              current,
+              files: [done, count],
+              message: `${done}/${count} 个文件 · ${gib(bytes)} / ${gib(total)} GiB${failedCount ? ` · ${failedCount} 个失败` : ""}`,
+            }),
+        });
+        const dead = outcome?.failed ?? [];
+        if (dead.length && !cancelled) {
+          const names = dead.slice(0, 3).map((entry) => `${entry.item.out}（aria2 ${entry.state.errorCode}）`);
+          throw new Error(`${dead.length} 个文件下载失败：${names.join("、")}。重试会从断点续传。`);
         }
       }
 
       patch({ phase: "verify", message: "核对大小" });
+      // 不能只看文件大小：aria2 默认会预分配，文件一开始就是满的，
+      // 大小对得上不等于内容完整。控制文件还在 = 一定没下完。
       const broken = wanted.filter((entry) => {
         const target = join(weightsDir, ...entry.path.split("/"));
-        return !(existsSync(target) && statSync(target).size === entry.size);
+        if (!existsSync(target)) return true;
+        if (existsSync(`${target}.aria2`)) return true;
+        return statSync(target).size !== entry.size;
       });
       if (broken.length) throw new Error(`${broken.length} 个文件不完整：${broken.slice(0, 3).map((e) => e.path).join("、")}`);
 
