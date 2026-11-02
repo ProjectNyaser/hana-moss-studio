@@ -231,6 +231,7 @@ async function renderCanvas(data) {
   if (nodes.resultImage.getAttribute("src") !== url) nodes.resultImage.src = url;
   const seed = job.report?.seedUsed ?? job.seed;
   nodes.resultCaption.textContent = `${job.width}×${job.height} · ${job.steps} 步 · CFG ${job.cfg} · 种子 ${seed} · ${formatDuration(job.elapsedMs)}`;
+  nodes.resultImage.onclick = () => openViewer(job.id);
 }
 
 // ── 画廊 ───────────────────────────────────────────────────────────────
@@ -602,6 +603,30 @@ function stepZoom(direction) {
   layoutViewerImage();
 }
 
+/**
+ * 以屏幕上的某一点为锚缩放：缩放后该点下的图像位置不动。
+ * 鼠标滚轮用光标位置，按钮与键盘用视口中心。
+ */
+function zoomAt(direction, clientX, clientY) {
+  const stage = nodes.viewerStage;
+  const img = nodes.viewerImage;
+  const before = img.getBoundingClientRect();
+  const relX = before.width ? (clientX - before.left) / before.width : 0.5;
+  const relY = before.height ? (clientY - before.top) / before.height : 0.5;
+  const previous = viewerZoom;
+  stepZoom(direction);
+  if (viewerZoom === previous) return;
+  // width/height 是同步改的，这里拿到的已经是新布局，直接补滚动差就行。
+  const after = img.getBoundingClientRect();
+  stage.scrollLeft += after.left + relX * after.width - clientX;
+  stage.scrollTop += after.top + relY * after.height - clientY;
+}
+
+function zoomAtCenter(direction) {
+  const rect = nodes.viewerStage.getBoundingClientRect();
+  zoomAt(direction, rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
 // ── 右键菜单 ───────────────────────────────────────────────────────────
 /** 同一源广播：把“用这张的参数”送回侧栏。 */
 const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
@@ -750,8 +775,8 @@ nodes.viewerImage.addEventListener("load", layoutViewerImage);
 nodes.viewerClose.addEventListener("click", closeViewer);
 nodes.viewerPrev.addEventListener("click", () => stepViewer(-1));
 nodes.viewerNext.addEventListener("click", () => stepViewer(1));
-nodes.viewerZoomIn.addEventListener("click", () => stepZoom(1));
-nodes.viewerZoomOut.addEventListener("click", () => stepZoom(-1));
+nodes.viewerZoomIn.addEventListener("click", () => zoomAtCenter(1));
+nodes.viewerZoomOut.addEventListener("click", () => zoomAtCenter(-1));
 nodes.viewerZoomFit.addEventListener("click", () => {
   viewerZoom = 1;
   layoutViewerImage();
@@ -760,13 +785,13 @@ nodes.viewerZoomFit.addEventListener("click", () => {
 nodes.viewerStage.addEventListener("click", (event) => {
   if (event.target === nodes.viewerStage) closeViewer();
 });
-// 滚轮缩放：看图时这是最常用的动作。
+// 滚轮缩放：以光标所在位置为锚，这才是看图时的直觉。
 nodes.viewerStage.addEventListener(
   "wheel",
   (event) => {
     if (nodes.viewer.hidden) return;
     event.preventDefault();
-    stepZoom(event.deltaY < 0 ? 1 : -1);
+    zoomAt(event.deltaY < 0 ? 1 : -1, event.clientX, event.clientY);
   },
   { passive: false },
 );
@@ -784,8 +809,8 @@ document.addEventListener("keydown", (event) => {
   if (nodes.viewer.hidden) return;
   if (event.key === "ArrowLeft") stepViewer(-1);
   else if (event.key === "ArrowRight") stepViewer(1);
-  else if (event.key === "+" || event.key === "=") stepZoom(1);
-  else if (event.key === "-") stepZoom(-1);
+  else if (event.key === "+" || event.key === "=") zoomAtCenter(1);
+  else if (event.key === "-") zoomAtCenter(-1);
   else if (event.key === "0") {
     viewerZoom = 1;
     layoutViewerImage();
