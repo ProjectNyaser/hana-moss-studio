@@ -719,8 +719,10 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       const serverPath = join(target, "bin", "moss-server.exe");
       if (!existsSync(serverPath)) throw new Error(`包里没有 ${serverPath}`);
       saveSettings({ serverPath });
+      // 只有 Release 里没发 bundled 才会落到 system-cuda，那时得提醒一句。
+      const variantNote = variant === "system-cuda" ? "；这个包不自带 CUDA 库，系统缺 cuBLASLt 会出不了图" : "";
       const drift = MOSSIMAGE.version === version ? "" : `；app/lib/mossimage.js 里还写着 ${MOSSIMAGE.version}`;
-      finish({ phase: "done", message: `引擎就绪：${base}${drift}`, detail: { serverPath, version } });
+      finish({ phase: "done", message: `引擎就绪：${base}${drift}${variantNote}`, detail: { serverPath, version } });
       onInstalled?.("engine", { serverPath });
     } catch (error) {
       fail(error);
