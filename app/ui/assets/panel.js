@@ -669,7 +669,8 @@ function applyReuse(job) {
   if (typeof job.negativePrompt === "string") nodes.negative.value = job.negativePrompt;
   if (job.width && job.height) setSize(job.width, job.height);
   if (job.steps) nodes.steps.value = String(job.steps);
-  if (job.cfg) nodes.cfg.value = String(job.cfg);
+  // CFG 取 0 是合法值，不能当假值跳过。
+  if (job.cfg != null && job.cfg !== "") nodes.cfg.value = String(job.cfg);
   nodes.seed.value = job.seed != null && job.seed !== "" ? String(job.seed) : "";
   say("已载入这张的参数", "ok");
 }
