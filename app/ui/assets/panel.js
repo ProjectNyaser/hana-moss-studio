@@ -374,9 +374,13 @@ function renderEngine(data) {
   const device = engine.device;
   const rows = [];
   if (device) {
-    rows.push(["设备", device.name]);
+    rows.push(["显卡", device.name]);
     if (device.totalMemoryBytes) rows.push(["显存", formatGb(device.totalMemoryBytes)]);
     if (device.computeCapability) rows.push(["算力", `CC ${device.computeCapability}`]);
+  } else if (data.gpu) {
+    // 引擎没启动时用探测结果，免得面板上什么硬件信息都没有。
+    rows.push(["显卡", data.gpu.name]);
+    rows.push(["驱动", data.gpu.driver]);
   }
   // 引擎与模型都由 App 装，这里只报“装的是什么”，路径收在自定义里。
   // 精度档与显存策略不在事实列表里重复，下面就是它们的选择器。
@@ -414,6 +418,12 @@ function renderEngine(data) {
     }
     const current = engines.find((item) => item.current);
     if (current) nodes.engineSelect.value = current.name;
+  }
+
+  // 「自动」到底会选什么，直接写在选项里，不用用户猜。
+  if (data.gpu && nodes.cuda.options.length) {
+    const auto = data.gpu.driverMajor && data.gpu.driverMajor < 580 ? "cu12" : "cu13";
+    nodes.cuda.options[0].textContent = `自动（会选 ${auto}）`;
   }
 
   const detail = [];

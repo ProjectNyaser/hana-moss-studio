@@ -5,7 +5,7 @@ import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
 import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
-import { createInstaller, probeGpuDetailed } from "./lib/installer.js";
+import { createInstaller, probeGpu, probeGpuDetailed } from "./lib/installer.js";
 
 export const name = "hana-moss-studio";
 
@@ -456,6 +456,19 @@ export default defineApp(async (sdk) => {
     };
   }
 
+  /** 最近一次显卡探测结果。面板常驻显示，不必等装引擎时才有。 */
+  let gpuCache = null;
+  // 稍后探一次，不与首帧争时间；探不到就不管，面板自行退回默认。
+  setTimeout(() => {
+    probeGpu()
+      .then((gpu) => {
+        if (!gpu) return;
+        gpuCache = gpu;
+        schedulePush(0);
+      })
+      .catch((error) => sdk.logger.warn(`显卡探测失败：${message(error)}`));
+  }, 1500).unref?.();
+
   function state() {
     const settings = store.getSettings();
     const snapshot = engine.snapshot();
@@ -491,6 +504,7 @@ export default defineApp(async (sdk) => {
       plan: modelPlan(),
       install: installer.snapshot(),
       engines: installer.listEngines(),
+      gpu: gpuCache,
     };
   }
 
