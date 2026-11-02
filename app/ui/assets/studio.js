@@ -258,6 +258,14 @@ async function renderGallery(data) {
         meta.className = "thumb-meta";
         meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
         tile.appendChild(meta);
+        // 单条删除：悬停才露出，点一下变「删?」，再点才真删。
+        const remove = document.createElement("button");
+        remove.className = "thumb-remove";
+        remove.type = "button";
+        remove.title = "删掉这条记录与图片";
+        remove.textContent = "×";
+        armable(remove, "删?", "×", () => removeJob(job.id));
+        tile.appendChild(remove);
       }
     } else if (job.status === "error") {
       tile.classList.add("placeholder", "bad");
@@ -481,6 +489,15 @@ async function onClearJobs() {
   } catch (error) {
     nodes.stageText.textContent = error instanceof Error ? error.message : String(error);
     nodes.stageDot.className = "dot err";
+  }
+}
+
+async function removeJob(id) {
+  try {
+    render(await post("/jobs/remove", { id }));
+    renderedJobsKey = null;
+  } catch (error) {
+    nodes.galleryCount.textContent = error instanceof Error ? error.message : String(error);
   }
 }
 

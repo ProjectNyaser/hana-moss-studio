@@ -93,6 +93,9 @@ export function createStore(dataDir) {
     getJob(id) {
       return this.listJobs().find((job) => job.id === id) ?? null;
     },
+    removeJob(id) {
+      return this.saveJobs(this.listJobs().filter((job) => job.id !== id));
+    },
   };
 }
 

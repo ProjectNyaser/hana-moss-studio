@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine } from "./lib/engine.js";
@@ -330,6 +330,15 @@ export default defineApp(async (sdk) => {
       const round16 = (value) => Math.max(16, Math.round((value * record.hiresScale) / 16) * 16);
       record.hiresWidth = round16(box.width);
       record.hiresHeight = round16(box.height);
+      // 引擎的上限：每边 ≤ 4096，总计 ≤ 4.2 百万像素。超了它会在跑完之后
+      // 才报 invalid_params，白等一分钟，所以在这里拦住。
+      const pixels = record.hiresWidth * record.hiresHeight;
+      if (record.hiresWidth > 4096 || record.hiresHeight > 4096 || pixels > 4.2e6) {
+        throw new Error(
+          `高清修正后是 ${record.hiresWidth}×${record.hiresHeight}（${(pixels / 1e6).toFixed(1)} 百万像素），` +
+            `超出引擎上限（每边 ≤ 4096、总计 ≤ 4.2 百万）。把倍率或基础尺寸调小。`,
+        );
+      }
     }
     store.upsertJob(record);
     const entry = remember(liveEntry(record));
@@ -894,6 +903,25 @@ export default defineApp(async (sdk) => {
       if (!file) return c.text("not found", 404);
       const data = readFileSync(file);
       return c.body(data, 200, { "content-type": "image/png", "cache-control": "private, max-age=30" });
+    });
+
+    app.post(`/${APP_ID}/jobs/remove`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const id = String(body?.id ?? "").trim();
+      if (!id) return c.json({ ...state(), error: "缺少 id" }, 400);
+      const job = store.getJob(id);
+      if (!job) return c.json({ ...state(), error: `没有记录 ${id}` }, 404);
+      // 图也一起删，不然文件会变成没人引用的孤子。
+      if (job.output) {
+        try {
+          rmSync(join(outputsDir, job.output), { force: true });
+        } catch {
+          /* 文件已经不在就算了 */
+        }
+      }
+      store.removeJob(id);
+      schedulePush(0);
+      return c.json(state());
     });
 
     app.post(`/${APP_ID}/jobs/clear`, (c) => {

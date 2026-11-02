@@ -280,15 +280,58 @@ body {
   overflow-y: auto;
 }
 
-/* 画廊独立成页时不再限高，铺满剩余空间并自己滚。 */
+/* 画廊独立成页：用瀑布流（多列）排，图片按原比例显示，长短不一才不乱。 */
 .gallery-grid {
+  display: block;
   flex: 1;
   min-height: 0;
   max-height: none;
-  align-content: start;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  overflow-y: auto;
+  column-width: 208px;
+  column-gap: 10px;
   padding: 0 12px 20px;
 }
+
+.gallery-grid .thumb {
+  break-inside: avoid;
+  width: 100%;
+  margin: 0 0 10px;
+  aspect-ratio: auto;
+  cursor: zoom-in;
+}
+
+.gallery-grid .thumb img {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+/* 错误与排队占位没有图，给个正方块保持节奏。 */
+.gallery-grid .thumb.placeholder { aspect-ratio: 1 / 1; }
+
+/* 单条删除：悬停才出现，点一下变红再点才真删。 */
+.thumb-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.58);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  line-height: 20px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms var(--ui-ease), background 140ms var(--ui-ease);
+}
+.thumb:hover .thumb-remove,
+.thumb-remove[data-armed="1"] { opacity: 1; }
+.thumb-remove[data-armed="1"] { background: var(--ui-danger, #d4473c); }
 
 .thumb {
   position: relative;
