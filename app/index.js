@@ -493,6 +493,8 @@ export default defineApp(async (sdk) => {
       height: job.height,
       steps: job.steps,
       cfg: job.cfg,
+      // 高清修正开着时引擎总步数会多出第二阶段，界面要能解释这个差额。
+      hiresScale: job.hiresScale ?? 0,
       seed: job.report?.seedUsed ?? job.seed,
       status: job.status,
       output: job.output ?? null,

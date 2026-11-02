@@ -60,12 +60,6 @@ const nodes = {
   dot: el("pn-dot"),
   state: el("pn-state"),
   message: el("pn-message"),
-  jobBlock: el("pn-job-block"),
-  jobPrompt: el("pn-job-prompt"),
-  bar: el("pn-bar"),
-  jobStage: el("pn-job-stage"),
-  jobEta: el("pn-job-eta"),
-  cancel: el("pn-cancel"),
   prompt: el("pn-prompt"),
   negative: el("pn-negative"),
   ratioSlider: el("pn-ratio-slider"),
@@ -88,6 +82,7 @@ const nodes = {
   cfg: el("pn-cfg"),
   seed: el("pn-seed"),
   generate: el("pn-generate"),
+  cancel: el("pn-cancel"),
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
   errors: el("pn-errors"),
@@ -162,12 +157,6 @@ function say(text, kind) {
 }
 
 // ── 格式化 ─────────────────────────────────────────────────────────────
-function formatDuration(ms) {
-  if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds} 秒`;
-  return `${Math.floor(seconds / 60)} 分 ${String(seconds % 60).padStart(2, "0")} 秒`;
-}
 
 function setSettings(settings) {
   if (settingsLoaded) return;
@@ -523,23 +512,6 @@ function renderEngine(data) {
   nodes.engineVersion.title = `${data.mossimage?.repo ?? ""} · protocol ${data.mossimage?.protocolVersion ?? "?"}`;
 }
 
-function renderJob(data) {
-  const active = data.engine.active;
-  if (!active) {
-    nodes.jobBlock.hidden = true;
-    nodes.cancel.disabled = true;
-    return;
-  }
-  const progress = active.progress ?? {};
-  nodes.jobBlock.hidden = false;
-  nodes.jobPrompt.textContent = progress.prompt ?? "";
-  const percent = typeof progress.percent === "number" ? progress.percent : 0;
-  nodes.bar.classList.toggle("indeterminate", percent <= 0);
-  nodes.bar.querySelector("i").style.width = percent > 0 ? `${percent}%` : "36%";
-  nodes.jobStage.textContent = `${progress.phase ?? "准备中"}${progress.total ? ` · ${progress.step}/${progress.total} 步` : ""}`;
-  nodes.jobEta.textContent = progress.etaMs ? `剩 ${formatDuration(progress.etaMs)}` : progress.elapsedMs ? formatDuration(progress.elapsedMs) : "";
-  nodes.cancel.disabled = false;
-}
 
 const PHASE_LABEL = {
   starting: "准备",
@@ -559,12 +531,13 @@ function render(data) {
   latest = data;
   setSettings(data.settings);
   renderEngine(data);
-  renderJob(data);
   nodes.generate.disabled = submitting;
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。
   const busy = Boolean(data.engine.active) || data.queue.length > 0;
   nodes.generate.textContent = busy ? "加入队列" : "开始生成";
   nodes.generate.title = busy ? "当前有任务在跑，点这里排到它后面" : "";
+  // 生成中才出取消按钮；空闲时不占位置。
+  nodes.cancel.hidden = !data.engine.active;
   const done = data.jobs.filter((job) => job.status === "done").length;
   const failed = data.jobs.filter((job) => job.status === "error").length;
   nodes.errors.textContent = failed ? `完成 ${done} · 失败 ${failed}` : done ? `完成 ${done}` : "";

@@ -167,13 +167,24 @@ function renderStage(data) {
   } else if (engine.active) {
     dotClass = "dot busy";
     const progress = engine.active.progress ?? {};
-    label = `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step}/${progress.total}` : ""}`;
+    const head = `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step}/${progress.total}` : ""}`;
+    const tail = progress.etaMs
+      ? ` · 约剩 ${formatDuration(progress.etaMs)}`
+      : progress.elapsedMs
+        ? ` · 已跑 ${formatDuration(progress.elapsedMs)}`
+        : "";
+    label = head + tail;
   } else {
     dotClass = "dot on";
     label = engine.loaded ? "就绪 · 模型已加载" : "就绪 · 模型未加载";
   }
+/** 高清修正开着时，引擎的总步数会多出第二阶段：设 16 步会看到 24。 */
+  const activeJob = engine.active ? data.jobs.find((job) => job.id === engine.active.jobId) : null;
+  if (engine.active && activeJob?.hiresScale > 1.001) label += " · 含高清修正";
   nodes.stageDot.className = dotClass;
   nodes.stageText.textContent = label;
+  // 生成中时这块可以点：点一下就取消，不必回到侧栏。
+  nodes.stageChip.classList.toggle("cancelable", Boolean(engine.active));
   nodes.stageChip.title = engine.lastError ?? "";
   nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
@@ -813,6 +824,12 @@ nodes.viewerStage.addEventListener(
   { passive: false },
 );
 document.addEventListener("click", () => closeMenu());
+// 顶部的进度块可点：生成中点一下就取消。
+nodes.stageChip.addEventListener("click", () => {
+  const active = latest?.engine?.active;
+  if (!active) return;
+  void post("/cancel", { id: active.jobId });
+});
 document.addEventListener("contextmenu", (event) => {
   // 图上右键已自己处理；空白处的右键只负责把菜单关掉。
   if (!event.target.closest(".thumb")) closeMenu();

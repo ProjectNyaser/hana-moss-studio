@@ -506,6 +506,15 @@ body {
   color: var(--ui-text-3);
 }
 
+/* 生成中时顶部状态块可点：点一下取消当前任务。 */
+.chip.cancelable {
+  cursor: pointer;
+}
+
+.chip.cancelable:hover {
+  border-color: var(--ui-text-3);
+}
+
 @media (max-width: 820px) {
   .canvas { padding: 12px; }
   .result img { max-height: calc(100vh - 240px); }
