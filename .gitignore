@@ -3,3 +3,11 @@ dist-extensions/
 node_modules/
 *.log
 .DS_Store
+
+# @hana/app-sdk 的派生副本：scripts/derive.mjs 从 vendor/hana-app-sdk 展开，不入库
+app/sdk/
+app/ui/assets/sdk.js
+app/ui/assets/app-ui.js
+app/ui/assets/app-ui.js.LEGAL.txt
+app/ui/assets/app-ui.css
+app/ui/assets/THIRD_PARTY_NOTICES.txt

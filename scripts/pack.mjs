@@ -160,6 +160,10 @@ function iconDataUri(iconRel) {
 function main() {
   const manifestPath = path.join(SOURCE, "manifest.json");
   if (!fs.existsSync(manifestPath)) fatal("app/manifest.json 不存在");
+  // 入口 import 的是 App 内的 SDK 副本（app/sdk），它不在库里，由 pnpm run derive 展开。
+  if (!fs.existsSync(path.join(SOURCE, "sdk", "app-contract", "server-client.js"))) {
+    fatal("app/sdk 缺 SDK 副本（入口靠它取 defineApp），先跑 pnpm run derive");
+  }
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 

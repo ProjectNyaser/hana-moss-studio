@@ -1,0 +1,31 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      '@hana/app-sdk':
+        specifier: file:vendor/hana-app-sdk/hana-app-sdk.tgz
+        version: file:vendor/hana-app-sdk/hana-app-sdk.tgz
+
+packages:
+
+  '@hana/app-sdk@file:vendor/hana-app-sdk/hana-app-sdk.tgz':
+    resolution: {integrity: sha512-/mELUj3z+vOAXoTxZlGWiniAfoouzmUSXo9cdeIdZ+oDaCz0qQrrfVgVqlCx2ns9ezEYm4AAnZdEgpGvQYwNOw==, tarball: file:vendor/hana-app-sdk/hana-app-sdk.tgz}
+    version: 1.5.7-beta
+    peerDependencies:
+      react: '>=19'
+      react-dom: '>=19'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
+
+snapshots:
+
+  '@hana/app-sdk@file:vendor/hana-app-sdk/hana-app-sdk.tgz': {}

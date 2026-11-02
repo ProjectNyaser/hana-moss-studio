@@ -9,6 +9,9 @@ name: Release
 # 打包是仓库自己的事（scripts/pack.mjs）：包内容由这个 App 需要什么决定，
 # 条目的 sha256 对包现算，不经中间小票。
 #
+# App 的 SDK 副本（app/sdk）不入库，是 vendor/hana-app-sdk 里 tgz 的派生物，
+# 构建前先 pnpm install + derive 把它展出来。
+#
 # 不做平台矩阵：交付物是纯 JS，一个包跑遍所有平台，矩阵只是白花时间。
 
 on:
@@ -29,9 +32,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # App 的 SDK 副本不入库（见 .gitignore），从 vendor/hana-app-sdk 的快照展开，
+      # 所以构建前必须装依赖。tgz 在仓库里，这一步不需要联网取 SDK。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: pnpm
+
+      - name: 装依赖并展开 SDK 副本
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run derive
 
       - name: 出包
         run: node scripts/pack.mjs

@@ -8,10 +8,15 @@
   "author": "Nyaser",
   "publisher": "Nyaser",
   "scripts": {
-    "build": "node scripts/package.mjs",
-    "check": "node scripts/package.mjs",
-    "pack": "node scripts/pack.mjs",
+    "sync:sdk": "node scripts/vendor/sdk.mjs",
+    "derive": "node scripts/derive.mjs",
+    "check": "node scripts/derive.mjs --check && node scripts/package.mjs",
+    "build": "node scripts/derive.mjs && node scripts/package.mjs",
+    "pack": "node scripts/derive.mjs && node scripts/pack.mjs",
     "market": "node scripts/market.mjs"
+  },
+  "devDependencies": {
+    "@hana/app-sdk": "file:vendor/hana-app-sdk/hana-app-sdk.tgz"
   },
   "engines": {
     "node": ">=20"

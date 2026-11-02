@@ -1,0 +1,16 @@
+# 统一行尾：入库与检出都是 LF。
+#
+# 不只是风格问题。scripts/vendor/sdk.mjs 按整文件 sha256 比对 vendor/hana-app-sdk 下的快照，
+# scripts/derive.mjs 按同样方式比对 app/sdk。检出时被换成 CRLF 的文件，哈希就对不上，
+# 于是每次都报「漂移」，人会开始无视那条警告。锁死 LF 才让这两条校验有意义。
+* text=auto eol=lf
+
+# SDK 快照是 tgz，按内容判二进制虽已足够，仍显式声明防误判。
+*.tgz binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.svg text
