@@ -318,42 +318,91 @@ body {
 /* 错误与排队占位没有图，给个正方块保持节奏。 */
 .gallery-grid .thumb.placeholder { aspect-ratio: 1 / 1; }
 
-/* 放大预览：按原始像素显示。原来 max-width/max-height 一封，图永远只是「小一号地
-   看」，放不出细节。现在超窗就自己滚，小于窗口则居中。 */
-.lightbox {
+/* ── 图片查看器 ────────────────────────────────────────────────────
+   与宿主那个 .lightbox 无关：这里是自己的，默认适应窗口，可缩放与翻页。 */
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--ui-text) 82%, transparent);
+}
+.viewer[hidden] { display: none; }
+
+.viewer-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 10px 12px;
+}
+.viewer-index { font-size: 12px; color: #fff; opacity: 0.8; }
+
+.viewer-btn {
+  min-width: 30px;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 28px;
+  cursor: pointer;
+}
+.viewer-btn:hover { background: rgba(255, 255, 255, 0.26); }
+
+.viewer-nav {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 40px;
+  height: 64px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.viewer-nav:hover { background: rgba(255, 255, 255, 0.26); }
+.viewer-nav.prev { left: 12px; }
+.viewer-nav.next { right: 12px; }
+.viewer-nav[hidden] { display: none; }
+
+.viewer-stage {
+  flex: 1;
+  min-height: 0;
   display: grid;
   place-content: safe center;
   overflow: auto;
-  padding: 0;
-  cursor: default;
+  padding: 12px 64px;
 }
 
-.lightbox img {
+.viewer-stage img {
   max-width: none;
   max-height: none;
-  width: auto;
-  height: auto;
-  margin: auto;
-  border-radius: 0;
+  border-radius: 4px;
+  display: block;
 }
 
-/* 图可能比窗口大，背景未必点得到，常置一个关闭按钮。 */
-.lightbox-close {
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  z-index: 2;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 16px;
-  background: rgba(0, 0, 0, 0.55);
+.viewer-info {
+  flex: none;
+  padding: 10px 16px 14px;
   color: #fff;
-  font-size: 18px;
-  line-height: 32px;
-  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.82;
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
-.lightbox-close:hover { background: rgba(0, 0, 0, 0.75); }
 
 /* 右键菜单：图上能用的几件事都在这里，失败记录也一样。 */
 .ctx-menu {

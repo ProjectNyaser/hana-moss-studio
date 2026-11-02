@@ -27,9 +27,17 @@ const nodes = {
   thumbs: el("thumbs"),
   clearJobs: el("clear-jobs"),
   ctxMenu: el("ctx-menu"),
-  lightboxClose: el("lightbox-close"),
-  lightbox: el("lightbox"),
-  lightboxImage: el("lightbox-image"),
+  viewer: el("viewer"),
+  viewerStage: el("viewer-stage"),
+  viewerImage: el("viewer-image"),
+  viewerIndex: el("viewer-index"),
+  viewerInfo: el("viewer-info"),
+  viewerPrev: el("viewer-prev"),
+  viewerNext: el("viewer-next"),
+  viewerClose: el("viewer-close"),
+  viewerZoomIn: el("viewer-zoom-in"),
+  viewerZoomOut: el("viewer-zoom-out"),
+  viewerZoomFit: el("viewer-zoom-fit"),
   // 队列
   queueRunningState: el("queue-running-state"),
   queueRunning: el("queue-running"),
@@ -205,11 +213,6 @@ function loadImage(name) {
   return imageCache.get(name);
 }
 
-function openLightbox(src) {
-  nodes.lightboxImage.src = src;
-  nodes.lightbox.hidden = false;
-}
-
 async function renderCanvas(data) {
   const job = latestDone(data);
   if (!job) {
@@ -291,7 +294,7 @@ async function renderGallery(data) {
         image.title = job.prompt;
         if (job.width && job.height) image.style.aspectRatio = `${job.width} / ${job.height}`;
         // 左键直接看大图，不切页；要把这张拿到画布去用右键。
-        image.addEventListener("click", () => openLightbox(url));
+        image.addEventListener("click", () => openViewer(job.id));
         tile.appendChild(image);
         const meta = document.createElement("div");
         meta.className = "thumb-meta";
@@ -534,6 +537,71 @@ async function loadReleases(force = false) {
   }
 }
 
+// ── 图片查看器 ─────────────────────────────────────────────────────────
+/** 缩放档位；1 就是适应窗口。 */
+const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8];
+let viewerList = [];
+let viewerIndex = 0;
+let viewerZoom = 1;
+
+function openViewer(id) {
+  viewerList = (latest?.jobs ?? []).filter((job) => job.status === "done" && job.output);
+  const index = viewerList.findIndex((job) => job.id === id);
+  if (index < 0) return;
+  viewerIndex = index;
+  viewerZoom = 1;
+  nodes.viewer.hidden = false;
+  applyViewer();
+}
+
+function closeViewer() {
+  nodes.viewer.hidden = true;
+}
+
+/** 先算出「适应窗口」的尺寸，再乘缩放倍率。 */
+function layoutViewerImage() {
+  const img = nodes.viewerImage;
+  const stage = nodes.viewerStage;
+  const natW = img.naturalWidth || 1;
+  const natH = img.naturalHeight || 1;
+  const boxW = Math.max(120, stage.clientWidth - 128);
+  const boxH = Math.max(120, stage.clientHeight - 24);
+  const fit = Math.min(boxW / natW, boxH / natH);
+  img.style.width = `${Math.round(natW * fit * viewerZoom)}px`;
+  img.style.height = `${Math.round(natH * fit * viewerZoom)}px`;
+  const zoom = viewerZoom === 1 ? "" : ` · ${Math.round(viewerZoom * 100)}%`;
+  nodes.viewerIndex.textContent = `${viewerIndex + 1} / ${viewerList.length}${zoom}`;
+}
+
+function applyViewer() {
+  const job = viewerList[viewerIndex];
+  if (!job) return;
+  nodes.viewerImage.src = loadImage(job.output) ?? "";
+  const seed = job.report?.seedUsed ?? job.seed;
+  const parts = [`${job.width}×${job.height}`, `${job.steps} 步`, `CFG ${job.cfg}`, `种子 ${seed}`];
+  if (job.elapsedMs) parts.push(formatDuration(job.elapsedMs));
+  nodes.viewerInfo.textContent = `${parts.join(" · ")}　—　${job.prompt ?? ""}`;
+  nodes.viewerPrev.hidden = viewerList.length < 2;
+  nodes.viewerNext.hidden = viewerList.length < 2;
+  if (nodes.viewerImage.complete) layoutViewerImage();
+}
+
+function stepViewer(delta) {
+  if (viewerList.length < 2) return;
+  viewerIndex = (viewerIndex + delta + viewerList.length) % viewerList.length;
+  viewerZoom = 1;
+  applyViewer();
+}
+
+function stepZoom(direction) {
+  const next =
+    direction > 0
+      ? (ZOOM_STEPS.find((value) => value > viewerZoom + 0.001) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1])
+      : ([...ZOOM_STEPS].reverse().find((value) => value < viewerZoom - 0.001) ?? ZOOM_STEPS[0]);
+  viewerZoom = next;
+  layoutViewerImage();
+}
+
 // ── 右键菜单 ───────────────────────────────────────────────────────────
 /** 同一源广播：把“用这张的参数”送回侧栏。 */
 const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
@@ -678,13 +746,30 @@ nodes.removeModel.addEventListener("click", () =>
   ),
 );
 nodes.clearJobs.addEventListener("click", onClearJobs);
-nodes.lightbox.addEventListener("click", (event) => {
-  // 点背景才关；图按原始大小可能比窗口还大，要看细节时不能一点就没了。
-  if (event.target === nodes.lightbox) nodes.lightbox.hidden = true;
+nodes.viewerImage.addEventListener("load", layoutViewerImage);
+nodes.viewerClose.addEventListener("click", closeViewer);
+nodes.viewerPrev.addEventListener("click", () => stepViewer(-1));
+nodes.viewerNext.addEventListener("click", () => stepViewer(1));
+nodes.viewerZoomIn.addEventListener("click", () => stepZoom(1));
+nodes.viewerZoomOut.addEventListener("click", () => stepZoom(-1));
+nodes.viewerZoomFit.addEventListener("click", () => {
+  viewerZoom = 1;
+  layoutViewerImage();
 });
-nodes.lightboxClose.addEventListener("click", () => {
-  nodes.lightbox.hidden = true;
+// 点图的周围空白处关掉；点图本身不关。
+nodes.viewerStage.addEventListener("click", (event) => {
+  if (event.target === nodes.viewerStage) closeViewer();
 });
+// 滚轮缩放：看图时这是最常用的动作。
+nodes.viewerStage.addEventListener(
+  "wheel",
+  (event) => {
+    if (nodes.viewer.hidden) return;
+    event.preventDefault();
+    stepZoom(event.deltaY < 0 ? 1 : -1);
+  },
+  { passive: false },
+);
 document.addEventListener("click", () => closeMenu());
 document.addEventListener("contextmenu", (event) => {
   // 图上右键已自己处理；空白处的右键只负责把菜单关掉。
@@ -693,8 +778,22 @@ document.addEventListener("contextmenu", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeMenu();
-    if (!nodes.lightbox.hidden) nodes.lightbox.hidden = true;
+    if (!nodes.viewer.hidden) closeViewer();
+    return;
   }
+  if (nodes.viewer.hidden) return;
+  if (event.key === "ArrowLeft") stepViewer(-1);
+  else if (event.key === "ArrowRight") stepViewer(1);
+  else if (event.key === "+" || event.key === "=") stepZoom(1);
+  else if (event.key === "-") stepZoom(-1);
+  else if (event.key === "0") {
+    viewerZoom = 1;
+    layoutViewerImage();
+  }
+});
+// 窗口尺寸变了，适应窗口的基准跟着变。
+window.addEventListener("resize", () => {
+  if (!nodes.viewer.hidden) layoutViewerImage();
 });
 // 窗口宽度变了列数跟着变，重排一次。
 window.addEventListener("resize", () => {

@@ -345,9 +345,9 @@
         <label class="field">
           <span class="label">精度档</span>
           <select id="pn-tier">
-            <option value="high">高精度</option>
-            <option value="reference">参考档</option>
-            <option value="turbo">INT4 Turbo</option>
+            <option value="high" title="DiT 自身的 GEMM 精度 + 8-bit 注意力，日常首选">INT8 平衡（默认）</option>
+            <option value="reference" title="BF16，不做任何降精度">BF16 精确</option>
+            <option value="turbo" title="4-bit DiT，需要 4-bit 蒖重，否则引擎会拒">INT4 极速</option>
           </select>
         </label>
       </div>

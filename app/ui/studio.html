@@ -137,9 +137,24 @@
     </section>
   </main>
 
-  <div class="lightbox" id="lightbox" hidden>
-    <img id="lightbox-image" alt="">
-    <button class="lightbox-close" id="lightbox-close" type="button" title="关闭（Esc）">×</button>
+  <div class="viewer" id="viewer" hidden>
+    <div class="viewer-top">
+      <span class="viewer-index mono" id="viewer-index"></span>
+      <span class="spacer"></span>
+      <button class="viewer-btn" id="viewer-zoom-out" type="button" title="缩小（-）">−</button>
+      <button class="viewer-btn" id="viewer-zoom-fit" type="button" title="适应窗口（0）">适应</button>
+      <button class="viewer-btn" id="viewer-zoom-in" type="button" title="放大（+）">+</button>
+      <button class="viewer-btn" id="viewer-close" type="button" title="关闭（Esc）">×</button>
+    </div>
+
+    <button class="viewer-nav prev" id="viewer-prev" type="button" title="上一张（←）">‹</button>
+    <button class="viewer-nav next" id="viewer-next" type="button" title="下一张（→）">›</button>
+
+    <div class="viewer-stage" id="viewer-stage">
+      <img id="viewer-image" alt="">
+    </div>
+
+    <div class="viewer-info" id="viewer-info"></div>
   </div>
   <div class="ctx-menu" id="ctx-menu" hidden role="menu"></div>
 
