@@ -24,6 +24,14 @@ function mpNotchAt(pct) {
 function mpFromNotch(notch) {
   return Math.max(MIN_MP, Math.min(MAX_MP, notch));
 }
+
+/** 手动改了宽高，滑块也跟着挪到对应的那一格。 */
+function syncNotchFromSize() {
+  mpNotch = Math.max(
+    MP_NOTCH_MIN,
+    Math.min(MP_NOTCH_MAX, Number((Math.round(currentMP() * 10) / 10).toFixed(1))),
+  );
+}
 /** 比例滑条的值域：9:16 到 16:9。取 log2 后左右对称，中点正好是 1:1。 */
 const RATIO_MIN = 9 / 16;
 const RATIO_MAX = 16 / 9;
@@ -95,6 +103,9 @@ let draggingName = null;
 // 拖动开始时锁住另一个维度：拖比例时像素量不动，拖像素量时比例不动。
 let pinnedMP = null;
 let pinnedRatio = null;
+// 滑块自己记住落在哪一格，而不是从实际像素量反算。
+// 标准比下合法尺寸是稀疏的，靠它拖动才跟手；实际做得出来的值另报。
+let mpNotch = 1;
 let settingsLoaded = false;
 /** 正在发 /generate 请求的瞬间，按钮短暂禁用，避免连点堆任务。 */
 let submitting = false;
@@ -169,6 +180,7 @@ function setSettings(settings) {
   nodes.cfg.value = settings.defaults.cfg;
   hiresScale = Math.max(1, Number(settings.defaults.hiresScale) || 1);
   nodes.hiresSteps.value = settings.defaults.hiresSteps ?? 0;
+  syncNotchFromSize();
   renderSize();
 }
 
@@ -193,10 +205,29 @@ function currentRatio() {
   return (Number(nodes.width.value) || 768) / (Number(nodes.height.value) || 768);
 }
 
-/** 像素量定了宽高就定了：两边都取最近的 16 倍数。
- *  round 而不是 floor：向下取会把长边系统性地拉偏（1440×16/9 = 2560，floor 得 2544）。
- *  取整后可能擦线超上限，交给 fitToEngine 收。 */
+/** 标准比对应的最小整数对：16:9 就是 16:9 的 k 倍。 */
+const RATIO_UNITS = [
+  [16, 9],
+  [3, 2],
+  [4, 3],
+  [1, 1],
+  [3, 4],
+  [2, 3],
+  [9, 16],
+];
+
+/** 像素量定了宽高就定了。
+ *  标准比走严格：尺寸 = k·[w,h]，k 必须是 16 的倍数（两边才都是 16 的倍数）。
+ *  于是合法尺寸稀疏（16:9 在 3MP 附近约 0.7MP 一跳），取不超过目标的最大那个。
+ *  非标准比没这个约束，直接两边取最近的 16 倍数。 */
 function sizeFor(ratio, megapixels) {
+  const unit = RATIO_UNITS.find(([p, q]) => Math.abs(p / q - ratio) < 1e-9);
+  if (unit) {
+    const [p, q] = unit;
+    let k = Math.max(16, Math.floor(Math.sqrt((megapixels * 1e6) / (p * q)) / 16) * 16);
+    while (k > 16 && k * p * k * q > MAX_MP * 1e6) k -= 16;
+    return [k * p, k * q];
+  }
   const spread = ratio >= 1 ? ratio : 1 / ratio;
   const clamp16 = (value) => Math.max(256, Math.round(value / 16) * 16);
   const short = clamp16(Math.sqrt((megapixels * 1e6) / spread));
@@ -308,11 +339,13 @@ function renderSize() {
   nodes.ratioThumb.setAttribute("aria-valuenow", Math.log2(shownRatio).toFixed(2));
   nodes.ratioNote.textContent = simplifyRatio(width, height);
 
-  const mpNotch = Math.max(MP_NOTCH_MIN, Math.min(MP_NOTCH_MAX, Number((Math.round(megapixels * 10) / 10).toFixed(1))));
-  const mpPct = (mpNotch - MP_NOTCH_MIN) / (MP_NOTCH_MAX - MP_NOTCH_MIN);
+  // 拇指按滑块自己那一格定位，不从实际像素量反算：
+  // 标准比下 3.6 实际只能做出 2.99，反算会让拇指从指针底下弹回去。
+  const notch = Math.max(MP_NOTCH_MIN, Math.min(MP_NOTCH_MAX, mpNotch));
+  const mpPct = (notch - MP_NOTCH_MIN) / (MP_NOTCH_MAX - MP_NOTCH_MIN);
   const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
   nodes.sliderFill.style.width = `${mx}px`;
-  nodes.sliderThumb.textContent = mpNotch.toFixed(1);
+  nodes.sliderThumb.textContent = notch.toFixed(1);
   nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(2));
   nodes.mpNote.textContent = `${megapixels.toFixed(2)}MP`;
 
@@ -377,15 +410,16 @@ function bindSizeSliders() {
 
   function applyRatio(clientX) {
     const ratio = tToRatio(pctFromEvent(nodes.ratioSlider, clientX));
-    const megapixels = Math.min(MAX_MP, Math.max(MIN_MP, pinnedMP ?? currentMP()));
-    const [w, h] = sizeFor(ratio, megapixels);
+    const notch = Math.min(MP_NOTCH_MAX, Math.max(MP_NOTCH_MIN, pinnedMP ?? mpNotch));
+    const [w, h] = sizeFor(ratio, mpFromNotch(notch));
     setSize(w, h);
   }
 
   function applyMP(clientX) {
     // 当前比例接近标准比就先抬到标准比：不然 2544×1440 这类偏差会一直传下去。
     const ratio = snapRatio(pinnedRatio ?? currentRatio());
-    const [w, h] = sizeFor(ratio, mpFromNotch(mpNotchAt(pctFromEvent(nodes.slider, clientX))));
+    mpNotch = mpNotchAt(pctFromEvent(nodes.slider, clientX));
+    const [w, h] = sizeFor(ratio, mpFromNotch(mpNotch));
     setSize(w, h);
   }
 
@@ -409,7 +443,7 @@ function bindSizeSliders() {
     container.addEventListener("pointerdown", (event) => {
       dragging = true;
       draggingName = name;
-      pinnedMP = currentMP();
+      pinnedMP = mpNotch;
       pinnedRatio = currentRatio();
       // 量一次就够：拖动中容器尺寸不会变。
       container.__dragRect = container.getBoundingClientRect();
@@ -656,6 +690,14 @@ for (const node of [
 ]) {
   node.addEventListener("input", scheduleSave);
   node.addEventListener("change", scheduleSave);
+}
+
+// 手敲宽高滑块不动，这里把刻度跟着实际像素量对齐。
+for (const node of [nodes.width, nodes.height]) {
+  node.addEventListener("input", () => {
+    syncNotchFromSize();
+    renderSize();
+  });
 }
 
 nodes.generate.addEventListener("click", onGenerate);
