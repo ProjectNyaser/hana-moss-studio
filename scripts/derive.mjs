@@ -153,7 +153,7 @@ const RUNTIME_DEPS = [
     keep: (name) => /^(utils|meta)\.js$/.test(name) || name.startsWith("codec/enc/webp_enc_simd"),
   },
   { pkg: "yauzl", keep: () => true },
-  { pkg: "pend", keep: (name) => name === "index.js" },
+  { pkg: "pend", via: "yauzl", keep: (name) => name === "index.js" },
   { pkg: "semver", keep: () => true },
 ];
 

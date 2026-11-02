@@ -667,65 +667,65 @@ async function ensureThumb(file, size = 320) {
 }
 
 function state() {
-    const settings = store.getSettings();
-    const snapshot = engine.snapshot();
-    const active = liveActive();
-    return {
-      settings,
-      engine: {
-        ...snapshot,
-        serverFound: Boolean(engine.serverPath()),
-        modelFound: Boolean(settings.modelPath && existsSync(settings.modelPath)),
-        device: deviceOf(snapshot),
-        active: active
-          ? {
-              jobId: active.id,
-              prompt: active.prompt,
-              width: active.width,
-              height: active.height,
-              steps: active.steps,
-              cfg: active.cfg,
-              seed: active.report?.seedUsed ?? active.seed ?? null,
-              hiresScale: active.hiresScale ?? 0,
-              phase: active.phase,
-              progress: taskProgress(active),
-              previewAt: active.previewAt ?? null,
-            }
-          : null,
-      },
-      queue: queue.map((job) => ({ id: job.id, prompt: job.prompt, width: job.width, height: job.height, steps: job.steps })),
-      running,
-      // 只带界面当场要用的那几条：未收尾的全带（排队、运行、失败），完成的只留最近
-      // 两条给画布与首屏。整份历史走 /jobs 分页，不该每帧跟着 state 跑一遍。
-      jobs: (() => {
-        const all = store.listJobs();
-        const pending = all.filter((job) => job.status !== "done" && job.status !== "cancelled");
-        const done = all.filter((job) => job.status === "done").slice(0, 2);
-        return [...pending, ...done].map(slimJob);
-      })(),
-      // 全量记录数：state 只带前面那些，界面上的总数不能跟着它算。
-      jobTotal: store.listJobs().length,
-      // 只算还没收尾的：结束的任务进度已经没意义，四十条堆在每帧里白占体积。
-      progress: Object.fromEntries(
-        [...live.values()]
-          .filter((entry) => entry.status === "running" || entry.status === "queued")
-          .map((entry) => [entry.id, taskProgress(entry)]),
-      ),
-      mossimage: {
-        repo: MOSSIMAGE.repo,
-        version: MOSSIMAGE.version,
-        protocolVersion: MOSSIMAGE.protocolVersion,
-        abiVersion: MOSSIMAGE.abiVersion,
-        model: MOSSIMAGE.model.id,
-        modelBytes: MODEL_BYTES,
-      },
-      plan: modelPlan(),
-      install: installer.snapshot(),
-      engines: installer.listEngines(),
-      models: installer.listModels(),
-      gpu: gpuCache,
-    };
-  }
+  const settings = store.getSettings();
+  const snapshot = engine.snapshot();
+  const active = liveActive();
+  return {
+    settings,
+    engine: {
+      ...snapshot,
+      serverFound: Boolean(engine.serverPath()),
+      modelFound: Boolean(settings.modelPath && existsSync(settings.modelPath)),
+      device: deviceOf(snapshot),
+      active: active
+        ? {
+            jobId: active.id,
+            prompt: active.prompt,
+            width: active.width,
+            height: active.height,
+            steps: active.steps,
+            cfg: active.cfg,
+            seed: active.report?.seedUsed ?? active.seed ?? null,
+            hiresScale: active.hiresScale ?? 0,
+            phase: active.phase,
+            progress: taskProgress(active),
+            previewAt: active.previewAt ?? null,
+          }
+        : null,
+    },
+    queue: queue.map((job) => ({ id: job.id, prompt: job.prompt, width: job.width, height: job.height, steps: job.steps })),
+    running,
+    // 只带界面当场要用的那几条：未收尾的全带（排队、运行、失败），完成的只留最近
+    // 两条给画布与首屏。整份历史走 /jobs 分页，不该每帧跟着 state 跑一遍。
+    jobs: (() => {
+      const all = store.listJobs();
+      const pending = all.filter((job) => job.status !== "done" && job.status !== "cancelled");
+      const done = all.filter((job) => job.status === "done").slice(0, 2);
+      return [...pending, ...done].map(slimJob);
+    })(),
+    // 全量记录数：state 只带前面那些，界面上的总数不能跟着它算。
+    jobTotal: store.listJobs().length,
+    // 只算还没收尾的：结束的任务进度已经没意义，四十条堆在每帧里白占体积。
+    progress: Object.fromEntries(
+      [...live.values()]
+        .filter((entry) => entry.status === "running" || entry.status === "queued")
+        .map((entry) => [entry.id, taskProgress(entry)]),
+    ),
+    mossimage: {
+      repo: MOSSIMAGE.repo,
+      version: MOSSIMAGE.version,
+      protocolVersion: MOSSIMAGE.protocolVersion,
+      abiVersion: MOSSIMAGE.abiVersion,
+      model: MOSSIMAGE.model.id,
+      modelBytes: MODEL_BYTES,
+    },
+    plan: modelPlan(),
+    install: installer.snapshot(),
+    engines: installer.listEngines(),
+    models: installer.listModels(),
+    gpu: gpuCache,
+  };
+}
 
   /** 功能面板要的是一份小而全的快照：引擎、当前任务、队列、最近成图。 */
   function panel() {
