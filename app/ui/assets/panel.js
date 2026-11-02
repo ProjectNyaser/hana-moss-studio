@@ -337,6 +337,13 @@ function engineDirOf(serverPath) {
   return String(serverPath).replace(/[\\/]bin[\\/]moss-server(\.exe)?$/i, "");
 }
 
+/** 从目录名里读实际装的版本：mossinfer-2.1.1-windows-cu13-x86_64 → 2.1.1。 */
+function installedVersion(serverPath) {
+  const name = engineDirOf(serverPath)?.split(/[\\/]/).pop() ?? "";
+  const match = name.match(/^mossinfer-([0-9][0-9.]*[^-]*)-/);
+  return match ? match[1].replace(/-$/, "") : null;
+}
+
 function renderEngine(data) {
   const { engine } = data;
   let dotClass = "dot";
@@ -367,14 +374,10 @@ function renderEngine(data) {
     if (device.totalMemoryBytes) rows.push(["显存", formatGb(device.totalMemoryBytes)]);
     if (device.computeCapability) rows.push(["算力", `CC ${device.computeCapability}`]);
   }
-  rows.push(["精度档", data.settings.tier]);
-  rows.push(["显存策略", data.settings.memoryMode]);
   // 引擎与模型都由 App 装，这里只报“装的是什么”，路径收在自定义里。
+  // 精度档与显存策略不在事实列表里重复，下面就是它们的选择器。
   const tail = (p) => (p ? String(p).split(/[\\/]/).filter(Boolean).pop() : null);
-  rows.push([
-    "引擎",
-    engine.serverFound ? `${data.mossimage?.version ?? "?"} · ${tail(engineDirOf(data.settings.serverPath)) ?? "已定位"}` : "未安装",
-  ]);
+  rows.push(["引擎", engine.serverFound ? `${installedVersion(data.settings.serverPath) ?? "?"} · ${tail(engineDirOf(data.settings.serverPath)) ?? "已定位"}` : "未安装"]);
   rows.push(["模型", engine.modelFound ? tail(data.settings.modelPath) ?? "已就位" : "未安装"]);
   nodes.facts.replaceChildren();
   for (const [key, value] of rows) {
@@ -493,7 +496,17 @@ function renderInstall(data) {
   nodes.installBar.querySelector("i").style.width = `${job?.percent ?? 0}%`;
 
   if (!job) {
-    nodes.installMessage.textContent = "还没有装过引擎或权重。装完这两个就能出图。";
+    // 没有安装记录时，文案要跟“到底装了没有”对得上，而不是一律说没装。
+    const hasEngine = Boolean(data.engine?.serverFound);
+    const hasModel = Boolean(data.engine?.modelFound);
+    nodes.installMessage.textContent =
+      hasEngine && hasModel
+        ? "引擎与权重都已就位。"
+        : hasEngine
+          ? "引擎已就位，权重还没下。"
+          : hasModel
+            ? "权重已就位，引擎还没装。"
+            : "还没装引擎与权重，装完这两个就能出图。";
     nodes.installMessage.className = "hint";
     return;
   }

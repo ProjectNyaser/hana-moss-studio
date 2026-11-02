@@ -182,7 +182,9 @@
 
     /* 安装：引擎与权重各一个按钮，进度条复用 .bar */
     .pn-install-actions { display: flex; gap: 6px; margin: 6px 0; }
-    .pn-install-actions .btn { flex: 1; }
+    .pn-install-actions .btn { flex: 1; min-width: 0; justify-content: center; }
+    /* 面板底色上 ghost 几乎没有边界，补一条描边才看得出是按钮 */
+    .pn-install-actions .btn.ghost { border: 1px solid var(--ui-line); }
     .pn-install .bar { margin: 0 0 4px; }
 
     /* 高级：手填路径只是例外，默认收起来 */
@@ -322,7 +324,7 @@
       <div class="fold-body">
         <div class="pn-install" id="pn-install">
           <div class="pn-install-actions">
-            <button class="btn ghost small" id="pn-install-engine" type="button">装引擎</button>
+            <button class="btn small" id="pn-install-engine" type="button">装引擎</button>
             <button class="btn ghost small" id="pn-install-weights" type="button">下权重</button>
             <button class="btn ghost small" id="pn-install-cancel" type="button" hidden>取消</button>
           </div>
