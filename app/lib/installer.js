@@ -353,10 +353,11 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   }
 
   /**
-   * 发布记录的 Atom feed。GitHub 的 API 匿名限流时还能用，代价是没有资产信息。
+   * 发布记录的 Atom feed。不限流，列版本靠它就够。
    *
    * tag 名从 <id> 尾部取（tag:github.com,2008:Repository/<id>/<tag>）。
    * <title> 是发布者自己写的标题，改过名字就跟 tag 没关系了，只当傅用。
+   * 代价是没有资产体积和变体数——那两样只在真装某个版本时问一次 tag 接口。
    */
   async function listReleasesViaAtom() {
     const xml = await fetchText(network, `https://github.com/${ENGINE_REPO}/releases.atom`);
@@ -384,37 +385,18 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     const cacheFile = join(dataDir, "cache", "releases.json");
     if (!releaseCache || Date.now() - releaseCache.at > 10 * 60_000) {
       try {
-        const raw = JSON.parse(await fetchText(network, `${ENGINE_API.replace(/\/latest$/, "")}?per_page=20`));
-        const items = (Array.isArray(raw) ? raw : []).map((rel) => ({
-          tag: rel.tag_name ?? "",
-          version: String(rel.tag_name ?? "").replace(/^v/, ""),
-          publishedAt: rel.published_at ?? null,
-          prerelease: Boolean(rel.prerelease),
-          windowsAssets: (rel.assets ?? []).filter((asset) => /windows.*x86_64.*\.zip$/i.test(asset.name ?? "")).length,
-          bundledBytes: Math.max(
-            0,
-            ...(rel.assets ?? [])
-              .filter((asset) => /windows.*x86_64.*\.zip$/i.test(asset.name ?? "") && !/system-cuda/i.test(asset.name ?? ""))
-              .map((asset) => asset.size ?? 0),
-          ),
-        }));
-        releaseCache = { at: Date.now(), items, stale: false };
+        const items = await listReleasesViaAtom();
+        if (!items.length) throw new Error("atom 里没有发布记录");
+        releaseCache = { at: Date.now(), items };
         try {
           writeFileSync(cacheFile, JSON.stringify({ at: releaseCache.at, items }), "utf8");
         } catch {
           // 写不进去不影响本次结果
         }
       } catch (error) {
-        // GitHub 匿名接口每小时 60 次，用完就是 403。Atom feed 不限流，只是没有
-        // 资产体积和变体数，能列出可以装哪些版本。两者都没有才报错。
         const cached = releaseCache?.items?.length ? releaseCache : readReleaseCache(cacheFile);
-        if (cached?.items?.length) {
-          releaseCache = { ...cached, stale: true };
-        } else {
-          const viaAtom = await listReleasesViaAtom().catch(() => []);
-          if (!viaAtom.length) throw new Error(`拿不到版本列表：${brief(error)}`);
-          releaseCache = { at: Date.now(), items: viaAtom, stale: true, atom: true };
-        }
+        if (!cached?.items?.length) throw new Error(`拿不到版本列表：${brief(error)}`);
+        releaseCache = { ...cached, stale: true };
       }
     }
     const installed = new Set(listEngines().map((entry) => entry.version));
