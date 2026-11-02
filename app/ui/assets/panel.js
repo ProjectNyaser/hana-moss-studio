@@ -124,10 +124,6 @@ function say(text, kind) {
 }
 
 // ── 格式化 ─────────────────────────────────────────────────────────────
-function formatGb(bytes) {
-  return bytes ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : "";
-}
-
 function formatDuration(ms) {
   if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
   const seconds = Math.max(0, Math.round(ms / 1000));
@@ -135,14 +131,6 @@ function formatDuration(ms) {
   return `${Math.floor(seconds / 60)} 分 ${String(seconds % 60).padStart(2, "0")} 秒`;
 }
 
-function formatSize(bytes) {
-  if (!bytes) return "未知";
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
-  return `${Math.round(bytes / 1024)} KB`;
-}
-
-// ── 渲染 ───────────────────────────────────────────────────────────────
 function setSettings(settings) {
   if (settingsLoaded) return;
   settingsLoaded = true;
@@ -474,6 +462,7 @@ async function onSaveSettings() {
 nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
 nodes.save.addEventListener("click", onSaveSettings);
+bindSizeSliders();
 
 // ── 主区域的“用这张的参数” ─────────────────────────────────────
 const reuseChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
