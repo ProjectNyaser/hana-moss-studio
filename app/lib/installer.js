@@ -44,7 +44,10 @@ const MODELS = {
   sft: { repo: "OpenMOSS-Team/MOSS-Image-SFT", dir: "moss-image-sft", label: "MOSS-Image-SFT", note: "官方微调版，提示词响应更准" },
   base: { repo: "OpenMOSS-Team/MOSS-Image-Base", dir: "moss-image-base", label: "MOSS-Image-Base", note: "基座模型，适合自己微调" },
 };
-const MODEL_ENDPOINT = "https://hf-mirror.com";
+// 多个源同时交给 aria2：它会自己试哪个快。实测这台机器到 HF 直连比镜像快五倍，
+// 但网络状况因人而异，所以两个都给，不写死。
+const MODEL_ENDPOINTS = ["https://hf-mirror.com", "https://huggingface.co"];
+const MODEL_ENDPOINT = MODEL_ENDPOINTS[0];
 const MODEL_INCLUDES = [
   "model_index.json",
   "scheduler/*",
@@ -578,8 +581,10 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       const items = [];
       for (const entry of entries) {
         if (cancelled) throw new Error("已取消");
+        // 调用方给 urls（多个镜像）或单个 url（引擎包只有 GitHub 一个源）。
+        const urls = entry.urls ?? (entry.url ? [entry.url] : []);
         const gid = await aria2Call(session.port, session.secret, "aria2.addUri", [
-          [entry.url],
+          urls,
           { dir, out: entry.out, continue: "true" },
         ]);
         items.push({ gid, out: entry.out, size: entry.size ?? 0 });
@@ -588,6 +593,9 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       let stall = 0;
       let lastBytes = -1;
       let lastDone = -1;
+      let speedAt = 0;
+      let speedBytes = 0;
+      let speed = 0;
 
       for (;;) {
         if (cancelled) {
@@ -628,7 +636,14 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           if (state.status === "complete") done += 1;
           else if (state.status === "error") failed.push({ item, state });
         }
-        onTick?.({ bytes, totalBytes: total, done, total: items.length });
+        const pendingItem = items.find((item) => snapshot.get(item.gid)?.status === "active");
+        const now = Date.now();
+        if (now - speedAt >= 2000) {
+          speed = speedAt ? Math.max(0, (bytes - speedBytes) / ((now - speedAt) / 1000)) : 0;
+          speedAt = now;
+          speedBytes = bytes;
+        }
+        onTick?.({ bytes, totalBytes: total, done, total: items.length, speed, current: pendingItem?.out ?? null });
 
         // 字节和完成数都不再变超过三分钟，就当这条链路已经停了；不能无限等下去。
         if (bytes === lastBytes && done === lastDone) stall += 1;
@@ -650,11 +665,28 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     }
   }
 
-  function watchProgress(getBytes, totalBytes) {
+  function watchProgress(getBytes, totalBytes, { speed = false, files = null } = {}) {
+    let lastAt = Date.now();
+    let lastBytes = getBytes();
     const timer = setInterval(() => {
       if (!job || job.finishedAt) return;
       const bytes = getBytes();
-      patch({ bytes, totalBytes, percent: totalBytes ? Math.min(99, Math.floor((bytes / totalBytes) * 100)) : 0 });
+      const now = Date.now();
+      const update = {
+        bytes,
+        totalBytes,
+        percent: totalBytes ? Math.min(99, Math.floor((bytes / totalBytes) * 100)) : 0,
+      };
+      if (speed) {
+        const seconds = (now - lastAt) / 1000;
+        if (seconds > 0.5) {
+          update.speed = Math.max(0, (bytes - lastBytes) / seconds);
+          lastAt = now;
+          lastBytes = bytes;
+        }
+      }
+      if (files) update.files = typeof files === "function" ? files() : files;
+      patch(update);
     }, 1500);
     timer.unref?.();
     return () => clearInterval(timer);
@@ -772,7 +804,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         // 宿主里 aria2 的直连 socket 可能走不通，而 curl 同一个地址能取。
         patch({ phase: "download", message: `aria2 走不通，改用 curl：${brief(error)}` });
         const probeZip = () => (existsSync(zip) ? statSync(zip).size : 0);
-        const stopWatch = watchProgress(probeZip, asset.size ?? 0);
+        const stopWatch = watchProgress(probeZip, asset.size ?? 0, { speed: true });
         try {
           await curlDownload(asset.browser_download_url, zip, asset.size ?? 0);
         } finally {
@@ -850,7 +882,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
 
       if (missing.length) {
         const entries = missing.map((entry) => ({
-          url: `${MODEL_ENDPOINT}/${repo}/resolve/main/${entry.path}`,
+          urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
           out: entry.path,
           size: entry.size ?? 0,
         }));
@@ -860,10 +892,13 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
             dir: weightsDir,
             concurrency: 4,
             totalBytes,
-            onTick: ({ bytes, totalBytes: total, done, total: count }) =>
+            onTick: ({ bytes, totalBytes: total, done, total: count, speed, current }) =>
               patch({
                 bytes,
                 totalBytes: total,
+                speed,
+                current,
+                files: [done, count],
                 message: `${done}/${count} 个文件 · ${gib(bytes)} / ${gib(total)} GiB`,
               }),
           });
@@ -871,11 +906,30 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           if (cancelled) throw error;
           patch({ phase: "download", message: `aria2 走不通，改用 curl 逐个下：${brief(error)}` });
           const baseBytes = dirBytes(weightsDir);
-          const stopWatch = watchProgress(() => Math.max(0, dirBytes(weightsDir) - baseBytes), totalBytes);
+          const stopWatch = watchProgress(() => Math.max(0, dirBytes(weightsDir) - baseBytes), totalBytes, {
+            speed: true,
+            files: () => [doneCount, entries.length],
+          });
           try {
+            let doneCount = 0;
             for (const entry of entries) {
               if (cancelled) throw new Error("已取消");
-              await curlDownload(entry.url, join(weightsDir, ...entry.out.split("/")), entry.size);
+              // 逐个源试：某个镜像走不通就换下一个，全都不行才算失败。
+              let lastError = null;
+              for (const url of entry.urls) {
+                if (cancelled) throw new Error("已取消");
+                try {
+                  await curlDownload(url, join(weightsDir, ...entry.out.split("/")), entry.size);
+                  lastError = null;
+                  break;
+                } catch (error) {
+                  lastError = error;
+                  patch({ phase: "download", message: `${url.split("/")[2]} 不行，换下一个源` });
+                }
+              }
+              if (lastError) throw lastError;
+              doneCount += 1;
+              patch({ files: [doneCount, entries.length] });
             }
           } finally {
             stopWatch();

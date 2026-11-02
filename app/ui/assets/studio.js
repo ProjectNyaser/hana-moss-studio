@@ -785,10 +785,18 @@ function renderDownload(data) {
   nodes.downloadBar.querySelector("i").style.width = `${percent || 4}%`;
   nodes.downloadCancel.hidden = Boolean(job.finishedAt);
   nodes.downloadState.textContent = job.phase ?? "";
-  const base = job.error
-    ? `${job.phase}：${job.error}`
-    : `${job.label ?? ""} ${job.message ?? ""}${job.totalBytes ? ` ${formatSize(job.bytes)} / ${formatSize(job.totalBytes)}` : ""}`.trim();
-  nodes.downloadMessage.textContent = waiting.length ? `${base}　等待中：${waiting.join("、")}` : base;
+  // 速度、文件数、当前文件都是「在不在动」的直接证据，比一个百分比更有用。
+  const parts = [];
+  if (job.label) parts.push(job.label);
+  if (Array.isArray(job.files) && job.files[1]) parts.push(`${job.files[0]}/${job.files[1]} 个文件`);
+  if (job.totalBytes) parts.push(`${formatSize(job.bytes ?? 0)} / ${formatSize(job.totalBytes)}`);
+  if (job.speed > 0) parts.push(`${formatSize(job.speed)}/s`);
+  if (job.current) parts.push(`当前 ${job.current.split("/").pop()}`);
+  const base = job.error ? `${job.phase}：${job.error}` : (parts.join(" · ") || job.message || "").trim();
+  const tail = job.error ? "" : job.message && parts.length ? `　${job.message}` : "";
+  nodes.downloadMessage.textContent = waiting.length
+    ? `${base}${tail}　等待中：${waiting.join("、")}`
+    : `${base}${tail}`;
 }
 
 async function loadReleases(force = false) {
