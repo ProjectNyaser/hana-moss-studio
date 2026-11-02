@@ -33,7 +33,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SDK_DIST = path.join(ROOT, "node_modules", "@hana", "app-sdk", "dist");
@@ -141,7 +144,9 @@ function deriveMinAppVersion(version, changes) {
  * keep 决定哪些文件值得带，package.json 与 LICENSE 总会带上。
  */
 const RUNTIME_DEPS = [
-  { pkg: "pngjs", keep: (name) => name.startsWith("lib/") },
+  { pkg: "fast-png", keep: (name) => name.startsWith("lib/") },
+  { pkg: "fflate", via: "fast-png", keep: (name) => /^(lib|esm)\//.test(name) },
+  { pkg: "iobuffer", via: "fast-png", keep: (name) => name.startsWith("lib/") },
   {
     pkg: "@jsquash/webp",
     // 只要编码器：解码用不上，simd 版盖了所有能跑这个 App 的 CPU。
@@ -149,17 +154,52 @@ const RUNTIME_DEPS = [
   },
   { pkg: "yauzl", keep: () => true },
   { pkg: "pend", keep: (name) => name === "index.js" },
+  { pkg: "semver", keep: () => true },
 ];
 
+/**
+ * 找包的真实目录。pnpm 只把直接依赖链到顶层，间接依赖藏在 .pnpm 里，
+ * 不能直接用 `node_modules/<名>` 去拼；`via` 指定从哪个包的位置去解析。
+ */
+function packageDir(name, via) {
+  const base = via ? packageDir(via) : null;
+  let entry;
+  try {
+    entry = require.resolve(name, base ? { paths: [base] } : undefined);
+  } catch {
+    return null;
+  }
+  let dir = path.dirname(entry);
+  for (;;) {
+    const pkgFile = path.join(dir, "package.json");
+    if (fs.existsSync(pkgFile)) {
+      try {
+        if (JSON.parse(fs.readFileSync(pkgFile, "utf8")).name === name) return dir;
+      } catch {
+        /* 继续往上找 */
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
 function mirrorDeps(changes) {
-  for (const { pkg, keep } of RUNTIME_DEPS) {
-    const src = path.join(ROOT, "node_modules", pkg);
+  for (const { pkg, via, keep } of RUNTIME_DEPS) {
+    const src = packageDir(pkg, via);
+    if (!src) fatal(`依赖树里没有 ${pkg}。先 pnpm install`);
     const dst = path.join(ROOT, "app", "node_modules", pkg);
-    if (!fs.existsSync(src)) fatal(`依赖树里没有 ${pkg}（${rel(src)}）。先 pnpm install`);
-    const wanted = walk(src).filter((name) => keep(name) || name === "package.json" || name === "LICENSE");
+    const wanted = walk(src).filter((name) => {
+      // 声明文件与文档运行时不需要，带上只是占体积。
+      if (/\.(md|map)$|\.d\.[cm]?ts$/i.test(name)) return false;
+      return keep(name) || name === "package.json" || name === "LICENSE";
+    });
     const have = fs.existsSync(dst) ? walk(dst) : [];
     for (const name of have) {
-      if (!wanted.includes(name)) changes.push(`app/node_modules/${pkg}/${name}（多余，删）`);
+      if (wanted.includes(name)) continue;
+      changes.push(`app/node_modules/${pkg}/${name}（多余，删）`);
+      if (!checkOnly) fs.rmSync(path.join(dst, name), { force: true });
     }
     for (const name of wanted) {
       const from = path.join(src, name);

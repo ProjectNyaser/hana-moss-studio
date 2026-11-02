@@ -35,6 +35,7 @@ import { fileURLToPath } from "node:url";
 
 import { MOSSIMAGE } from "./mossimage.js";
 import { unzipTo } from "./unzip.js";
+import semver from "semver";
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ARIA2 = join(APP_ROOT, "vendor-bin", "aria2c.exe");
@@ -285,14 +286,24 @@ export function parseEngineName(name) {
   };
 }
 
-/** 按数字段比版本，大的在前。 */
+/**
+ * 按版本号比大小，大的在前。
+ *
+ * 用 semver：手写的那版只看数字段，碰上 `2.1.1-rc1` 这种预发布版会把它与
+ * `2.1.1` 判成相等，碰上 `v2.1.1` 或缺段的 `2.1` 也会算错。
+ * `valid` 优先（保留预发布语义），不行再 `coerce`（容忍 v 前缀与缺段）。
+ */
 export function compareEngineVersion(a, b) {
-  const left = String(a ?? "").split(".").map((n) => Number(n) || 0);
-  const right = String(b ?? "").split(".").map((n) => Number(n) || 0);
-  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0);
-    if (diff) return diff;
-  }
+  const parse = (value) => {
+    const text = String(value ?? "").trim();
+    if (!text) return null;
+    return semver.valid(text) ? semver.parse(text) : semver.coerce(text);
+  };
+  const left = parse(a);
+  const right = parse(b);
+  if (left && right) return semver.compare(left, right);
+  if (left) return 1;
+  if (right) return -1;
   return 0;
 }
 

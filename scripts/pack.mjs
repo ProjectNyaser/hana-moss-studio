@@ -119,7 +119,7 @@ async function main() {
   // 整个依赖树被拷进来通常是误操作。
   const stagedDeps = path.join(stageDir, "node_modules");
   if (fs.existsSync(stagedDeps)) {
-    const allowed = new Set(["pngjs", "@jsquash", "yauzl", "pend"]);
+    const allowed = new Set(["fast-png", "fflate", "iobuffer", "@jsquash", "yauzl", "pend", "semver"]);
     for (const name of fs.readdirSync(stagedDeps)) {
       if (!allowed.has(name)) fatal(`app/node_modules 里出现了未派生的依赖：${name}`);
     }

@@ -7,31 +7,29 @@
  * 两处用到：画廊的缩略图（一屏几十张，不能铺原图），采样预览（全尺寸 PNG 一张
  * 十兆，界面只要看清形状）。
  *
- * PNG 解码用 pngjs，WebP 编码用 @jsquash/webp 的 libwebp WASM（都是派生在
- * app/node_modules 里的，见 scripts/derive.mjs）；缩放自己写，面积平均。
+ * PNG 解码用 fast-png（2560×1440 约 30 ms，pngjs 是 74 ms，体积也更小），
+ * WebP 编码用 @jsquash/webp 的 libwebp WASM，缩放自己写（面积平均）。
  *
- * 为什么不用 sharp：它是 native 模块，跨平台要按平台带二进制，装到宿主里还得
- * 赌 require 能解析到 .node。WASM 版本没有这些事。
+ * 不用 sharp：它是 native 模块，要按平台带二进制，装进宿主还得赌 require 能解析
+ * 到 .node。WASM 版本没有这些事。
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { PNG } from "pngjs";
+import { decode as decodePng } from "fast-png";
 import { initEmscriptenModule } from "@jsquash/webp/utils.js";
 import webpEncoder from "@jsquash/webp/codec/enc/webp_enc_simd.js";
 import { defaultOptions } from "@jsquash/webp/meta.js";
 
 /** 小于这个体积的图片不值得处理：小图本来就不大。 */
 const WORTH_RESIZING = 300 * 1024;
-/** 缩略图质量。78 在 320 宽下约 11 KB，肉眼与无损没差别。 */
+/** 缩略图质量。78 在 320 宽下约 10 KB，肉眼与无损没差别。 */
 const WEBP_QUALITY = 78;
 
 let encoder = null;
 
-/**
- * 懒加载 libwebp 编码器。首次调用要编译 wasm（几百 KB），之后复用同一个实例。
- */
+/** 懒加载 libwebp 编码器。首次要编译 wasm，之后复用同一个实例。 */
 async function getEncoder() {
   if (encoder) return encoder;
   const wasmUrl = new URL(
@@ -45,18 +43,22 @@ async function getEncoder() {
 }
 
 /**
- * 等比缩小到不超过 maxWidth。只缩不放。
+ * 等比缩小到不超过 maxWidth，输出 RGBA。
+ *
+ * 直接按源图的通道数取样再写 RGBA，省掉先把整张转成 RGBA 的那一趟遍历。
  * 面积平均：目标像素取源图对应矩形内所有像素的平均值。
  */
 function downscale(source, maxWidth) {
   const { width, height, data } = source;
+  const channels = source.channels ?? 4;
   if (width <= maxWidth) return null;
   const ratio = maxWidth / width;
   const outWidth = Math.max(1, Math.round(width * ratio));
   const outHeight = Math.max(1, Math.round(height * ratio));
-  const out = { width: outWidth, height: outHeight, data: new Uint8ClampedArray(outWidth * outHeight * 4) };
+  const out = new Uint8ClampedArray(outWidth * outHeight * 4);
   const xRatio = width / outWidth;
   const yRatio = height / outHeight;
+  const opaque = channels < 4;
   for (let y = 0; y < outHeight; y += 1) {
     const y0 = Math.floor(y * yRatio);
     const y1 = Math.min(height, Math.max(y0 + 1, Math.floor((y + 1) * yRatio)));
@@ -70,29 +72,28 @@ function downscale(source, maxWidth) {
       let count = 0;
       for (let sy = y0; sy < y1; sy += 1) {
         for (let sx = x0; sx < x1; sx += 1) {
-          const i = (sy * width + sx) * 4;
+          const i = (sy * width + sx) * channels;
           r += data[i];
           g += data[i + 1];
           b += data[i + 2];
-          a += data[i + 3];
+          if (!opaque) a += data[i + 3];
           count += 1;
         }
       }
       const o = (y * outWidth + x) * 4;
-      out.data[o] = Math.round(r / count);
-      out.data[o + 1] = Math.round(g / count);
-      out.data[o + 2] = Math.round(b / count);
-      out.data[o + 3] = Math.round(a / count);
+      out[o] = Math.round(r / count);
+      out[o + 1] = Math.round(g / count);
+      out[o + 2] = Math.round(b / count);
+      out[o + 3] = opaque ? 255 : Math.round(a / count);
     }
   }
-  return out;
+  return { width: outWidth, height: outHeight, data: out };
 }
 
 /**
  * 等比缩小并写成一个 WebP。
  *
  * 返回实际写出的尺寸；源图比目标宽度小、或者读不动时返回 null，调用方据此保持原样。
- * 编码器是异步的，所以这个函数也得 await。
  */
 export async function shrinkToWebp(src, dst, maxWidth) {
   if (!existsSync(src)) return null;
@@ -100,11 +101,13 @@ export async function shrinkToWebp(src, dst, maxWidth) {
   if (input.length < WORTH_RESIZING) return null;
   let image;
   try {
-    image = PNG.sync.read(input);
+    image = decodePng(input);
   } catch {
     // 读不动的格式交给调用方处理，这里不抛。
     return null;
   }
+  // 16 位深无法直接当 8 位用，交给调用方退回原图。
+  if (image.depth !== 8) return null;
   const small = downscale(image, maxWidth);
   if (!small) return null;
   const { module, defaultOptions } = await getEncoder();
