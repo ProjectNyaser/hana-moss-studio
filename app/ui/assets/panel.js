@@ -7,8 +7,23 @@ import { applyTheme } from "./theme.js";
 const API = "/hana-moss-studio";
 /** 引擎的真实上限：单边 4096、总量 4.2 MP。 */
 const MAX_MP = 4.2;
-const MIN_MP = 0.3;
+// 引擎的硬边界：单边最小 256（256×256 ≈ 0.066MP）。
+const MIN_MP = 0.06;
 const MAX_SIDE = 4096;
+// 刻度两端按「外端向上、内端向下」取整，中间一格 0.1。
+// 刻度只表示位置，实际像素量还要再夹回 [MIN_MP, MAX_MP]。
+const MP_NOTCH_MIN = Math.floor(MIN_MP * 10) / 10;
+const MP_NOTCH_MAX = Math.ceil(MAX_MP * 10) / 10;
+const MP_STEPS = Math.max(1, Math.round((MP_NOTCH_MAX - MP_NOTCH_MIN) * 10));
+
+function mpNotchAt(pct) {
+  const index = Math.min(MP_STEPS, Math.max(0, Math.round(pct * MP_STEPS)));
+  return Number((MP_NOTCH_MIN + index * 0.1).toFixed(1));
+}
+
+function mpFromNotch(notch) {
+  return Math.max(MIN_MP, Math.min(MAX_MP, notch));
+}
 /** 比例滑条的值域：9:16 到 16:9。取 log2 后左右对称，中点正好是 1:1。 */
 const RATIO_MIN = 9 / 16;
 const RATIO_MAX = 16 / 9;
@@ -284,10 +299,11 @@ function renderSize() {
   nodes.ratioThumb.setAttribute("aria-valuenow", Math.log2(shownRatio).toFixed(2));
   nodes.ratioNote.textContent = ratioLabel(shownRatio);
 
-  const mpPct = Math.min(1, Math.max(0, (megapixels - MIN_MP) / (MAX_MP - MIN_MP)));
+  const mpNotch = Math.max(MP_NOTCH_MIN, Math.min(MP_NOTCH_MAX, Number((Math.round(megapixels * 10) / 10).toFixed(1))));
+  const mpPct = (mpNotch - MP_NOTCH_MIN) / (MP_NOTCH_MAX - MP_NOTCH_MIN);
   const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
   nodes.sliderFill.style.width = `${mx}px`;
-  nodes.sliderThumb.textContent = megapixels.toFixed(1);
+  nodes.sliderThumb.textContent = mpNotch.toFixed(1);
   nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(2));
   nodes.mpNote.textContent = `${megapixels.toFixed(2)}MP`;
 
@@ -356,7 +372,7 @@ function bindSizeSliders() {
 
   function applyMP(clientX) {
     const ratio = pinnedRatio ?? currentRatio();
-    const [w, h] = sizeFor(ratio, MIN_MP + pctFromEvent(nodes.slider, clientX) * (MAX_MP - MIN_MP));
+    const [w, h] = sizeFor(ratio, mpFromNotch(mpNotchAt(pctFromEvent(nodes.slider, clientX))));
     setSize(w, h);
   }
 
