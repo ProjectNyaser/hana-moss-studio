@@ -262,6 +262,12 @@ export default defineApp(async (sdk) => {
         syncTask(entry, { progress: taskProgress(entry) });
         return;
       }
+      if (event.type === "preview") {
+        entry.previewAt = event.at ?? Date.now();
+        // 预览只推这一条事件，不把整个 state 再算一遍。
+        pushEvent("preview", { jobId: entry.id, at: entry.previewAt });
+        return;
+      }
       if (event.type === "done") {
         if (event.status === "error" && event.error) sdk.logger.warn(`生成失败：${event.error}`);
       }
@@ -496,6 +502,7 @@ export default defineApp(async (sdk) => {
               prompt: active.prompt,
               phase: active.phase,
               progress: taskProgress(active),
+              previewAt: active.previewAt ?? null,
             }
           : null,
       },
@@ -649,6 +656,13 @@ export default defineApp(async (sdk) => {
   // 页面不再轮询 /state，而是订一条事件流：连上先给一帧快照，之后只在状态真变了才推。
   const streamClients = new Set();
   let pushTimer = null;
+
+  /** 除了整帧 state，也允许推单条事件（比如采样预览），前端不必为此轮询。 */
+  function pushEvent(name, payload) {
+    if (!streamClients.size) return;
+    const frame = `event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of [...streamClients]) client.send(frame);
+  }
 
   function schedulePush(delay = 120) {
     if (!streamClients.size || pushTimer) return;
@@ -904,6 +918,13 @@ export default defineApp(async (sdk) => {
       if (!file) return c.text("not found", 404);
       const data = readFileSync(file);
       return c.body(data, 200, { "content-type": "image/png", "cache-control": "private, max-age=30" });
+    });
+
+    // 采样预览：引擎在采样过程中不断重写同一个文件，这里直接读出来。
+    app.get(`/${APP_ID}/preview`, (c) => {
+      const file = engine.previewPath;
+      if (!existsSync(file)) return c.text("not found", 404);
+      return c.body(readFileSync(file), 200, { "content-type": "image/png", "cache-control": "no-store" });
     });
 
     app.post(`/${APP_ID}/jobs/remove`, async (c) => {

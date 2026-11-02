@@ -157,6 +157,15 @@ body {
 }
 
 /* ── 画布 ──────────────────────────────────────────────────────────── */
+/* 采样预览：低分辨率的中间结果，替掉画布上的占位。 */
+.preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--ui-radius-control);
+  filter: blur(0.6px);
+}
+
 .canvas {
   flex: 1;
   min-height: 0;

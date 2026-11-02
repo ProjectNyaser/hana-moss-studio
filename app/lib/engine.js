@@ -54,6 +54,8 @@ export class Engine {
     this.getSettings = getSettings;
     this.outputsDir = outputsDir;
     this.cacheDir = cacheDir;
+    /** 采样预览图：每次生成覆盖同一张，不堆文件。 */
+    this.previewPath = join(cacheDir, "preview.png");
     this.onEvent = onEvent ?? (() => {});
     this.child = null;
     this.pending = new Map();
@@ -174,6 +176,7 @@ export class Engine {
         return;
       }
       case "preview":
+        this.onEvent({ type: "preview", jobId, at: Date.now() });
         return;
       case "done": {
         const status = String(message.status ?? "error");
@@ -345,6 +348,9 @@ export class Engine {
       seed: job.seed,
       save_metadata: true,
       include_prompts: true,
+      // 采样过程中不断重写这张低分辨率预览图，每次重写会发一个 preview 事件。
+      preview_output: this.previewPath,
+      preview_every: 1,
     };
     if (job.initImage) {
       // 图生图：引擎按 init_image 读取源图，只跑 denoise_strength 之后的那段采样。

@@ -1,6 +1,6 @@
 // 苔室工作区：画布、画廊、队列、版本、下载五个视图。生成设置在左侧栏（panel.html）。
 import { hana } from "./sdk.js";
-import { startLive, outputUrl } from "./live.js";
+import { startLive, outputUrl, previewUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
 const API = "/hana-moss-studio";
@@ -27,6 +27,7 @@ const nodes = {
   thumbs: el("thumbs"),
   clearJobs: el("clear-jobs"),
   ctxMenu: el("ctx-menu"),
+  previewImage: el("preview-image"),
   viewer: el("viewer"),
   viewerStage: el("viewer-stage"),
   viewerImage: el("viewer-image"),
@@ -180,6 +181,22 @@ function renderStage(data) {
   nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
 
+/** 采样预览：有 active 且有 previewAt 就显示那张图，换 URL 避开缓存。 */
+function renderPreview(data) {
+  const active = data?.engine?.active;
+  const at = active?.previewAt;
+  const img = nodes.previewImage;
+  if (!active || !at) {
+    img.hidden = true;
+    return;
+  }
+  img.hidden = false;
+  if (img.dataset.at !== String(at)) {
+    img.dataset.at = String(at);
+    img.src = previewUrl(at);
+  }
+}
+
 function renderProgress(data) {
   const active = data.engine.active;
   if (!active) {
@@ -214,6 +231,12 @@ function loadImage(name) {
 }
 
 async function renderCanvas(data) {
+  // 采样过程有预览图时，画布让给它，不必再显示上一张结果。
+  if (data?.engine?.active?.previewAt) {
+    nodes.result.hidden = true;
+    nodes.canvasEmpty.hidden = true;
+    return;
+  }
   const job = latestDone(data);
   if (!job) {
     nodes.result.hidden = true;
@@ -581,7 +604,7 @@ function applyViewer() {
   const seed = job.report?.seedUsed ?? job.seed;
   const parts = [`${job.width}×${job.height}`, `${job.steps} 步`, `CFG ${job.cfg}`, `种子 ${seed}`];
   if (job.elapsedMs) parts.push(formatDuration(job.elapsedMs));
-  nodes.viewerInfo.textContent = `${parts.join(" · ")}　—　${job.prompt ?? ""}`;
+  nodes.viewerInfo.textContent = parts.join(" · ");
   nodes.viewerPrev.hidden = viewerList.length < 2;
   nodes.viewerNext.hidden = viewerList.length < 2;
   if (nodes.viewerImage.complete) layoutViewerImage();
@@ -707,6 +730,7 @@ function reuseParams(job) {
 function render(data) {
   latest = data;
   renderStage(data);
+  renderPreview(data);
   renderProgress(data);
   renderQueue(data);
   renderVersions(data);
@@ -842,6 +866,14 @@ async function boot() {
   startLive({
     hana,
     onState: (state) => render(state),
+    onEvent: (name, payload) => {
+      // 预览走事件，不靠 state 轮询。
+      if (name !== "preview") return;
+      const active = latest?.engine?.active;
+      if (!active) return;
+      active.previewAt = payload.at;
+      renderPreview(latest);
+    },
     fetchState: () => api("/state"),
     source: "studio",
     onError: (error) => {

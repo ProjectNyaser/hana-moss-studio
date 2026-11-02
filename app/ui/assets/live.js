@@ -28,7 +28,15 @@ export function outputUrl(name) {
   return url.toString();
 }
 
-export function startLive({ hana, onState, fetchState, onError, source }) {
+export function previewUrl(at) {
+  const url = new URL(`${ROUTE_BASE}${API}/preview`, location.origin);
+  if (at) url.searchParams.set("t", String(at));
+  const session = new URLSearchParams(location.search).get("appSurfaceSession");
+  if (session) url.searchParams.set("appSurfaceSession", session);
+  return url.toString();
+}
+
+export function startLive({ hana, onState, onEvent, fetchState, onError, source }) {
   let disposed = false;
   let retryTimer = null;
   let pollTimer = null;
@@ -76,15 +84,21 @@ export function startLive({ hana, onState, fetchState, onError, source }) {
         while ((cut = buffer.indexOf("\n\n")) >= 0) {
           const chunk = buffer.slice(0, cut);
           buffer = buffer.slice(cut + 2);
-          const line = chunk.split("\n").find((item) => item.startsWith("data:"));
-          if (!line) continue;
+          const lines = chunk.split("\n");
+          const nameLine = lines.find((item) => item.startsWith("event:"));
+          const dataLine = lines.find((item) => item.startsWith("data:"));
+          if (!dataLine) continue;
+          const name = nameLine ? nameLine.slice(6).trim() : "state";
+          let payload;
           try {
-            onState(JSON.parse(line.slice(5).trim()));
-            clearTimeout(firstFrame);
-            firstFrame = null;
+            payload = JSON.parse(dataLine.slice(5).trim());
           } catch {
-            /* 半帧或坏帧，跳过 */
+            continue; // 半帧或坏帧
           }
+          clearTimeout(firstFrame);
+          firstFrame = null;
+          if (name === "state") onState(payload);
+          else onEvent?.(name, payload);
         }
       }
     } catch (error) {
