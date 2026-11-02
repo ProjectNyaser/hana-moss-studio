@@ -63,7 +63,6 @@ const nodes = {
   hiresSteps: el("pn-hires-steps"),
   cfg: el("pn-cfg"),
   seed: el("pn-seed"),
-  reroll: el("pn-reroll"),
   generate: el("pn-generate"),
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
