@@ -401,21 +401,8 @@ async function renderGallery(data) {
         tile.addEventListener("click", () => openViewer(job.id));
         const meta = document.createElement("div");
         meta.className = "thumb-meta";
-        // 与查看器底部那行同一组信息，窄图放不下一行就自动折。
-        const bits = [
-          `${job.width}×${job.height}`,
-          `${job.steps} 步`,
-          `CFG ${job.cfg}`,
-          `种子 ${job.report?.seedUsed ?? job.seed ?? "？"}`,
-        ];
-        if (job.elapsedMs) bits.push(formatDuration(job.elapsedMs));
-        meta.replaceChildren(
-          ...bits.map((text) => {
-            const piece = document.createElement("span");
-            piece.textContent = text;
-            return piece;
-          }),
-        );
+        // 单行，装不下就省略号。完整写法与耗时在查看器底部那行。
+        meta.textContent = `${job.width}×${job.height} · ${job.steps}步 · CFG${job.cfg} · #${job.report?.seedUsed ?? job.seed ?? "?"}`;
         tile.appendChild(meta);
       } else {
         // 记录还在但图不在了（手动删了 outputs 里的文件）：占位说明，不留空白。
