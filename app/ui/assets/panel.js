@@ -16,19 +16,9 @@ const MP_NOTCH_MIN = Math.floor(MIN_MP * 10) / 10;
 const MP_NOTCH_MAX = Math.ceil(MAX_MP * 10) / 10;
 const MP_STEPS = Math.max(1, Math.round((MP_NOTCH_MAX - MP_NOTCH_MIN) * 10));
 
-function mpNotchAt(pct, ratio) {
-  const top = mpNotchMax(ratio);
-  const steps = Math.max(1, Math.round((top - MP_NOTCH_MIN) * 10));
-  const index = Math.min(steps, Math.max(0, Math.round(pct * steps)));
+function mpNotchAt(pct) {
+  const index = Math.min(MP_STEPS, Math.max(0, Math.round(pct * MP_STEPS)));
   return Number((MP_NOTCH_MIN + index * 0.1).toFixed(1));
-}
-
-/** 该比例下能做到的最大像素量的刻度：16:9 铺到 3.7（实际 2560×1440 = 3.69），
- *  不把轨道铺到 4.2 再留一段拖不出东西的死区。 */
-function mpNotchMax(ratio) {
-  const [width, height] = sizeFor(ratio, MAX_MP);
-  const top = Math.ceil(((width * height) / 1e6) * 10) / 10;
-  return Math.min(MP_NOTCH_MAX, Math.max(MP_NOTCH_MIN + 0.1, top));
 }
 
 function mpFromNotch(notch) {
@@ -215,29 +205,10 @@ function currentRatio() {
   return (Number(nodes.width.value) || 768) / (Number(nodes.height.value) || 768);
 }
 
-/** 标准比对应的最小整数对：16:9 就是 16:9 的 k 倍。 */
-const RATIO_UNITS = [
-  [16, 9],
-  [3, 2],
-  [4, 3],
-  [1, 1],
-  [3, 4],
-  [2, 3],
-  [9, 16],
-];
-
-/** 像素量定了宽高就定了。
- *  标准比走严格：尺寸 = k·[w,h]，k 必须是 16 的倍数（两边才都是 16 的倍数）。
- *  于是合法尺寸稀疏（16:9 在 3MP 附近约 0.7MP 一跳），取不超过目标的最大那个。
- *  非标准比没这个约束，直接两边取最近的 16 倍数。 */
+/** 像素量定了宽高就定了：两边都取最近的 16 倍数。
+ *  16:9 在 4.2MP 下得到 2720×1520（比例 1.789，偏差 0.66%），像素用得满；
+ *  卡成精确 16:9 就只有 2560×1440（3.69MP），白白浪费 0.4MP。 */
 function sizeFor(ratio, megapixels) {
-  const unit = RATIO_UNITS.find(([p, q]) => Math.abs(p / q - ratio) < 1e-9);
-  if (unit) {
-    const [p, q] = unit;
-    let k = Math.max(16, Math.floor(Math.sqrt((megapixels * 1e6) / (p * q)) / 16) * 16);
-    while (k > 16 && k * p * k * q > MAX_MP * 1e6) k -= 16;
-    return [k * p, k * q];
-  }
   const spread = ratio >= 1 ? ratio : 1 / ratio;
   const clamp16 = (value) => Math.max(256, Math.round(value / 16) * 16);
   const short = clamp16(Math.sqrt((megapixels * 1e6) / spread));
@@ -351,7 +322,7 @@ function renderSize() {
 
   // 拇指按滑块自己那一格定位，不从实际像素量反算：
   // 标准比下 3.6 实际只能做出 2.99，反算会让拇指从指针底下弹回去。
-  const notchTop = mpNotchMax(shownRatio);
+  const notchTop = MP_NOTCH_MAX;
   const notch = Math.max(MP_NOTCH_MIN, Math.min(notchTop, mpNotch));
   mpNotch = notch;
   const mpPct = (notch - MP_NOTCH_MIN) / (notchTop - MP_NOTCH_MIN);
@@ -422,7 +393,7 @@ function bindSizeSliders() {
 
   function applyRatio(clientX) {
     const ratio = tToRatio(pctFromEvent(nodes.ratioSlider, clientX));
-    const notch = Math.min(mpNotchMax(ratio), Math.max(MP_NOTCH_MIN, pinnedMP ?? mpNotch));
+    const notch = Math.min(MP_NOTCH_MAX, Math.max(MP_NOTCH_MIN, pinnedMP ?? mpNotch));
     const [w, h] = sizeFor(ratio, mpFromNotch(notch));
     setSize(w, h);
   }
@@ -430,7 +401,7 @@ function bindSizeSliders() {
   function applyMP(clientX) {
     // 当前比例接近标准比就先抬到标准比：不然 2544×1440 这类偏差会一直传下去。
     const ratio = snapRatio(pinnedRatio ?? currentRatio());
-    mpNotch = mpNotchAt(pctFromEvent(nodes.slider, clientX), ratio);
+    mpNotch = mpNotchAt(pctFromEvent(nodes.slider, clientX));
     const [w, h] = sizeFor(ratio, mpFromNotch(mpNotch));
     setSize(w, h);
   }
