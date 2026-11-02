@@ -995,6 +995,21 @@ export default defineApp(async (sdk) => {
       return c.json(state());
     });
 
+    // 队列里换位：排队顺序就是执行顺序，让用户自己调。
+    app.post(`/${APP_ID}/queue/move`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const id = String(body?.id ?? "");
+      const delta = Number(body?.delta) === -1 ? -1 : 1;
+      const index = queue.findIndex((job) => job.id === id);
+      if (index < 0) return c.json({ ...state(), error: "队列里没有这条" }, 404);
+      const target = index + delta;
+      if (target < 0 || target >= queue.length) return c.json(state());
+      const [moved] = queue.splice(index, 1);
+      queue.splice(target, 0, moved);
+      schedulePush(0);
+      return c.json(state());
+    });
+
     app.get(`/${APP_ID}/output`, (c) => {
       const file = safeOutput(c.req.query("name"));
       if (!file) return c.text("not found", 404);

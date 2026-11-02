@@ -912,9 +912,29 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         installed,
         path: installed ? dir : null,
         bytes: installed ? dirBytes(dir) : null,
+        // 组件明细：选模型时最常问的就是「这个 27 GB 到底花在哪」。
+        components: installed ? modelComponents(dir) : null,
         active: installed && settings.modelPath === dir,
       };
     });
+  }
+
+  /** 目录里的几个模型组件各自多大。只认 diffusers 那套目录名。 */
+  function modelComponents(dir) {
+    const parts = [
+      ["transformer", "DiT"],
+      ["text_encoder", "文本编码器"],
+      ["vae", "VAE"],
+      ["tokenizer", "分词器"],
+      ["scheduler", "调度器"],
+    ];
+    const rows = [];
+    for (const [folder, label] of parts) {
+      const sub = join(dir, folder);
+      if (!existsSync(sub)) continue;
+      rows.push({ label, bytes: dirBytes(sub) });
+    }
+    return rows.length ? rows : null;
   }
 
   return {

@@ -206,6 +206,33 @@ body {
 .split-pane { display: flex; flex-direction: column; gap: 8px; }
 .split-pane[hidden] { display: none; }
 
+/* ── 可展开的行：组件体积这类明细 ──────────────────── */
+.manage-row-wrap { display: flex; flex-direction: column; }
+.manage-row.expandable { cursor: pointer; }
+
+.manage-row.open .name::after {
+  content: "▾";
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--ui-text-3);
+}
+
+.manage-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 12px 8px;
+  border-top: 1px dashed var(--ui-line);
+}
+
+.manage-detail-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--ui-text-3);
+}
+
 /* ── 队列卡片 ────────────────────────────────────────── */
 .queue-cards { display: flex; flex-direction: column; gap: 8px; }
 

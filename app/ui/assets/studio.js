@@ -423,7 +423,7 @@ async function renderGallery(data) {
 }
 
 // ── 行与确认 ───────────────────────────────────────────────────────────
-function manageRow({ name, meta, on, dim, badges = [], actions = [], remove }) {
+function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], remove }) {
   const row = document.createElement("div");
   row.className = on ? "manage-row on" : dim ? "manage-row dim" : "manage-row";
   const nameNode = document.createElement("span");
@@ -459,6 +459,34 @@ function manageRow({ name, meta, on, dim, badges = [], actions = [], remove }) {
     armable(button, remove.armedLabel, remove.label, remove.run);
     row.append(button);
   }
+
+  // 有明细的行可以点开：组件体积这类信息平时收着，需要时才展开。
+  if (detail?.length) {
+    row.classList.add("expandable");
+    const box = document.createElement("div");
+    box.className = "manage-detail";
+    box.hidden = true;
+    for (const item of detail) {
+      const line = document.createElement("div");
+      line.className = "manage-detail-line";
+      const label = document.createElement("span");
+      label.textContent = item.label;
+      const value = document.createElement("span");
+      value.textContent = item.value;
+      line.append(label, value);
+      box.appendChild(line);
+    }
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      box.hidden = !box.hidden;
+      row.classList.toggle("open", !box.hidden);
+    });
+    const wrap = document.createElement("div");
+    wrap.className = "manage-row-wrap";
+    wrap.append(row, box);
+    return wrap;
+  }
+
   return row;
 }
 
@@ -506,8 +534,8 @@ function bindSplitTabs(container) {
   });
 }
 
-/** 队列里的一张卡：缩略图、标题、元信息、可选进度条。 */
-function queueCard({ title, meta, percent, thumb, on }) {
+/** 队列里的一张卡：缩略图、标题、元信息、可选进度条与操作按钮。 */
+function queueCard({ title, meta, percent, thumb, on, actions = [] }) {
   const card = document.createElement("div");
   card.className = on ? "queue-card on" : "queue-card";
   const box = document.createElement("div");
@@ -542,6 +570,15 @@ function queueCard({ title, meta, percent, thumb, on }) {
     main.appendChild(bar);
   }
   card.append(box, main);
+  for (const action of actions) {
+    const button = document.createElement("button");
+    button.className = "btn ghost small";
+    button.type = "button";
+    button.textContent = action.label;
+    button.title = action.title ?? "";
+    button.addEventListener("click", () => void action.run());
+    card.appendChild(button);
+  }
   return card;
 }
 
@@ -561,6 +598,12 @@ function renderQueue(data) {
             percent: active.progress?.percent,
             thumb: active.previewAt ? previewUrl(active.previewAt) : null,
             on: true,
+            actions: [
+              {
+                label: "取消",
+                run: () => runSafe(() => post("/cancel", { id: active.jobId }), "取消"),
+              },
+            ],
           }),
         ]
       : [queueCard({ title: "没有正在跑的任务" })]),
@@ -573,6 +616,26 @@ function renderQueue(data) {
           queueCard({
             title: job.prompt || "(无提示词)",
             meta: `第 ${index + 1} 位 · ${job.width}×${job.height} · ${job.steps} 步`,
+            actions: [
+              index > 0
+                ? {
+                    label: "↑",
+                    title: "提前一位",
+                    run: () => runSafe(() => post("/queue/move", { id: job.id, delta: -1 }), "上移"),
+                  }
+                : null,
+              index < queue.length - 1
+                ? {
+                    label: "↓",
+                    title: "后移一位",
+                    run: () => runSafe(() => post("/queue/move", { id: job.id, delta: 1 }), "下移"),
+                  }
+                : null,
+              {
+                label: "取消",
+                run: () => runSafe(() => post("/cancel", { id: job.id }), "取消"),
+              },
+            ].filter(Boolean),
           }),
         )
       : [queueCard({ title: "队列是空的" })]),
@@ -652,6 +715,7 @@ function renderVersions(data) {
         name: `${item.label}${item.active ? " · 当前" : ""}`,
         badges: [item.installed ? "已装" : null].filter(Boolean),
         meta: item.installed ? formatSize(item.bytes) : `${item.note} · 未安装`,
+        detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
         on: item.active,
         dim: !item.installed,
         actions:
