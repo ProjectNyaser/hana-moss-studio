@@ -19,10 +19,6 @@ const nodes = {
   resultImage: el("result-image"),
   resultCaption: el("result-caption"),
   canvasEmpty: el("canvas-empty"),
-  progressBand: el("progress-band"),
-  bandLabel: el("band-label"),
-  bandBar: el("band-bar"),
-  bandEta: el("band-eta"),
   galleryCount: el("gallery-count"),
   thumbs: el("thumbs"),
   clearJobs: el("clear-jobs"),
@@ -182,24 +178,6 @@ function renderStage(data) {
   nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
 
-function renderProgress(data) {
-  const active = data.engine.active;
-  if (!active) {
-    nodes.progressBand.hidden = true;
-    return;
-  }
-  const progress = active.progress ?? {};
-  nodes.progressBand.hidden = false;
-  nodes.bandLabel.textContent = `${progress.phase ?? "准备中"}${progress.total ? ` · ${progress.step}/${progress.total}` : ""}`;
-  const percent = typeof progress.percent === "number" ? progress.percent : 0;
-  nodes.bandBar.classList.toggle("indeterminate", percent <= 0);
-  nodes.bandBar.querySelector("i").style.width = percent > 0 ? `${percent}%` : "36%";
-  nodes.bandEta.textContent = progress.etaMs
-    ? `约剩 ${formatDuration(progress.etaMs)}`
-    : progress.elapsedMs
-      ? `已跑 ${formatDuration(progress.elapsedMs)}`
-      : "";
-}
 
 /** 画布上要显示的那张：只有显式载入或刚生成完才有，初始是空的。 */
 function shownJob(data) {
@@ -746,7 +724,6 @@ function loadJob(job) {
 function render(data) {
   latest = data;
   renderStage(data);
-  renderProgress(data);
   renderQueue(data);
   renderVersions(data);
   renderDownload(data);
