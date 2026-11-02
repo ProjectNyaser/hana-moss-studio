@@ -9,13 +9,14 @@
  * aria2c 下大文件（随包在 vendor-bin/，多连接 + 自带重连）。子进程有自己的网络栈，
  * 不需要在 manifest 里声明 network。
  *
- * 进度不解析 aria2 的输出：它是不带换行的动态行，按 \r 切很脆。改成定期扫目标目录的
- * 体积增量，跟下载器解耦。
+ * 下载进度走 aria2 的 JSON-RPC：任务用 aria2.addUri 下发，进度读引擎自报的
+ * completedLength，失败有 errorCode，取消能逐任务 forceRemove，收尾用 aria2.shutdown
+ * 让它自己退。不解析 stdout（动态行按 \r 切很脆），也不靠扫目录猜体积。
+ * 调 RPC 用 curl 子进程，App 自己的网络权限面不因此扩大。
  *
  * 装完只做一件事：把路径写进设置，让 Engine 那边直接用。
  */
 import crypto from "node:crypto";
-import os from "node:os";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -23,10 +24,8 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import path, { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,6 +64,7 @@ const sha256File = (file) =>
 const mb = (bytes) => (bytes / 1024 / 1024).toFixed(0);
 const gib = (bytes) => (bytes / 1024 ** 3).toFixed(1);
 const brief = (error) => String(error?.message ?? error).replace(/\s+/g, " ").slice(0, 90);
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 const runFile = promisify(execFile);
 
@@ -86,17 +86,19 @@ async function curlText(url) {
   }
 }
 
-export async function probeGpu() {
-  let stdout = "";
-  try {
-    ({ stdout } = await runFile(
-      "nvidia-smi",
-      ["--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader"],
-      { timeout: 15_000, windowsHide: true },
-    ));
-  } catch {
-    return null;
-  }
+/**
+ * nvidia-smi 的定位顺序。
+ *
+ * 不指望 PATH：App 进程的 PATH 是宿主给的，不保证含 System32，裸名会直接 ENOENT。
+ * 大多数机器上它就在 System32（NVIDIA 驱动装的），旧式装在 NVSMI 目录的也留着。
+ */
+const SMI_CANDIDATES = [
+  "C:\\Windows\\System32\\nvidia-smi.exe",
+  "C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe",
+  "nvidia-smi",
+];
+
+const parseSmi = (stdout) => {
   if (!stdout?.trim()) return null;
   const [name, driver, cc] = stdout.trim().split(/\r?\n/)[0].split(",").map((s) => s.trim());
   const compute = Number(cc);
@@ -106,11 +108,42 @@ export async function probeGpu() {
     driverMajor: Number(String(driver).split(".")[0]) || null,
     computeCapability: Number.isFinite(compute) ? compute : null,
   };
+};
+
+/** 带诊断的探测：每个候选都留下结果，方便在 App 里查为什么没读到。 */
+export async function probeGpuDetailed() {
+  const args = ["--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader"];
+  const tried = [];
+  for (const exe of SMI_CANDIDATES) {
+    try {
+      const { stdout, stderr } = await runFile(exe, args, { timeout: 15_000, windowsHide: true });
+      tried.push({ exe, ok: true, stdout: String(stdout ?? "").trim().slice(0, 200), stderr: String(stderr ?? "").trim().slice(0, 200) });
+      const gpu = parseSmi(stdout);
+      if (gpu) return { gpu, tried };
+    } catch (error) {
+      tried.push({
+        exe,
+        ok: false,
+        error: String(error?.message ?? error).slice(0, 200),
+        stderr: String(error?.stderr ?? "").trim().slice(0, 200),
+      });
+    }
+  }
+  return { gpu: null, tried };
 }
 
-/** 从资产名里挑出一个包：bundled 优先，其余按驱动与算力。 */
-export function pickEngineAsset(assets, version, gpu) {
-  const cuda = gpu?.driverMajor && gpu.driverMajor < CUDA13_MIN_DRIVER ? "cu12" : "cu13";
+export async function probeGpu() {
+  return (await probeGpuDetailed()).gpu;
+}
+
+/** 从资产名里挑出一个包。preferCuda 是手动指定的 cu12/cu13，不指定就看驱动。 */
+export function pickEngineAsset(assets, version, gpu, preferCuda) {
+  const cuda =
+    preferCuda === "cu12" || preferCuda === "cu13"
+      ? preferCuda
+      : gpu?.driverMajor && gpu.driverMajor < CUDA13_MIN_DRIVER
+        ? "cu12"
+        : "cu13";
   const sm75 = gpu?.computeCapability === 7.5 && cuda === "cu13";
   const base = `mossinfer-${version}-windows-${cuda}-x86_64${sm75 ? "-sm75" : ""}`;
   const bundled = assets.find((a) => a.name === `${base}.zip`);
@@ -136,6 +169,32 @@ function dirBytes(dir) {
   return total;
 }
 
+/** 目录名 → 版本与构建。命名规则：mossinfer-<ver>-<os>-<cu>-x86_64[-sm75][-system-cuda]。 */
+export function parseEngineName(name) {
+  const match = String(name).match(
+    /^mossinfer-([0-9][0-9.]*)-([a-z0-9]+)-([a-z0-9]+)-x86_64(?:-(sm\d+))?(?:-(system-cuda))?$/i,
+  );
+  if (!match) return { version: null, os: null, cuda: null, sm: null, variant: null };
+  return {
+    version: match[1].replace(/\.$/, ""),
+    os: match[2],
+    cuda: match[3],
+    sm: match[4] ?? null,
+    variant: match[5] ? "system-cuda" : "bundled",
+  };
+}
+
+/** 按数字段比版本，大的在前。 */
+export function compareEngineVersion(a, b) {
+  const left = String(a ?? "").split(".").map((n) => Number(n) || 0);
+  const right = String(b ?? "").split(".").map((n) => Number(n) || 0);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const diff = (left[i] ?? 0) - (right[i] ?? 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
 export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, onInstalled }) {
   /** 当前安装任务；null 表示空闲。 */
   let job = null;
@@ -144,11 +203,38 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
 
   const engineDir = join(dataDir, "engine");
 
-  /** 已有可用模型就装在原处，不另开一份 25 GiB 的副本。 */
+  /**
+   * 已有可用模型就装在原处，不另开一份 25 GiB 的副本。
+   * 判据只看目录在不在：缺一两个文件也应该就地补齐，换目录等于把整份重下一遍。
+   */
   function weightsTarget() {
     const existing = getSettings().modelPath;
-    if (existing && existsSync(join(existing, "model_index.json"))) return existing;
+    if (existing && existsSync(existing)) return existing;
     return join(dataDir, "models", "moss-image-sft");
+  }
+
+  /**
+   * 已装引擎清单。旧版本装完不删，回滚就是在这里切回去。
+   * 只列真带 bin/moss-server.exe 的目录，半途而废的解压残留不会冒充可用版本。
+   */
+  function listEngines() {
+    if (!existsSync(engineDir)) return [];
+    const current = String(getSettings().serverPath ?? "");
+    return readdirSync(engineDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        const serverPath = join(engineDir, entry.name, "bin", "moss-server.exe");
+        if (!existsSync(serverPath)) return null;
+        return {
+          name: entry.name,
+          serverPath,
+          current: serverPath === current,
+          bytes: dirBytes(join(engineDir, entry.name)),
+          ...parseEngineName(entry.name),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => compareEngineVersion(b.version, a.version));
   }
 
   function patch(update) {
@@ -230,48 +316,191 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   }
 
   /**
-   * 起一个 aria2c，等它退出。
-   *
-   * aria2 拿到全部字节后偶尔不退出：某个分片的连接半开着，它在等超时又重试。文件已经完整，
-   * 再等就是白耗时间。传了 watch 就每秒看一次目标体积，够了且 5 秒无新输出便主动收尾；
-   * 真实完整性由调用方校验（sha256 或逐个文件大小），这里只负责不等它。
+   * 调 aria2 的 JSON-RPC。走 curl 子进程而不是 App 内 fetch：子进程有自己的网络栈，
+   * manifest 不用为回环地址多开一扇门。
    */
-  function runAria2(args, watch) {
-    return new Promise((done, reject) => {
-      const proc = spawn(ARIA2, args, { windowsHide: true, stdio: "ignore" });
-      child = proc;
-      let settling = false;
-      let fullSince = 0;
-
-      const timer = setInterval(() => {
-        if (!watch || settling) return;
-        if (watch.probe() < watch.totalBytes) {
-          fullSince = 0;
-          return;
-        }
-        // 体积到了就收尾。不看 aria2 的输出：它重试时每半分钟会打一行，光看“无输出”永远等不到。
-        if (!fullSince) fullSince = Date.now();
-        else if (Date.now() - fullSince > 8000) {
-          settling = true;
-          proc.kill();
-        }
-      }, 1000);
-      timer.unref?.();
-
-      proc.on("error", (error) => {
-        clearInterval(timer);
-        child = null;
-        reject(new Error(`无法启动 aria2c：${error.message}`));
-      });
-      proc.on("close", (code) => {
-        clearInterval(timer);
-        child = null;
-        if (cancelled) reject(new Error("已取消"));
-        else if (settling || code === 0) done();
-        // 不把 aria2 的输出接进错误里：重定向后的签名 URL 会带临时凭据。
-        else reject(new Error(`aria2c 退出码 ${code}`));
-      });
+  async function aria2Call(port, secret, method, params = [], timeoutMs = 8000) {
+    const payload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: "moss",
+      method,
+      params: [`token:${secret}`, ...params],
     });
+    const { stdout } = await runFile(
+      "curl.exe",
+      [
+        "-s",
+        "--max-time",
+        String(Math.max(1, Math.round(timeoutMs / 1000))),
+        "-H",
+        "content-type: application/json",
+        "--data-binary",
+        payload,
+        `http://127.0.0.1:${port}/jsonrpc`,
+      ],
+      { timeout: timeoutMs + 2000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+    );
+    let data;
+    try {
+      data = JSON.parse(stdout);
+    } catch {
+      throw new Error(`${method}：RPC 返回不是 JSON`);
+    }
+    if (data.error) throw new Error(`${method}：${data.error.message}`);
+    return data.result;
+  }
+
+  /** 起一个只当 RPC 服务端的 aria2c，端口冲突就换一个再试。 */
+  async function startAria2Rpc(globalOptions) {
+    let lastError = new Error("aria2 RPC 没有就绪");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (cancelled) throw new Error("已取消");
+      const port = 6800 + Math.floor(Math.random() * 200);
+      const secret = crypto.randomBytes(8).toString("hex");
+      const proc = spawn(
+        ARIA2,
+        [
+          "--enable-rpc",
+          `--rpc-listen-port=${port}`,
+          "--rpc-listen-all=false",
+          `--rpc-secret=${secret}`,
+          "--no-conf",
+          ...globalOptions,
+        ],
+        { windowsHide: true, stdio: "ignore" },
+      );
+      let exited = false;
+      proc.on("close", () => {
+        exited = true;
+      });
+      proc.on("error", () => {
+        exited = true;
+      });
+      child = proc;
+
+      for (let i = 0; i < 40; i += 1) {
+        if (exited) break;
+        try {
+          await aria2Call(port, secret, "aria2.getVersion", [], 3000);
+          return { proc, port, secret, exited: () => exited };
+        } catch {
+          await sleep(150);
+        }
+      }
+      proc.kill();
+      child = null;
+      lastError = new Error("aria2c 起不来或端口被占");
+    }
+    throw lastError;
+  }
+
+  async function stopAria2Rpc(session) {
+    // 先请求它优雅退出，不退再杀；退不退都不影响已下好的文件。
+    try {
+      await aria2Call(session.port, session.secret, "aria2.shutdown", [], 2000);
+    } catch {
+      /* 进程可能已经没了 */
+    }
+    const deadline = Date.now() + 3000;
+    while (!session.exited() && Date.now() < deadline) await sleep(100);
+    if (!session.exited()) session.proc.kill();
+    child = null;
+  }
+
+  /**
+   * 用 RPC 下一组文件。
+   *
+   * 返回值不带业务信息，进度走 onTick：字节数是引擎自报的，不用再给目标目录做快照差。
+   * 失败直接抛，带上是哪个文件与 aria2 的错误码。
+   */
+  async function downloadViaRpc(entries, { dir, concurrency = 1, totalBytes = 0, onTick } = {}) {
+    const session = await startAria2Rpc([
+      "-x16",
+      "-s16",
+      "-k1M",
+      `-j${concurrency}`,
+      "--file-allocation=none",
+      "--max-tries=3",
+      "--retry-wait=3",
+      "--lowest-speed-limit=10K",
+      "--timeout=30",
+      "--console-log-level=warn",
+      "--summary-interval=0",
+    ]);
+    try {
+      const items = [];
+      for (const entry of entries) {
+        if (cancelled) throw new Error("已取消");
+        const gid = await aria2Call(session.port, session.secret, "aria2.addUri", [
+          [entry.url],
+          { dir, out: entry.out, continue: "true" },
+        ]);
+        items.push({ gid, out: entry.out, size: entry.size ?? 0 });
+      }
+      const total = totalBytes || items.reduce((sum, item) => sum + item.size, 0);
+      let stall = 0;
+      let lastBytes = -1;
+      let lastDone = -1;
+
+      for (;;) {
+        if (cancelled) {
+          await Promise.all(
+            items.map((item) =>
+              aria2Call(session.port, session.secret, "aria2.forceRemove", [item.gid], 3000).catch(() => {}),
+            ),
+          );
+          throw new Error("已取消");
+        }
+        await sleep(1000);
+        // 一次拿全量再按 gid 对号：逐个 tellStatus 在 20 个文件时会并发 20 次 RPC，
+        // 设备忙时容易一片超时，进度就会被误读成 0。
+        let snapshot;
+        try {
+          const keys = ["gid", "status", "completedLength", "totalLength", "errorCode", "errorMessage"];
+          const [active, waiting, stopped] = await Promise.all([
+            aria2Call(session.port, session.secret, "aria2.tellActive", [keys], 6000),
+            aria2Call(session.port, session.secret, "aria2.tellWaiting", [0, 1000, keys], 6000),
+            aria2Call(session.port, session.secret, "aria2.tellStopped", [0, 1000, keys], 6000),
+          ]);
+          snapshot = new Map([...active, ...waiting, ...stopped].map((state) => [state.gid, state]));
+        } catch {
+          // 这一轮没读到就跳过，不把上一轮的进度写成 0。
+          continue;
+        }
+
+        let bytes = 0;
+        let done = 0;
+        const failed = [];
+        for (const item of items) {
+          const state = snapshot.get(item.gid);
+          if (!state) {
+            bytes += item.size;
+            continue;
+          }
+          bytes += Number(state.completedLength ?? 0);
+          if (state.status === "complete") done += 1;
+          else if (state.status === "error") failed.push({ item, state });
+        }
+        onTick?.({ bytes, totalBytes: total, done, total: items.length });
+
+        // 字节和完成数都不再变超过三分钟，就当这条链路已经停了；不能无限等下去。
+        if (bytes === lastBytes && done === lastDone) stall += 1;
+        else {
+          stall = 0;
+          lastBytes = bytes;
+          lastDone = done;
+        }
+        if (stall > 180) throw new Error(`下载停滞：${gib(bytes)} / ${gib(total)} GiB，${done}/${items.length} 个文件`);
+
+        if (failed.length) {
+          const { item, state } = failed[0];
+          throw new Error(`${item.out} 下载失败（aria2 ${state.errorCode}）：${state.errorMessage ?? ""}`.trim());
+        }
+        if (done === items.length) return;
+      }
+    } finally {
+      await stopAria2Rpc(session);
+    }
   }
 
   function watchProgress(getBytes, totalBytes) {
@@ -351,10 +580,13 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       }
 
       patch({ phase: "probing", message: "读显卡与驱动" });
+      const preferCuda = options.preferCuda === "cu12" || options.preferCuda === "cu13" ? options.preferCuda : "auto";
       const gpu = await probeGpu();
       patch({
         phase: "release",
-        message: gpu ? `${gpu.name} · 驱动 ${gpu.driver} · 算力 ${gpu.computeCapability ?? "?"}` : "没有读到 nvidia-smi",
+        message: gpu
+          ? `${gpu.name} · 驱动 ${gpu.driver} · 算力 ${gpu.computeCapability ?? "?"}`
+          : "没读到显卡信息，按 cu13 选包（驱动不到 R580 就在自定义里选 cu12）",
         detail: gpu,
       });
 
@@ -362,7 +594,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       const version = String(release.tag_name ?? "").replace(/^v/, "");
       if (!version) throw new Error("Release 没有可用的 tag");
       const assets = Array.isArray(release.assets) ? release.assets : [];
-      const { asset, cuda, sm75, variant } = pickEngineAsset(assets, version, gpu);
+      const { asset, cuda, sm75, variant } = pickEngineAsset(assets, version, gpu, preferCuda);
       patch({ message: `选中 ${asset.name}（${variant}）`, detail: { ...gpu, cuda, sm75, variant, version, tag: release.tag_name } });
 
       mkdirSync(engineDir, { recursive: true });
@@ -371,39 +603,24 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       const zip = join(engineDir, `${base}.zip`);
 
       patch({ phase: "download", message: `下载 ${asset.name}（${mb(asset.size ?? 0)} MB）`, totalBytes: asset.size ?? 0 });
-      const probeZip = () => (existsSync(zip) ? statSync(zip).size : 0);
-      const stopWatch = watchProgress(probeZip, asset.size ?? 0);
       try {
+        await downloadViaRpc([{ url: asset.browser_download_url, out: `${base}.zip`, size: asset.size ?? 0 }], {
+          dir: engineDir,
+          concurrency: 1,
+          totalBytes: asset.size ?? 0,
+          onTick: ({ bytes, totalBytes }) => patch({ bytes, totalBytes }),
+        });
+      } catch (error) {
+        if (cancelled) throw error;
+        // 宿主里 aria2 的直连 socket 可能走不通，而 curl 同一个地址能取。
+        patch({ phase: "download", message: `aria2 走不通，改用 curl：${brief(error)}` });
+        const probeZip = () => (existsSync(zip) ? statSync(zip).size : 0);
+        const stopWatch = watchProgress(probeZip, asset.size ?? 0);
         try {
-          await runAria2(
-            [
-              "-x16",
-              "-s16",
-              "-k1M",
-              "-c",
-              "--file-allocation=none",
-              "--max-tries=3",
-              "--retry-wait=3",
-              "--lowest-speed-limit=10K",
-              "--timeout=30",
-              "--console-log-level=warn",
-              "--summary-interval=0",
-              "-d",
-              engineDir,
-              "-o",
-              `${base}.zip`,
-              asset.browser_download_url,
-            ],
-            { totalBytes: asset.size ?? 0, probe: probeZip },
-          );
-        } catch (error) {
-          if (cancelled) throw error;
-          // 宿主里 aria2 的直连 socket 可能走不通，而 curl 同一个地址能取。
-          patch({ phase: "download", message: `aria2 走不通，改用 curl：${brief(error)}` });
           await curlDownload(asset.browser_download_url, zip, asset.size ?? 0);
+        } finally {
+          stopWatch();
         }
-      } finally {
-        stopWatch();
       }
 
       patch({ phase: "verify", message: "校验 sha256" });
@@ -471,55 +688,37 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       });
 
       if (missing.length) {
-        const listFile = join(os.tmpdir(), `moss-weights-${Date.now()}.txt`);
-        const lines = [];
-        for (const entry of missing) {
-          mkdirSync(dirname(join(weightsDir, ...entry.path.split("/"))), { recursive: true });
-          lines.push(`${MODEL_ENDPOINT}/${MODEL_REPO}/resolve/main/${entry.path}`);
-          lines.push(`  out=${entry.path}`);
-        }
-        writeFileSync(listFile, lines.join("\n") + "\n", "utf8");
-        const baseBytes = dirBytes(weightsDir);
-        const probeWeights = () => Math.max(0, dirBytes(weightsDir) - baseBytes);
-        const stopWatch = watchProgress(probeWeights, totalBytes);
+        const entries = missing.map((entry) => ({
+          url: `${MODEL_ENDPOINT}/${MODEL_REPO}/resolve/main/${entry.path}`,
+          out: entry.path,
+          size: entry.size ?? 0,
+        }));
+        for (const entry of entries) mkdirSync(dirname(join(weightsDir, ...entry.out.split("/"))), { recursive: true });
         try {
+          await downloadViaRpc(entries, {
+            dir: weightsDir,
+            concurrency: 4,
+            totalBytes,
+            onTick: ({ bytes, totalBytes: total, done, total: count }) =>
+              patch({
+                bytes,
+                totalBytes: total,
+                message: `${done}/${count} 个文件 · ${gib(bytes)} / ${gib(total)} GiB`,
+              }),
+          });
+        } catch (error) {
+          if (cancelled) throw error;
+          patch({ phase: "download", message: `aria2 走不通，改用 curl 逐个下：${brief(error)}` });
+          const baseBytes = dirBytes(weightsDir);
+          const stopWatch = watchProgress(() => Math.max(0, dirBytes(weightsDir) - baseBytes), totalBytes);
           try {
-            await runAria2(
-              [
-                "-x16",
-                "-s16",
-                "-k1M",
-                "-j4",
-                "-c",
-                "--file-allocation=none",
-                "--max-tries=3",
-                "--retry-wait=3",
-                "--lowest-speed-limit=10K",
-                "--timeout=30",
-                "--console-log-level=warn",
-                "--summary-interval=0",
-                "-d",
-                weightsDir,
-                "-i",
-                listFile,
-              ],
-              { totalBytes, probe: probeWeights },
-            );
-          } catch (error) {
-            if (cancelled) throw error;
-            patch({ phase: "download", message: `aria2 走不通，改用 curl 逐个下：${brief(error)}` });
-            for (const entry of missing) {
+            for (const entry of entries) {
               if (cancelled) throw new Error("已取消");
-              await curlDownload(
-                `${MODEL_ENDPOINT}/${MODEL_REPO}/resolve/main/${entry.path}`,
-                join(weightsDir, ...entry.path.split("/")),
-                entry.size,
-              );
+              await curlDownload(entry.url, join(weightsDir, ...entry.out.split("/")), entry.size);
             }
+          } finally {
+            stopWatch();
           }
-        } finally {
-          stopWatch();
-          rmSync(listFile, { force: true });
         }
       }
 
@@ -555,6 +754,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     },
     installEngine,
     installWeights,
+    listEngines,
     getSettings,
   };
 }

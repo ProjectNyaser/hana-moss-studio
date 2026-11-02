@@ -5,7 +5,7 @@ import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
 import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
-import { createInstaller } from "./lib/installer.js";
+import { createInstaller, probeGpuDetailed } from "./lib/installer.js";
 
 export const name = "hana-moss-studio";
 
@@ -41,15 +41,17 @@ export default defineApp(async (sdk) => {
   for (const dir of [outputsDir, cacheDir]) mkdirSync(dir, { recursive: true });
 
   const store = createStore(dataDir);
+  /** 改设置的后置动作：路径变了就停引擎，模型下次生成重新 load。装完与切换版本都走这里。 */
+  const applySettings = (patch) => {
+    store.saveSettings(patch);
+    // 路径变了：引擎在跑就停掉，旧的那份不能再往上跑；模型下次生成重新 load。
+    if (patch.serverPath && engine.snapshot().running) engine.stop();
+    engine.loadedKey = null;
+  };
   const installer = createInstaller({
     dataDir,
     getSettings: () => store.getSettings(),
-    saveSettings: (patch) => {
-      store.saveSettings(patch);
-      // 路径变了：引擎在跑就停掉，旧的那份不能再往上跑；模型下次生成重新 load。
-      if (patch.serverPath && engine.snapshot().running) engine.stop();
-      engine.loadedKey = null;
-    },
+    saveSettings: applySettings,
     onUpdate: () => schedulePush(0),
     // 装完直接拉起来，省用户一次点击；失败不影响安装结果。
     onInstalled: (kind) => {
@@ -488,6 +490,7 @@ export default defineApp(async (sdk) => {
       },
       plan: modelPlan(),
       install: installer.snapshot(),
+      engines: installer.listEngines(),
     };
   }
 
@@ -646,6 +649,8 @@ export default defineApp(async (sdk) => {
       c.json({ ok: true, app: { id: APP_ID, version: APP_VERSION }, protocol: MOSSIMAGE.protocolVersion, ts: new Date().toISOString() }),
     );
 
+    app.get(`/${APP_ID}/diag/gpu`, async (c) => c.json(await probeGpuDetailed()));
+
     app.get(`/${APP_ID}/state`, (c) => c.json(state()));
 
     app.get(`/${APP_ID}/events`, (c) => {
@@ -766,7 +771,7 @@ export default defineApp(async (sdk) => {
       if (installer.busy()) return c.json({ ...state(), error: "已有安装在进行" }, 409);
       const body = await c.req.json().catch(() => ({}));
       installer
-        .installEngine({ zipPath: body?.zipPath })
+        .installEngine({ zipPath: body?.zipPath, preferCuda: body?.preferCuda })
         .catch((error) => sdk.logger.warn(`引擎安装失败：${message(error)}`));
       return c.json(state());
     });
@@ -779,6 +784,17 @@ export default defineApp(async (sdk) => {
 
     app.post(`/${APP_ID}/install/cancel`, (c) => {
       installer.cancel();
+      schedulePush(0);
+      return c.json(state());
+    });
+
+    app.post(`/${APP_ID}/engine/use`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const name = String(body?.name ?? "").trim();
+      const found = installer.listEngines().find((entry) => entry.name === name);
+      if (!found) return c.json({ ...state(), error: `没有已装版本 ${name || "（未指定）"}` }, 404);
+      if (found.current) return c.json(state());
+      applySettings({ serverPath: found.serverPath });
       schedulePush(0);
       return c.json(state());
     });

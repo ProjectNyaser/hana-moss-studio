@@ -333,9 +333,21 @@
         </div>
         <div class="pn-facts" id="pn-facts"></div>
         <p class="hint" id="pn-engine-detail"></p>
+        <label class="field" id="pn-engine-pick" hidden>
+          <span class="label">引擎版本</span>
+          <select id="pn-engine-select"></select>
+        </label>
         <details class="pn-adv" id="pn-fold-adv">
-          <summary>自定义路径</summary>
+          <summary>自定义</summary>
           <div class="fold-body">
+            <label class="field">
+              <span class="label">引擎 CUDA 版本</span>
+              <select id="pn-engine-cuda">
+                <option value="auto">自动（按驱动判断）</option>
+                <option value="cu13">CUDA 13</option>
+                <option value="cu12">CUDA 12</option>
+              </select>
+            </label>
             <label class="field">
               <span class="label">moss-server 路径</span>
               <input id="pn-server-path" type="text" placeholder="一般不用填，点上面的「装引擎」">

@@ -69,6 +69,8 @@ const nodes = {
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
   engine: el("pn-engine"),
+  enginePick: el("pn-engine-pick"),
+  engineSelect: el("pn-engine-select"),
   save: el("pn-save"),
   planTotal: el("pn-plan-total"),
   planList: el("pn-plan-list"),
@@ -392,6 +394,26 @@ function renderEngine(data) {
     nodes.facts.appendChild(line);
   }
 
+  // 装过多个版本时给一个切换入口；只有一个就藏起来，不添噪声。
+  const engines = Array.isArray(data.engines) ? data.engines : [];
+  nodes.enginePick.hidden = engines.length < 2;
+  if (engines.length >= 2) {
+    const wanted = engines.map((item) => item.name).join("|");
+    if (nodes.engineSelect.dataset.list !== wanted) {
+      nodes.engineSelect.dataset.list = wanted;
+      nodes.engineSelect.replaceChildren(
+        ...engines.map((item) => {
+          const option = document.createElement("option");
+          option.value = item.name;
+          option.textContent = `${item.version ?? "?"} · ${item.cuda ?? ""}${item.variant === "system-cuda" ? " system" : ""}${item.sm ? ` ${item.sm}` : ""}`;
+          return option;
+        }),
+      );
+    }
+    const current = engines.find((item) => item.current);
+    if (current) nodes.engineSelect.value = current.name;
+  }
+
   const detail = [];
   if (device?.cublaslt?.error) {
     detail.push("缺少 cuBLASLt：换自带 CUDA 的引擎包，或把 cublasLt64_13.dll 放进引擎 bin 目录");
@@ -662,6 +684,19 @@ async function onCancelInstall() {
 }
 
 nodes.installEngine.addEventListener("click", () => void onInstall("engine"));
+nodes.engineSelect.addEventListener("change", async () => {
+  const name = nodes.engineSelect.value;
+  if (!name) return;
+  nodes.engineSelect.disabled = true;
+  try {
+    render(await post("/engine/use", { name }));
+    say(`已切到 ${name}`, "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    nodes.engineSelect.disabled = false;
+  }
+});
 nodes.installWeights.addEventListener("click", () => void onInstall("weights"));
 nodes.installCancel.addEventListener("click", () => void onCancelInstall());
 nodes.reroll.addEventListener("click", () => {
