@@ -232,24 +232,22 @@ function placeThumb(container, thumb, pct) {
   return x;
 }
 
-/** 滑块行程均分成档，而不是把值按 0.1 取整。
- *  上限只有 ×1.07 时，按值取整会只剩一档、thumb 永远粘在左端；
- *  按行程分档就均匀，拖到一半就到顶，拇指跟手。 */
+/** 滑块按 0.1 一档走，最后一档贴着上限。
+ *  上限 ×1.07 时只有一档，但那一档占满行程，拖到一半就到顶。 */
 function hiresSteps(maxScale) {
-  return Math.max(1, Math.round((maxScale - 1) / 0.1));
+  return Math.max(1, Math.ceil((maxScale - 1) / 0.1 - 1e-9));
 }
 
 function hiresAt(pct, maxScale) {
   const steps = hiresSteps(maxScale);
   const index = Math.min(steps, Math.max(0, Math.round(pct * steps)));
-  return Number((1 + (index / steps) * (maxScale - 1)).toFixed(2));
+  return Number(Math.min(maxScale, 1 + index * 0.1).toFixed(2));
 }
 
 function quantizeHires(value, maxScale) {
   if (maxScale <= 1.001) return 1;
-  const steps = hiresSteps(maxScale);
-  const pct = Math.min(1, Math.max(0, (value - 1) / (maxScale - 1)));
-  return hiresAt(pct, maxScale);
+  const index = Math.round((value - 1) / 0.1);
+  return Number(Math.min(maxScale, Math.max(1, 1 + index * 0.1)).toFixed(2));
 }
 
 /** 跟后端同一套收敛规则：单边与总量取更严的缩放系数，比例不变。 */
@@ -289,7 +287,7 @@ function renderSize() {
   const mpPct = Math.min(1, Math.max(0, (megapixels - MIN_MP) / (MAX_MP - MIN_MP)));
   const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
   nodes.sliderFill.style.width = `${mx}px`;
-  nodes.sliderThumb.textContent = megapixels < 1 ? megapixels.toFixed(2) : megapixels.toFixed(1);
+  nodes.sliderThumb.textContent = megapixels.toFixed(1);
   nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(2));
   nodes.mpNote.textContent = `${megapixels.toFixed(2)}MP`;
 
@@ -302,12 +300,13 @@ function renderSize() {
   const hiresPct = maxScale > 1 ? Math.min(1, (hiresScale - 1) / (maxScale - 1)) : 0;
   const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, hiresPct);
   nodes.hiresFill.style.width = `${hx}px`;
-  const hiresLabel = `×${Number(hiresScale.toFixed(2))}`;
-  nodes.hiresThumb.textContent = hiresLabel;
+  // 拇指上写步长口径（一位小数），右侧写实际值（两位）。
+  nodes.hiresThumb.textContent = `×${hiresScale.toFixed(1)}`;
   nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
   nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
+  const hiresActual = `×${Number(hiresScale.toFixed(2))}`;
   nodes.hiresNote.textContent = hiresScale > 1.001
-    ? (overLimit ? `${hiresLabel} 超上限` : hiresLabel)
+    ? (overLimit ? `${hiresActual} 超上限` : hiresActual)
     : "关闭";
   nodes.hiresThumb.title = maxScale <= 1.001
     ? "这张图已经贴到引擎上限，没法再放大"
