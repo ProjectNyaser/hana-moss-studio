@@ -16,9 +16,19 @@ const MP_NOTCH_MIN = Math.floor(MIN_MP * 10) / 10;
 const MP_NOTCH_MAX = Math.ceil(MAX_MP * 10) / 10;
 const MP_STEPS = Math.max(1, Math.round((MP_NOTCH_MAX - MP_NOTCH_MIN) * 10));
 
-function mpNotchAt(pct) {
-  const index = Math.min(MP_STEPS, Math.max(0, Math.round(pct * MP_STEPS)));
+function mpNotchAt(pct, ratio) {
+  const top = mpNotchMax(ratio);
+  const steps = Math.max(1, Math.round((top - MP_NOTCH_MIN) * 10));
+  const index = Math.min(steps, Math.max(0, Math.round(pct * steps)));
   return Number((MP_NOTCH_MIN + index * 0.1).toFixed(1));
+}
+
+/** 该比例下能做到的最大像素量的刻度：16:9 铺到 3.7（实际 2560×1440 = 3.69），
+ *  不把轨道铺到 4.2 再留一段拖不出东西的死区。 */
+function mpNotchMax(ratio) {
+  const [width, height] = sizeFor(ratio, MAX_MP);
+  const top = Math.ceil(((width * height) / 1e6) * 10) / 10;
+  return Math.min(MP_NOTCH_MAX, Math.max(MP_NOTCH_MIN + 0.1, top));
 }
 
 function mpFromNotch(notch) {
@@ -341,8 +351,10 @@ function renderSize() {
 
   // 拇指按滑块自己那一格定位，不从实际像素量反算：
   // 标准比下 3.6 实际只能做出 2.99，反算会让拇指从指针底下弹回去。
-  const notch = Math.max(MP_NOTCH_MIN, Math.min(MP_NOTCH_MAX, mpNotch));
-  const mpPct = (notch - MP_NOTCH_MIN) / (MP_NOTCH_MAX - MP_NOTCH_MIN);
+  const notchTop = mpNotchMax(shownRatio);
+  const notch = Math.max(MP_NOTCH_MIN, Math.min(notchTop, mpNotch));
+  mpNotch = notch;
+  const mpPct = (notch - MP_NOTCH_MIN) / (notchTop - MP_NOTCH_MIN);
   const mx = placeThumb(nodes.slider, nodes.sliderThumb, mpPct);
   nodes.sliderFill.style.width = `${mx}px`;
   nodes.sliderThumb.textContent = notch.toFixed(1);
@@ -410,7 +422,7 @@ function bindSizeSliders() {
 
   function applyRatio(clientX) {
     const ratio = tToRatio(pctFromEvent(nodes.ratioSlider, clientX));
-    const notch = Math.min(MP_NOTCH_MAX, Math.max(MP_NOTCH_MIN, pinnedMP ?? mpNotch));
+    const notch = Math.min(mpNotchMax(ratio), Math.max(MP_NOTCH_MIN, pinnedMP ?? mpNotch));
     const [w, h] = sizeFor(ratio, mpFromNotch(notch));
     setSize(w, h);
   }
@@ -418,7 +430,7 @@ function bindSizeSliders() {
   function applyMP(clientX) {
     // 当前比例接近标准比就先抬到标准比：不然 2544×1440 这类偏差会一直传下去。
     const ratio = snapRatio(pinnedRatio ?? currentRatio());
-    mpNotch = mpNotchAt(pctFromEvent(nodes.slider, clientX));
+    mpNotch = mpNotchAt(pctFromEvent(nodes.slider, clientX), ratio);
     const [w, h] = sizeFor(ratio, mpFromNotch(mpNotch));
     setSize(w, h);
   }
