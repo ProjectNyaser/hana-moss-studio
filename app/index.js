@@ -296,19 +296,26 @@ export default defineApp(async (sdk) => {
    * 用户传什么就收什么，只把**实际出图尺寸**收进引擎限制。
    * 超限时按比例往下缩（只缩不拉，16 的倍数），而不是直接把任务拒掉。
    */
-  /** 把宽高收进引擎限制：只缩不拉，16 的倍数。基础图与高清修正共用。 */
+  /**
+   * 把宽高收进引擎限制：只缩不拉，比例保持不变。
+   * 单边与总量两条上限取更严的那个缩放系数，不能只截超限的那一维——
+   * 5120×2880 只把宽截到 4096 会把 16:9 变成 1.42。
+   */
   function fitToLimit(width, height) {
     const floor16 = (value) => Math.max(MIN_SIDE, Math.floor(value / 16) * 16);
-    let w = Math.min(MAX_SIDE, Math.max(MIN_SIDE, width));
-    let h = Math.min(MAX_SIDE, Math.max(MIN_SIDE, height));
-    if (w * h > MAX_PIXELS) {
-      const scale = Math.sqrt(MAX_PIXELS / (w * h));
-      w = floor16(w * scale);
-      h = floor16(h * scale);
-      while (w * h > MAX_PIXELS && w > MIN_SIDE && h > MIN_SIDE) {
+    let w = Math.max(MIN_SIDE, width);
+    let h = Math.max(MIN_SIDE, height);
+    const sideScale = Math.min(1, MAX_SIDE / Math.max(w, h));
+    const pixelScale = w * h > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / (w * h)) : 1;
+    const scale = Math.min(sideScale, pixelScale);
+    w = floor16(w * scale);
+    h = floor16(h * scale);
+    // 取整后可能擦线超一点，逐边再收。
+    while ((w * h > MAX_PIXELS || w > MAX_SIDE || h > MAX_SIDE) && w > MIN_SIDE && h > MIN_SIDE) {
+      if (w * h > MAX_PIXELS || Math.max(w, h) > MAX_SIDE) {
         if (w >= h) w = floor16(w - 16);
         else h = floor16(h - 16);
-      }
+      } else break;
     }
     return { width: w, height: h };
   }

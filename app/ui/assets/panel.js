@@ -207,20 +207,20 @@ function placeThumb(container, thumb, pct) {
   return x;
 }
 
-/** 与后端同一套收敛规则：超限就按比例缩到限内，只缩不拉。 */
+/** 与后端同一套收敛规则：单边与总量取更严的缩放系数，比例不变。 */
 function fitToEngine(width, height) {
   const MAX_PIXELS = 4.2e6;
   const floor16 = (value) => Math.max(256, Math.floor(value / 16) * 16);
-  let w = Math.min(MAX_SIDE, Math.max(256, width));
-  let h = Math.min(MAX_SIDE, Math.max(256, height));
-  if (w * h > MAX_PIXELS) {
-    const scale = Math.sqrt(MAX_PIXELS / (w * h));
-    w = floor16(w * scale);
-    h = floor16(h * scale);
-    while (w * h > MAX_PIXELS && w > 256 && h > 256) {
-      if (w >= h) w = floor16(w - 16);
-      else h = floor16(h - 16);
-    }
+  const sourceW = Math.max(256, width);
+  const sourceH = Math.max(256, height);
+  const sideScale = Math.min(1, MAX_SIDE / Math.max(sourceW, sourceH));
+  const pixelScale = sourceW * sourceH > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / (sourceW * sourceH)) : 1;
+  const scale = Math.min(sideScale, pixelScale);
+  let w = floor16(sourceW * scale);
+  let h = floor16(sourceH * scale);
+  while ((w * h > MAX_PIXELS || w > MAX_SIDE || h > MAX_SIDE) && w > 256 && h > 256) {
+    if (w >= h) w = floor16(w - 16);
+    else h = floor16(h - 16);
   }
   return { width: w, height: h, adjusted: w !== width || h !== height };
 }
@@ -242,13 +242,25 @@ function renderSize() {
   nodes.sliderThumb.textContent = megapixels.toFixed(1);
   nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(1));
 
-  // 超限不报错，直接显示会实际用的尺寸，让人看得见。
-  const fitted = fitToEngine(width, height);
-  const actual = (fitted.width * fitted.height) / 1e6;
-  nodes.sizeNote.textContent = fitted.adjusted
-    ? `${width}×${height} → ${fitted.width}×${fitted.height} · ${actual.toFixed(2)}MP`
-    : `${width}×${height} · ${actual.toFixed(2)}MP`;
-  nodes.sizeNote.className = fitted.adjusted ? "hint bad" : "hint";
+  // 这个位置报的是**最终出图尺寸**：含高清修正收后的结果，而不只是基础图。
+  const base = fitToEngine(width, height);
+  const scale = Number(nodes.hires.value) || 0;
+  let finalW = base.width;
+  let finalH = base.height;
+  if (scale > 0) {
+    const round16 = (value) => Math.max(16, Math.round(value / 16) * 16);
+    const target = fitToEngine(round16(base.width * scale), round16(base.height * scale));
+    if (target.width > base.width || target.height > base.height) {
+      finalW = target.width;
+      finalH = target.height;
+    }
+  }
+  const finalMP = (finalW * finalH) / 1e6;
+  const differs = finalW !== base.width || finalH !== base.height;
+  nodes.sizeNote.textContent = differs || base.adjusted
+    ? `${width}×${height} → ${finalW}×${finalH} · ${finalMP.toFixed(2)}MP`
+    : `${width}×${height} · ${finalMP.toFixed(2)}MP`;
+  nodes.sizeNote.className = base.adjusted ? "hint bad" : "hint";
 
   // 首次渲染时布局可能还没落定，宽度为零就等下一帧重算。
   if (!nodes.slider.clientWidth) requestAnimationFrame(renderSize);
@@ -509,6 +521,8 @@ for (const node of [
 
 nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
+// 改高清修正也要重算最终尺寸。
+nodes.hires.addEventListener("change", renderSize);
 bindSizeSliders();
 
 // ── 主区域的“用这张的参数” ─────────────────────────────────────
