@@ -86,7 +86,7 @@ export function createStore(dataDir, outputsDir) {
         height: clamp(defaults.height, 256, 4096, DEFAULT_SETTINGS.defaults.height),
         steps: clamp(defaults.steps, 1, 80, DEFAULT_SETTINGS.defaults.steps),
         cfg: clampFloat(defaults.cfg, 0, 20, DEFAULT_SETTINGS.defaults.cfg),
-        hiresScale: clamp(defaults.hiresScale, 0, 64, 0),
+        hiresScale: clampFloat(defaults.hiresScale, 0, 64, 0),
         hiresSteps: clamp(defaults.hiresSteps, 0, 80, 0),
         hiresStrength: clampFloat(defaults.hiresStrength, 0.05, 1, 0.45),
       },

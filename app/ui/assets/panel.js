@@ -621,7 +621,7 @@ function collectDefaults() {
     height: Number(nodes.height.value) || 768,
     steps: Number(nodes.steps.value) || 8,
     cfg: Number(nodes.cfg.value) || 3,
-    hiresScale: Number(nodes.hires.value) || 0,
+    hiresScale: Math.round(Math.min(hiresScale, hiresMax()) * 100) / 100,
     hiresSteps: Math.round(Number(nodes.hiresSteps.value) || 0),
   };
 }

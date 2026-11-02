@@ -22,6 +22,7 @@ import {
   createReadStream,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -671,12 +672,15 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         let bytes = 0;
         let done = 0;
         const failed = [];
+        const paused = new Set();
         for (const item of items) {
           const state = snapshot.get(item.gid);
           if (!state) continue;
           bytes += Number(state.completedLength ?? 0);
           const st = state.status;
           if (st === "complete") done += 1;
+          // 用户手动暂停的既不算完成也不算失败，停在原地等继续。
+          else if (st === "paused") paused.add(item.gid);
           // removed = 用户单独取消了这一条；跟 error 一样当终态，不再等它。
           else if ((st === "error" || st === "removed") && !failedIds.has(item.gid)) {
             failedIds.add(item.gid);
@@ -718,8 +722,9 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         onTick?.({ bytes, totalBytes: total, done, total: items.length, speed, connections, tasks, current: pendingItem?.out ?? null, failed: failed.length });
 
         // 字节和完成数都不再变超过三分钟，就当这条链路已经停了；不能无限等下去。
-        const settled = done + failedIds.size;
-        if (bytes === lastBytes && settled === lastDone) stall += 1;
+        // 有任务被用户暂停时不算停滞——那是用户主动让字节不动。
+        const settled = done + failedIds.size + paused.size;
+        if (bytes === lastBytes && settled === lastDone && paused.size === 0) stall += 1;
         else {
           stall = 0;
           lastBytes = bytes;
@@ -727,7 +732,8 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         }
         if (stall > 180) throw new Error(`下载停滞：${gib(bytes)} / ${gib(total)} GiB，${done}/${items.length} 个文件`);
 
-        if (done + failedIds.size === items.length) return { failed };
+        // 暂停的也算没有下文，循环得收尾；它们的 .aria2 控制文件还在，下次装能续传。
+        if (done + failedIds.size + paused.size === items.length) return { failed };
       }
     } finally {
       control = null;

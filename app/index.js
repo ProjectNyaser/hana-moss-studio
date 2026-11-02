@@ -88,6 +88,8 @@ export default defineApp(async (sdk) => {
       cfg: job.cfg,
       seed: job.seed,
       status: job.status,
+      // 高清修正开着时引擎总步数 = 主步数 + 修正步数，界面靠这个区分两段。
+      hiresScale: job.hiresScale ?? 0,
       createdAt: job.createdAt,
       startedAt: null,
       finishedAt: null,
@@ -364,11 +366,13 @@ export default defineApp(async (sdk) => {
       cfg: clampFloat(input?.cfg, 0, 20, settings.defaults.cfg),
       seed: Number.isInteger(input?.seed) ? input.seed : Math.floor(Math.random() * 4294967295),
       // 倍率统一在这里收进当前尺寸做得到的范围：无论参数来自面板、工具还是卡片，
-      // 否则界面显示关闭、引擎却按旧倍率跑了第二阶段。
-      hiresScale: Math.min(
-        clamp(input?.hiresScale ?? settings.defaults.hiresScale, 0, 64, 0),
-        Math.min(MAX_SIDE / Math.max(box.width, box.height), Math.sqrt(MAX_PIXELS / (box.width * box.height))),
-      ),
+      // 否则界面显示关闭、引擎却按旧倍率跑了第二阶段。倍率是浮点，不能用取整的 clamp。
+      hiresScale: Math.round(
+        Math.min(
+          clampFloat(input?.hiresScale ?? settings.defaults.hiresScale, 0, 64, 0),
+          Math.min(MAX_SIDE / Math.max(box.width, box.height), Math.sqrt(MAX_PIXELS / (box.width * box.height))),
+        ) * 100,
+      ) / 100,
       hiresSteps: clamp(input?.hiresSteps ?? settings.defaults.hiresSteps, 0, 80, 0),
       hiresStrength: clampFloat(input?.hiresStrength ?? settings.defaults.hiresStrength, 0.05, 1, 0.45),
       initImage: typeof input?.initImage === "string" && input.initImage.trim() ? input.initImage.trim() : null,
@@ -589,7 +593,7 @@ export default defineApp(async (sdk) => {
             }
           : null,
       },
-      queue: queue.map((job) => ({ id: job.id, prompt: job.prompt })),
+      queue: queue.map((job) => ({ id: job.id, prompt: job.prompt, width: job.width, height: job.height, steps: job.steps })),
       running,
       jobs: store.listJobs().slice(0, 24).map(slimJob),
       // 全量记录数：state 只带最近 24 条，界面上的总数不能跟着它算。
@@ -633,7 +637,7 @@ export default defineApp(async (sdk) => {
         memoryMode: settings.memoryMode,
       },
       active: active ? { id: active.id, cardId: active.cardId, prompt: active.prompt, ...taskProgress(active) } : null,
-      queue: queue.map((job) => ({ id: job.id, prompt: job.prompt, width: job.width, height: job.height })),
+      queue: queue.map((job) => ({ id: job.id, prompt: job.prompt, width: job.width, height: job.height, steps: job.steps })),
       recent,
       totals: {
         done: store.listJobs().filter((job) => job.status === "done").length,
@@ -683,6 +687,7 @@ export default defineApp(async (sdk) => {
       height: source.height,
       steps: source.steps,
       cfg: source.cfg,
+      hiresScale: source.hiresScale ?? 0,
       seed: entry?.report?.seedUsed ?? record?.report?.seedUsed ?? source.seed,
       status,
       statusText: STATUS_TEXT[status] ?? status,

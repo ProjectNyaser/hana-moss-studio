@@ -164,14 +164,26 @@ export class Engine {
         const step = Number(message.step ?? 0);
         const total = Number(message.total_steps ?? 0);
         const stepSeconds = Number(message.step_seconds ?? 0);
+        // 协议给的 fraction 是整条任务（含文本编码、模型加载）的完成占比，
+        // eta_seconds 是真实剩余时间。靠 step / total 的话，前两个阶段会一直停在 0%。
+        const fraction = Number(message.fraction);
+        const etaSeconds = Number(message.eta_seconds);
         this.onEvent({
           type: "progress",
           jobId,
           phase,
           step,
           total,
-          percent: total ? Math.round((step / total) * 1000) / 10 : 0,
-          etaMs: stepSeconds > 0 && total > step ? Math.round((total - step) * stepSeconds * 1000) : null,
+          percent: Number.isFinite(fraction) && fraction >= 0
+            ? Math.round(Math.min(1, fraction) * 1000) / 10
+            : total
+              ? Math.round((step / total) * 1000) / 10
+              : 0,
+          etaMs: Number.isFinite(etaSeconds) && etaSeconds > 0
+            ? Math.round(etaSeconds * 1000)
+            : stepSeconds > 0 && total > step
+              ? Math.round((total - step) * stepSeconds * 1000)
+              : null,
         });
         return;
       }

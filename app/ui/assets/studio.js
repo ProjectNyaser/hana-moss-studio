@@ -838,10 +838,11 @@ function renderDownloadTasks(tasks) {
     return;
   }
 
-  const order = { active: 0, waiting: 1, paused: 2, error: 3, complete: 4 };
+  const order = { active: 0, paused: 1, waiting: 2, error: 3, complete: 4 };
   const sorted = [...tasks].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
   const groups = [
     { status: "active", title: "正在下载" },
+    { status: "paused", title: "已暂停" },
     { status: "waiting", title: "排队中" },
     { status: "error", title: "失败" },
     { status: "complete", title: "已完成" },
