@@ -506,6 +506,36 @@ body {
   color: var(--ui-text-3);
 }
 
+*/
+/* 标签栏下方一条细进度：生成中才出现，不占布局高度。 */
+.top-progress {
+  flex: none;
+  height: 2px;
+  background: var(--ui-line);
+  overflow: hidden;
+}
+
+.top-progress[hidden] { display: none; }
+
+.top-progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ui-accent);
+  transition: width 0.25s var(--ui-ease);
+}
+
+/* 还没有可算的百分比时来回扫，表示在动但不知道还剩多少。 */
+.top-progress.indeterminate i {
+  width: 30%;
+  animation: top-progress-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes top-progress-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(400%); }
+}
+
 /* 生成中时顶部状态块可点：点一下取消当前任务。 */
 .chip.cancelable {
   cursor: pointer;

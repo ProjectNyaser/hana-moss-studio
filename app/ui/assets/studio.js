@@ -11,6 +11,8 @@ const nodes = {
   tabCount: el("tab-count"),
   tabQueue: el("tab-queue"),
   stageChip: el("stage-chip"),
+  topProgress: el("top-progress"),
+  topProgressBar: el("top-progress-bar"),
   stageDot: el("stage-dot"),
   stageText: el("stage-text"),
   canvasMeta: el("canvas-meta"),
@@ -183,6 +185,14 @@ function renderStage(data) {
   if (engine.active && activeJob?.hiresScale > 1.001) label += " · 含高清修正";
   nodes.stageDot.className = dotClass;
   nodes.stageText.textContent = label;
+  // 进度条：有百分比就走百分比，算不出来时来回扫。
+  const activeProgress = engine.active?.progress ?? null;
+  nodes.topProgress.hidden = !engine.active;
+  if (activeProgress) {
+    const percent = typeof activeProgress.percent === "number" ? activeProgress.percent : 0;
+    nodes.topProgress.classList.toggle("indeterminate", percent <= 0);
+    nodes.topProgressBar.style.width = percent > 0 ? `${percent}%` : "";
+  }
   // 生成中时这块可以点：点一下就取消，不必回到侧栏。
   nodes.stageChip.classList.toggle("cancelable", Boolean(engine.active));
   nodes.stageChip.title = engine.lastError ?? "";
