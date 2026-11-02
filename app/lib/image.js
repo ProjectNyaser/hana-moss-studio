@@ -90,12 +90,30 @@ function downscale(source, maxWidth) {
   return { width: outWidth, height: outHeight, data: out };
 }
 
+/** 通道数不是四时补齐成 RGBA，编码器只认 RGBA。 */
+function toRgba(source) {
+  const { width, height, data } = source;
+  const channels = source.channels ?? 4;
+  if (channels === 4) return { width, height, data };
+  const out = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0, j = 0; i < width * height; i += 1, j += channels) {
+    out[i * 4] = data[j];
+    out[i * 4 + 1] = data[j + 1];
+    out[i * 4 + 2] = data[j + 2];
+    out[i * 4 + 3] = 255;
+  }
+  return { width, height, data: out };
+}
+
 /**
  * 等比缩小并写成一个 WebP。
  *
- * 返回实际写出的尺寸；源图比目标宽度小、或者读不动时返回 null，调用方据此保持原样。
+ * `force` 为真时即使原图不够宽也只转格式不缩放：采样预览常常是 512 宽的 PNG，
+ * 缩不了但能压小一个量级，每帧刷新少读几百 KB。
+ *
+ * 返回写出的尺寸；源图不满足条件或读不动时返回 null，调用方据此保持原样。
  */
-export async function shrinkToWebp(src, dst, maxWidth) {
+export async function shrinkToWebp(src, dst, maxWidth, { force = false } = {}) {
   if (!existsSync(src)) return null;
   const input = readFileSync(src);
   if (input.length < WORTH_RESIZING) return null;
@@ -108,7 +126,7 @@ export async function shrinkToWebp(src, dst, maxWidth) {
   }
   // 16 位深无法直接当 8 位用，交给调用方退回原图。
   if (image.depth !== 8) return null;
-  const small = downscale(image, maxWidth);
+  const small = downscale(image, maxWidth) ?? (force ? toRgba(image) : null);
   if (!small) return null;
   const { module, defaultOptions } = await getEncoder();
   const encoded = module.encode(small.data, small.width, small.height, {

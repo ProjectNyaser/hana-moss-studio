@@ -153,7 +153,7 @@ export class Engine {
     this.previewBusy = true;
     let small = false;
     try {
-      small = Boolean(await shrinkToWebp(this.previewPath, this.previewSmallPath, 640));
+      small = Boolean(await shrinkToWebp(this.previewPath, this.previewSmallPath, 640, { force: true }));
     } catch {
       small = false;
     } finally {
