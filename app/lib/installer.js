@@ -281,8 +281,8 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
    * 判据只看目录在不在：缺一两个文件也应该就地补齐，换目录等于把整份重下一遍。
    */
   /** 每个仓库一个目录：SFT 与 Base 可以同时装着，用哪个看 settings.modelPath。 */
-  function weightsTarget(variant = "sft") {
-    const key = MODELS[variant] ? variant : "sft";
+  function weightsTarget(variant = "base") {
+    const key = MODELS[variant] ? variant : "base";
     const stored = getSettings().modelPaths?.[key];
     if (stored && existsSync(stored)) return stored;
     return join(dataDir, "models", MODELS[key].dir);
@@ -345,8 +345,8 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   }
 
   /** 删掉已装模型。25 GiB，调用方必须先确认。 */
-  function removeWeights(variant = "sft") {
-    const key = MODELS[variant] ? variant : "sft";
+  function removeWeights(variant = "base") {
+    const key = MODELS[variant] ? variant : "base";
     const dir = getSettings().modelPaths?.[key];
     if (!dir || !existsSync(dir)) throw new Error("没有已装模型");
     rmSync(dir, { recursive: true, force: true });
@@ -362,7 +362,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   function startNext() {
     const next = pending.shift();
     if (!next) return;
-    const run = next.kind === "engine" ? installEngine(next.args) : installWeights(next.args);
+    const run = next.kind === "engine" ? installEngine(next.args) : installWeights(next.args?.variant);
     run.catch(() => {});
   }
 
@@ -371,12 +371,13 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       pending.push({
         kind,
         args,
-        label: kind === "engine" ? `引擎 ${args?.tag ?? "latest"}` : `权重 ${args?.variant === "base" ? "Base" : "SFT"}`,
+        label: kind === "engine" ? `引擎 ${args?.tag ?? "latest"}` : `权重 ${args?.variant === "sft" ? "SFT" : "Base"}`,
       });
       onUpdate?.();
       return { queued: true, position: pending.length };
     }
-    const run = kind === "engine" ? installEngine(args) : installWeights(args);
+    // installWeights 收的是 variant 字符串，installEngine 收的是参数对象。
+    const run = kind === "engine" ? installEngine(args) : installWeights(args?.variant);
     run.catch(() => {});
     return { queued: false, position: 0 };
   }
@@ -817,9 +818,9 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     }
   }
 
-  async function installWeights(variant = "sft") {
+  async function installWeights(variant = "base") {
     if (job && !job.finishedAt) throw new Error("已有安装在进行");
-    const key = MODELS[variant] ? variant : "sft";
+    const key = MODELS[variant] ? variant : "base";
     const repo = MODELS[key].repo;
     const weightsDir = weightsTarget(key);
     begin("weights", `权重 · ${MODELS[key].label}`);

@@ -60,6 +60,14 @@ export default defineApp(async (sdk) => {
     },
   });
   const queue = [];
+  /**
+   * 模型变体的入参校验：没传当默认（Base），传了认不出返回 null。
+   * 静默回退会让「点 Base 却下了 SFT」这种事变成哑巴亏，路由层直接 400。
+   */
+  function readVariant(raw) {
+    if (raw === undefined || raw === null || raw === "") return "base";
+    return raw === "sft" || raw === "base" ? raw : null;
+  }
   /** jobId → 活跃任务快照（进度、阶段、宿主任务 id）。 */
   const live = new Map();
   let running = false;
@@ -907,7 +915,9 @@ export default defineApp(async (sdk) => {
 
     app.post(`/${APP_ID}/install/weights`, async (c) => {
       const body = await c.req.json().catch(() => ({}));
-      const variant = body?.variant === "base" ? "base" : "sft";
+      // 没传就用默认，传了认不出就报错——不能猜。
+      const variant = readVariant(body?.variant);
+      if (!variant) return c.json({ ...state(), error: `未知模型 ${String(body?.variant)}` }, 400);
       const result = installer.enqueue("weights", { variant });
       schedulePush(0);
       return c.json({ ...state(), queued: result.queued, position: result.position });
@@ -943,7 +953,9 @@ export default defineApp(async (sdk) => {
       // 25 GiB 不能误点就没了，调用方要显式带 confirm。
       if (body?.confirm !== true) return c.json({ ...state(), error: "需要确认后才删模型" }, 400);
       try {
-        installer.removeWeights(body?.variant === "base" ? "base" : "sft");
+        const variant = readVariant(body?.variant);
+        if (!variant) return c.json({ ...state(), error: `未知模型 ${String(body?.variant)}` }, 400);
+        installer.removeWeights(variant);
         schedulePush(0);
         return c.json(state());
       } catch (error) {
@@ -953,7 +965,8 @@ export default defineApp(async (sdk) => {
 
     app.post(`/${APP_ID}/weights/use`, async (c) => {
       const body = await c.req.json().catch(() => ({}));
-      const variant = body?.variant === "base" ? "base" : "sft";
+      const variant = readVariant(body?.variant);
+      if (!variant) return c.json({ ...state(), error: `未知模型 ${String(body?.variant)}` }, 400);
       const found = installer.listModels().find((entry) => entry.variant === variant);
       if (!found?.installed) return c.json({ ...state(), error: `没有已装模型 ${variant}` }, 404);
       if (found.active) return c.json(state());
