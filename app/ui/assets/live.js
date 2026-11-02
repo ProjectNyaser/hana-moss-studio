@@ -1,18 +1,27 @@
-// 苔室实时通道：订阅 /hana-moss-studio/events 的 SSE 状态流。
-// 连不上或宿主把响应缓冲了（首帧迟迟不到）就退化成轮询，界面不至于停在旧数据上。
+// 苔室实时通道。
 //
-// 连接池只有六个位子，一条 SSE 占一个，永远不会自己空出来。所以这里的铁律是：
-// 任何时刻最多一条流。退化、重连、出错都必须先把旧的那条 cancel 掉再开新的，
-// 否则半开的流会和轮询一起挂着，越攒越多，把池子占满。
+// 首选 SSE：一条长连接，服务端推。
+// 现实是宿主那层代理不支持流式——实测 src=studio 的流正好 15 秒被截断，panel 的
+// 有的连首帧都没拿到就结束。连接池只有六个位子，硬撑的结果是连接边开边漏、
+// 同时还在轮询同一份数据。所以退化不是异常，是常态，退化之后要好好干活：
+//
+//   有任务在跑（生成 / 排队 / 下载）    1.5 秒一次，进度跟得上
+//   空闲                              10 秒一次，基本不耗
+//
+// 每条流都只留一条，任何时刻不多开。活不过 30 秒的连接连续三次就判定这条路不通，
+// 重试窗口按 45s / 90s / 180s / 360s 退避。
 
 const API = "/hana-moss-studio";
 const ROUTE_BASE = "/api/apps/hana-moss-studio/routes";
 const FIRST_FRAME_TIMEOUT_MS = 10000;
 const RECONNECT_DELAY_MS = 2500;
-const FALLBACK_POLL_MS = 5000;
+/** 有活儿时的轮询间隔。 */
+const POLL_ACTIVE_MS = 1500;
+/** 空闲时的轮询间隔。 */
+const POLL_IDLE_MS = 10000;
 /** 退化到轮询后隔多久再试一次真流式。 */
 const SSE_RETRY_MS = 45_000;
-/** 连上活不过这个时长，就当这条路不通，不用每两秒再试一次。 */
+/** 连上活不过这个时长，就当这条路不通。 */
 const SHORT_LIVED_MS = 30_000;
 
 /**
@@ -45,8 +54,10 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
   let degraded = false;
   /** 连续短命连接计数：达到三次就判定流式这条路不通。 */
   let shortLived = 0;
-  /** 重试窗口的退避倍数。 */
+  /** 重试窗口的退避轮数。 */
   let retryRound = 0;
+  /** 最近一帧，用来判断有没有活儿在跑，决定轮询多勤。 */
+  let lastState = null;
 
   /** 掐掉当前这条流。重复调用无害。 */
   function stopReader() {
@@ -60,13 +71,33 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
     }
   }
 
+  /** 有没有活儿：生成中、队列非空、下载没结束，任一成立就算忙。 */
+  function busy() {
+    if (!lastState) return false;
+    if (lastState.engine?.active) return true;
+    if (Array.isArray(lastState.queue) && lastState.queue.length) return true;
+    return Boolean(lastState.install && !lastState.install.finishedAt);
+  }
+
   function poll() {
     if (disposed || !fetchState) return;
     void fetchState()
       .then((state) => {
-        if (!disposed && state) onState(state);
+        if (disposed || !state) return;
+        lastState = state;
+        onState(state);
       })
       .catch((error) => onError?.(error));
+  }
+
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    if (disposed || !degraded) return;
+    pollTimer = setTimeout(() => {
+      if (disposed) return;
+      if (!document.hidden) poll();
+      schedulePoll();
+    }, busy() ? POLL_ACTIVE_MS : POLL_IDLE_MS);
   }
 
   function degrade(error) {
@@ -76,15 +107,13 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
     // 先掐流再轮询：半开的连接留着，就和轮询一起占位子。
     stopReader();
     poll();
-    pollTimer = setInterval(() => {
-      if (!document.hidden) poll();
-    }, FALLBACK_POLL_MS);
-    // 轮询只是兜底。一次开流失败不代表以后都不行，过一阵再试一次真流式。
+    schedulePoll();
+    // 流式只是首选，不是唯一。过一阵再试一次，通了就回到推的模式。
     clearTimeout(retryTimer);
     retryRound = Math.min(retryRound + 1, 4);
     retryTimer = setTimeout(() => {
       if (disposed) return;
-      clearInterval(pollTimer);
+      clearTimeout(pollTimer);
       pollTimer = null;
       degraded = false;
       void connect();
@@ -131,8 +160,10 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
             clearTimeout(firstFrame);
             firstFrame = null;
           }
-          if (name === "state") onState(payload);
-          else onEvent?.(name, payload);
+          if (name === "state") {
+            lastState = payload;
+            onState(payload);
+          } else onEvent?.(name, payload);
         }
       }
     } catch (error) {
@@ -143,8 +174,6 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
     }
     if (disposed || degraded) return;
     stopReader();
-    // 宿主那层会把流截断（实测一条十五秒）。拦不住的断没关系，但连上就没命、
-    // 两秒半后又开一条的，就不该继续试了，那是白占连接。
     if (Date.now() - startedAt < SHORT_LIVED_MS) {
       shortLived += 1;
       if (shortLived >= 3) {
@@ -163,7 +192,7 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
   return () => {
     disposed = true;
     clearTimeout(retryTimer);
-    clearInterval(pollTimer);
+    clearTimeout(pollTimer);
     stopReader();
   };
 }
