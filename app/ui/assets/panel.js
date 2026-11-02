@@ -700,7 +700,6 @@ async function boot() {
       hana,
       onState: (state) => render(state),
       fetchState: () => api("/state"),
-      source: "panel",
       onError: (error) => {
         if (latest) return;
         nodes.state.textContent = error instanceof Error ? error.message : String(error);

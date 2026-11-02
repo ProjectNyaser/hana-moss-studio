@@ -84,7 +84,13 @@ export default defineApp(async (sdk) => {
     cacheDir,
     getSettings: () => store.getSettings(),
     saveSettings: applySettings,
-    onUpdate: () => schedulePush(0),
+    // 下载每秒会跳好几次，推全量 state 太浪费；只把安装那一段当成小帧送出去。
+    // 收尾时（成功、失败、取消）例外：版本与模型列表跟着变了，要整帧刷新。
+    onUpdate: () => {
+      const snap = installer.snapshot();
+      if (snap?.finishedAt) schedulePush(0);
+      else pushEvent("transfer", { install: snap });
+    },
     network: sdk.network,
     // 装完直接拉起来，省用户一次点击；失败不影响安装结果。
     onInstalled: (kind) => {
@@ -282,12 +288,12 @@ export default defineApp(async (sdk) => {
       }
       const entry = event.jobId ? live.get(event.jobId) : null;
       if (!entry) return;
-      // 合并同一瞬间的多次进度：引擎一秒能回好几帧，没必要每帧都推一整份 state。
-      schedulePush(320);
       if (event.type === "stage") {
         entry.phase = event.phase ?? entry.phase;
         if (entry.phase && !entry.phasesSeen.includes(entry.phase)) entry.phasesSeen.push(entry.phase);
         syncTask(entry, { progress: taskProgress(entry) });
+        // 换阶段是结构性的变化，推一整帧；步进只推小帧。
+        schedulePush(0);
         return;
       }
       if (event.type === "progress") {
@@ -306,6 +312,8 @@ export default defineApp(async (sdk) => {
         if (typeof event.etaMs === "number") entry.etaMs = event.etaMs;
         else if (entry.total > 0 && entry.step >= entry.total) entry.etaMs = null;
         syncTask(entry, { progress: taskProgress(entry) });
+        // 步进不推全量：一帧 progress 才几十字节，全量 state 是九千。
+        pushEvent("progress", { jobId: entry.id, progress: taskProgress(entry), phase: entry.phase });
         return;
       }
       if (event.type === "preview") {

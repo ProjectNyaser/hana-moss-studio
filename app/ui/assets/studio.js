@@ -453,17 +453,18 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
   nameNode.textContent = name;
   nameNode.title = name;
   row.append(nameNode);
-  for (const badge of badges) {
-    const tag = document.createElement("span");
-    tag.className = "badge";
-    tag.textContent = badge;
-    row.append(tag);
-  }
   if (meta) {
     const metaNode = document.createElement("span");
     metaNode.className = "meta";
     metaNode.textContent = meta;
     row.append(metaNode);
+  }
+  // 标记靠右、紧贴操作按钮：状态和能做的事在同一头，不再一端一个。
+  for (const badge of badges) {
+    const tag = document.createElement("span");
+    tag.className = "badge";
+    tag.textContent = badge;
+    row.append(tag);
   }
   for (const action of actions) {
     const button = document.createElement("button");
@@ -1483,9 +1484,26 @@ async function boot() {
       render(state);
     },
     onEvent: (name, payload) => {
+      if (!latest) return;
+      // 进度与下载都走小帧，不再为每一步重推整份 state。
+      if (name === "progress") {
+        const active = latest.engine?.active;
+        if (!active || active.jobId !== payload.jobId) return;
+        active.progress = payload.progress ?? active.progress;
+        if (payload.phase) active.phase = payload.phase;
+        renderStage(latest);
+        broadcastState(latest);
+        return;
+      }
+      if (name === "transfer") {
+        latest.install = payload.install ?? latest.install;
+        renderQueue(latest);
+        broadcastState(latest);
+        return;
+      }
       // 预览走事件，不靠 state 轮询。
       if (name !== "preview") return;
-      const active = latest?.engine?.active;
+      const active = latest.engine?.active;
       if (!active) return;
       active.previewAt = payload.at;
       // 画布上的预览图直接换，不必等下一帧 state。
@@ -1496,11 +1514,9 @@ async function boot() {
         img.classList.add("preview");
       }
       // 画廊里那张正在采样的缩略图也跟着换，不重建整个网格。
-      const thumb = nodes.thumbs.querySelector("img.preview-thumb");
-      if (thumb) thumb.src = previewUrl(payload.at);
+      updateGalleryPreview(latest);
     },
     fetchState: () => api("/state"),
-    source: "studio",
     onError: (error) => {
       if (latest) return;
       nodes.stageText.textContent = error instanceof Error ? error.message : String(error);

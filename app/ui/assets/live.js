@@ -45,7 +45,7 @@ export function previewUrl(at) {
   return url.toString();
 }
 
-export function startLive({ hana, onState, onEvent, fetchState, onError, source }) {
+export function startLive({ hana, onState, onEvent, fetchState, onError }) {
   let disposed = false;
   let retryTimer = null;
   let pollTimer = null;
@@ -128,7 +128,7 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
     const startedAt = Date.now();
     let firstFrame = setTimeout(() => degrade(new Error("事件流没有回帧")), FIRST_FRAME_TIMEOUT_MS);
     try {
-      const response = await hana.api.fetch(`${API}/events${source ? `?src=${encodeURIComponent(source)}` : ""}`, {
+      const response = await hana.api.fetch(`${API}/events`, {
         headers: { accept: "text/event-stream" },
         cache: "no-store",
       });

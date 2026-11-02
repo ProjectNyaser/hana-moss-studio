@@ -337,6 +337,8 @@ let inFlight = false;
 let liveDispose = null;
 let liveReady = false;
 let lastSignal = "";
+/** 小帧驱动的拉取节流：progress 一步一条，不必每次都去问 /task。 */
+let lastPollAt = 0;
 
 function signalOf(state, cardId) {
   const job = state?.jobs?.find((item) => item.cardId === cardId);
@@ -356,12 +358,18 @@ function ensureLive() {
       lastSignal = signal;
       void poll();
     },
+    onEvent: (name) => {
+      // 步进与下载不再推整帧 state，卡片靠这两条小帧跟上。
+      if (name !== "progress" && name !== "transfer") return;
+      if (Date.now() - lastPollAt < 600) return;
+      lastPollAt = Date.now();
+      void poll();
+    },
     onError: () => {
       // 事件流不可用时保留慢轮询兜底。
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = setTimeout(() => void poll(), 1500);
     },
-    source: "card",
   });
 }
 
