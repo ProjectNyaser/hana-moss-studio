@@ -352,7 +352,12 @@ export default defineApp(async (sdk) => {
       steps: clamp(input?.steps, MIN_STEPS, 80, Math.max(MIN_STEPS, settings.defaults.steps)),
       cfg: clampFloat(input?.cfg, 0, 20, settings.defaults.cfg),
       seed: Number.isInteger(input?.seed) ? input.seed : Math.floor(Math.random() * 4294967295),
-      hiresScale: clamp(input?.hiresScale ?? settings.defaults.hiresScale, 0, 64, 0),
+      // 倍率统一在这里收进当前尺寸做得到的范围：无论参数来自面板、工具还是卡片，
+      // 否则界面显示关闭、引擎却按旧倍率跑了第二阶段。
+      hiresScale: Math.min(
+        clamp(input?.hiresScale ?? settings.defaults.hiresScale, 0, 64, 0),
+        Math.min(MAX_SIDE / Math.max(box.width, box.height), Math.sqrt(MAX_PIXELS / (box.width * box.height))),
+      ),
       hiresSteps: clamp(input?.hiresSteps ?? settings.defaults.hiresSteps, 0, 80, 0),
       hiresStrength: clampFloat(input?.hiresStrength ?? settings.defaults.hiresStrength, 0.05, 1, 0.45),
       initImage: typeof input?.initImage === "string" && input.initImage.trim() ? input.initImage.trim() : null,

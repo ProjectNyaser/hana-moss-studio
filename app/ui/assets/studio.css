@@ -49,6 +49,23 @@ body {
 
 .spacer { flex: 1; min-width: 0; }
 
+/* 状态块、取消、元信息三者之间要拉开距离，否则贴在一起像一句话。 */
+.studio-tabs > .chip { margin-left: 10px; }
+.studio-tabs > .chip + .chip { margin-left: 6px; }
+.studio-tabs > .canvas-meta { margin-left: 12px; }
+
+.studio-tabs > .chip,
+.studio-tabs > .chip-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.studio-tabs > .chip .dot { flex: none; }
+
 .tab-count { font-size: 11px; color: var(--ui-text-3); }
 
 .studio-view {
