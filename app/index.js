@@ -636,8 +636,14 @@ export default defineApp(async (sdk) => {
       },
       queue: queue.map((job) => ({ id: job.id, prompt: job.prompt, width: job.width, height: job.height, steps: job.steps })),
       running,
-      // 只带一屏：画廊靠自己分页拉（/jobs），这里给画布、队列与首屏兜底就够。
-      jobs: store.listJobs().slice(0, 12).map(slimJob),
+      // 只带界面当场要用的那几条：未收尾的全带（排队、运行、失败），完成的只留最近
+      // 两条给画布与首屏。整份历史走 /jobs 分页，不该每帧跟着 state 跑一遍。
+      jobs: (() => {
+        const all = store.listJobs();
+        const pending = all.filter((job) => job.status !== "done" && job.status !== "cancelled");
+        const done = all.filter((job) => job.status === "done").slice(0, 2);
+        return [...pending, ...done].map(slimJob);
+      })(),
       // 全量记录数：state 只带前面那些，界面上的总数不能跟着它算。
       jobTotal: store.listJobs().length,
       // 只算还没收尾的：结束的任务进度已经没意义，四十条堆在每帧里白占体积。

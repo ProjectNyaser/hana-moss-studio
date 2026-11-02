@@ -255,7 +255,10 @@ function liveElapsed(active) {
 /** 画布上要显示的那张：只有显式载入或刚生成完才有，初始是空的。 */
 function shownJob(data) {
   if (!selectedId) return null;
-  return data.jobs.find((job) => job.id === selectedId && job.status === "done" && job.output) ?? null;
+  const inState = data.jobs.find((job) => job.id === selectedId && job.status === "done" && job.output);
+  if (inState) return inState;
+  // state 只带最近两条完成，选中的若是旧图就去画廊那份里找。
+  return galleryJobs.find((job) => job.id === selectedId && job.status === "done" && job.output) ?? null;
 }
 
 function loadImage(name) {
@@ -1223,7 +1226,10 @@ function render(data) {
   const key = `${data.jobs.map((job) => `${job.id}:${job.status}`).join("|")}#${previewing}`;
   if (key !== renderedJobsKey) {
     renderedJobsKey = key;
-    if (selectedId && !data.jobs.some((job) => job.id === selectedId && job.status === "done")) selectedId = null;
+    const selectedAlive =
+      data.jobs.some((job) => job.id === selectedId && job.status === "done") ||
+      galleryJobs.some((job) => job.id === selectedId && job.status === "done");
+    if (selectedId && !selectedAlive) selectedId = null;
     void renderGallery(data);
   } else {
     // 状态没变但采样在出预览：只换那张图，不重建整面墙。
