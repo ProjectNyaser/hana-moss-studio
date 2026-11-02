@@ -759,7 +759,10 @@ export default defineApp(async (sdk) => {
 
     app.post(`/${APP_ID}/install/engine`, async (c) => {
       if (installer.busy()) return c.json({ ...state(), error: "已有安装在进行" }, 409);
-      installer.installEngine().catch((error) => sdk.logger.warn(`引擎安装失败：${message(error)}`));
+      const body = await c.req.json().catch(() => ({}));
+      installer
+        .installEngine({ zipPath: body?.zipPath })
+        .catch((error) => sdk.logger.warn(`引擎安装失败：${message(error)}`));
       return c.json(state());
     });
 

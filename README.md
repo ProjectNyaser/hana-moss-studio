@@ -72,8 +72,9 @@ git submodule update --init --depth 1
 
 用户不需要命令行。左侧面板「引擎与模型」里两个按钮：
 
-- **装引擎**：读 `nvidia-smi` 拿驱动与算力 → 定 cuda 版本与 sm75 → 在 Release 里挑 bundled 包 → aria2c 下载 → 对 `SHA256SUMS` 校 sha256 → `tar` 解压 → 把 `bin\moss-server.exe` 写进设置。
-- **下权重**：列 HF 镜像的文件树 → 过滤出六个部分 → 已完整的跳过 → aria2c 批量下 → 逐个对大小。
+- **装引擎**：读 `nvidia-smi` 拿驱动与算力 → 定 cuda 版本与 sm75 → 在 Release 里挑 bundled 包 → aria2c 下载（不通就换 curl）→ 对 `SHA256SUMS` 校 sha256 → `tar` 解压 → 把 `bin\moss-server.exe` 写进设置。
+- **下权重**：列 HF 镜像的文件树 → 过滤出六个部分 → 已完整的跳过 → aria2c 批量下 → 逐个对大小。已有可用模型时直接装在原处，不另开一份 25 GiB 的副本。
+- **用本地包**：网络不行时 `POST .../install/engine` 带 `{"zipPath": "..."}`，跳过下载，只校验与解压。
 
 两个都能中途取消。进度不解析 aria2 输出（那是无换行的动态行），而是定期扫目标目录的体积。
 

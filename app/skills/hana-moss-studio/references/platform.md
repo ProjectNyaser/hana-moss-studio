@@ -102,6 +102,18 @@ console.log("就绪    "+path.resolve(bin));
 
 末尾两行是后面要用的绝对路径：**引擎目录**（补库用）与 **serverPath**（写设置用）。
 
+## 网络不行时：用本地包
+
+装引擎那一步走 GitHub 的 release 资产。这条链路在部分网络下极慢甚至断，此时不要反复重试下载，改用已经拿到的 zip：
+
+```http
+POST /api/apps/hana-moss-studio/routes/hana-moss-studio/install/engine
+{ "zipPath": "D:\\dl\\mossinfer-2.1.2-windows-cu13-x86_64.zip" }
+```
+
+App 会去 Release 取 `SHA256SUMS` 校验，通过才解压；拿不到校验文件时照装并在结果里标注未校验。
+**包名必须保持发布时的原名**，App 用它决定解压后的目录名，也用它去校验文件里找对应行。
+
 ## 只有 system-cuda 才补库
 
 选的是 `-system-cuda` 包、且引擎报找不到 `cublasLt64_*.dll` 时才做。DLL 从 NVIDIA 的 PyPI wheel 里取，不用 pip、不用 Python：

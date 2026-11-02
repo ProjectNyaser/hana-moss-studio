@@ -64,6 +64,7 @@ const sha256File = (file) =>
 
 const mb = (bytes) => (bytes / 1024 / 1024).toFixed(0);
 const gib = (bytes) => (bytes / 1024 ** 3).toFixed(1);
+const brief = (error) => String(error?.message ?? error).replace(/\s+/g, " ").slice(0, 90);
 
 const runFile = promisify(execFile);
 
@@ -142,7 +143,13 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
   let cancelled = false;
 
   const engineDir = join(dataDir, "engine");
-  const weightsDir = join(dataDir, "models", "moss-image-sft");
+
+  /** 已有可用模型就装在原处，不另开一份 25 GiB 的副本。 */
+  function weightsTarget() {
+    const existing = getSettings().modelPath;
+    if (existing && existsSync(join(existing, "model_index.json"))) return existing;
+    return join(dataDir, "models", "moss-image-sft");
+  }
 
   function patch(update) {
     if (!job) return;
@@ -185,6 +192,44 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
   }
 
   /**
+   * curl 逐文件下载，作为 aria2 失败后的回退。
+   * 在宿主里 aria2 的直连 socket 有时走不通，而 curl.exe 同一个地址能取——
+   * 那种环境下宁可慢也不能停。
+   */
+  async function curlDownload(url, target, size) {
+    const have = existsSync(target) ? statSync(target).size : 0;
+    if (have === size) return;
+    mkdirSync(dirname(target), { recursive: true });
+    await runFile(
+      "curl.exe",
+      [
+        "-L",
+        "--fail",
+        "-C",
+        "-",
+        "--retry",
+        "10",
+        "--retry-all-errors",
+        "--retry-delay",
+        "3",
+        "--connect-timeout",
+        "20",
+        "--speed-time",
+        "90",
+        "--speed-limit",
+        "10240",
+        "-o",
+        target,
+        url,
+      ],
+      { timeout: 0, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+    );
+    const got = existsSync(target) ? statSync(target).size : 0;
+    rmSync(`${target}.aria2`, { force: true });
+    if (got !== size) throw new Error(`大小不符：期望 ${size}，实际 ${got}`);
+  }
+
+  /**
    * 起一个 aria2c，等它退出。
    *
    * aria2 拿到全部字节后偶尔不退出：某个分片的连接半开着，它在等超时又重试。文件已经完整，
@@ -193,16 +238,10 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
    */
   function runAria2(args, watch) {
     return new Promise((done, reject) => {
-      const proc = spawn(ARIA2, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      const proc = spawn(ARIA2, args, { windowsHide: true, stdio: "ignore" });
       child = proc;
-      let tail = "";
       let settling = false;
       let fullSince = 0;
-      const collect = (chunk) => {
-        tail = (tail + chunk).slice(-1200);
-      };
-      proc.stdout.on("data", collect);
-      proc.stderr.on("data", collect);
 
       const timer = setInterval(() => {
         if (!watch || settling) return;
@@ -229,7 +268,8 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
         child = null;
         if (cancelled) reject(new Error("已取消"));
         else if (settling || code === 0) done();
-        else reject(new Error(`aria2c 退出码 ${code}：${tail.trim().split(/\r?\n/).slice(-2).join(" ")}`));
+        // 不把 aria2 的输出接进错误里：重定向后的签名 URL 会带临时凭据。
+        else reject(new Error(`aria2c 退出码 ${code}`));
       });
     });
   }
@@ -244,10 +284,63 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
     return () => clearInterval(timer);
   }
 
-  async function installEngine() {
+  /** 用本机已有的 zip 装：拿得到官方 SHA256SUMS 就校验，拿不到就照装并在结果里注明。 */
+  async function installFromLocalZip(zip) {
+    const baseName = zip.split(/[\\/]/).pop().replace(/\.zip$/i, "");
+    const target = join(engineDir, baseName);
+    patch({ phase: "verify", message: `用本地包 ${baseName}.zip` });
+
+    let verified = false;
+    try {
+      const release = JSON.parse(await curlText(ENGINE_API));
+      const sums = await curlText(`https://github.com/${ENGINE_REPO}/releases/download/${release.tag_name}/SHA256SUMS`);
+      const want = sums
+        .split(/\r?\n/)
+        .map((line) => line.trim().split(/\s+/))
+        .find((parts) => parts[1] === `${baseName}.zip`)?.[0];
+      if (!want) throw new Error("官方校验文件里没有这个包");
+      const got = await sha256File(zip);
+      if (got.toLowerCase() !== want.toLowerCase()) {
+        throw new Error(`sha256 不符：期望 ${want.slice(0, 12)}…，实际 ${got.slice(0, 12)}…`);
+      }
+      verified = true;
+    } catch (error) {
+      const text = String(error?.message ?? error);
+      if (text.startsWith("sha256 不符")) throw error;
+      patch({ message: `拿不到官方校验值（${text.slice(0, 60)}），跳过比对` });
+    }
+
+    patch({ phase: "extracting", message: verified ? "校验通过，解压" : "解压（未校验）" });
+    try {
+      await runFile("tar", ["-xf", zip, "-C", engineDir], { timeout: 300_000, windowsHide: true });
+    } catch (error) {
+      const detail = String(error?.stderr ?? error?.message ?? error).trim().slice(0, 200);
+      throw new Error(`解压失败：${detail}`);
+    }
+
+    const serverPath = join(target, "bin", "moss-server.exe");
+    if (!existsSync(serverPath)) throw new Error(`包里没有 ${serverPath}`);
+    saveSettings({ serverPath });
+    finish({
+      phase: "done",
+      message: `引擎就绪：${baseName}${verified ? "" : "（未校验 sha256）"}`,
+      detail: { serverPath, verified },
+    });
+  }
+
+  async function installEngine(options = {}) {
     if (job && !job.finishedAt) throw new Error("已有安装在进行");
     begin("engine", "引擎");
     try {
+      // 预先下好的包：跳过探测与下载，只做校验与解压。网络不行时的出路。
+      const localZip = typeof options.zipPath === "string" && options.zipPath.trim() ? resolve(options.zipPath.trim()) : null;
+      if (localZip) {
+        if (!existsSync(localZip)) throw new Error(`找不到 ${localZip}`);
+        if (!/\.zip$/i.test(localZip)) throw new Error("本地安装包必须是 .zip");
+        await installFromLocalZip(localZip);
+        return;
+      }
+
       patch({ phase: "probing", message: "读显卡与驱动" });
       const gpu = await probeGpu();
       patch({
@@ -272,27 +365,34 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
       const probeZip = () => (existsSync(zip) ? statSync(zip).size : 0);
       const stopWatch = watchProgress(probeZip, asset.size ?? 0);
       try {
-        await runAria2(
-          [
-            "-x16",
-            "-s16",
-            "-k1M",
-            "-c",
-            "--file-allocation=none",
-            "--max-tries=3",
-            "--retry-wait=3",
-            "--lowest-speed-limit=10K",
-            "--timeout=30",
-            "--console-log-level=warn",
-            "--summary-interval=0",
-            "-d",
-            engineDir,
-            "-o",
-            `${base}.zip`,
-            asset.browser_download_url,
-          ],
-          { totalBytes: asset.size ?? 0, probe: probeZip },
-        );
+        try {
+          await runAria2(
+            [
+              "-x16",
+              "-s16",
+              "-k1M",
+              "-c",
+              "--file-allocation=none",
+              "--max-tries=3",
+              "--retry-wait=3",
+              "--lowest-speed-limit=10K",
+              "--timeout=30",
+              "--console-log-level=warn",
+              "--summary-interval=0",
+              "-d",
+              engineDir,
+              "-o",
+              `${base}.zip`,
+              asset.browser_download_url,
+            ],
+            { totalBytes: asset.size ?? 0, probe: probeZip },
+          );
+        } catch (error) {
+          if (cancelled) throw error;
+          // 宿主里 aria2 的直连 socket 可能走不通，而 curl 同一个地址能取。
+          patch({ phase: "download", message: `aria2 走不通，改用 curl：${brief(error)}` });
+          await curlDownload(asset.browser_download_url, zip, asset.size ?? 0);
+        }
       } finally {
         stopWatch();
       }
@@ -334,6 +434,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
 
   async function installWeights() {
     if (job && !job.finishedAt) throw new Error("已有安装在进行");
+    const weightsDir = weightsTarget();
     begin("weights", "权重");
     try {
       patch({ phase: "listing", message: "读取文件清单" });
@@ -372,27 +473,40 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
         const probeWeights = () => Math.max(0, dirBytes(weightsDir) - baseBytes);
         const stopWatch = watchProgress(probeWeights, totalBytes);
         try {
-          await runAria2(
-            [
-              "-x16",
-              "-s16",
-              "-k1M",
-              "-j4",
-              "-c",
-              "--file-allocation=none",
-              "--max-tries=3",
-              "--retry-wait=3",
-              "--lowest-speed-limit=10K",
-              "--timeout=30",
-              "--console-log-level=warn",
-              "--summary-interval=0",
-              "-d",
-              weightsDir,
-              "-i",
-              listFile,
-            ],
-            { totalBytes, probe: probeWeights },
-          );
+          try {
+            await runAria2(
+              [
+                "-x16",
+                "-s16",
+                "-k1M",
+                "-j4",
+                "-c",
+                "--file-allocation=none",
+                "--max-tries=3",
+                "--retry-wait=3",
+                "--lowest-speed-limit=10K",
+                "--timeout=30",
+                "--console-log-level=warn",
+                "--summary-interval=0",
+                "-d",
+                weightsDir,
+                "-i",
+                listFile,
+              ],
+              { totalBytes, probe: probeWeights },
+            );
+          } catch (error) {
+            if (cancelled) throw error;
+            patch({ phase: "download", message: `aria2 走不通，改用 curl 逐个下：${brief(error)}` });
+            for (const entry of missing) {
+              if (cancelled) throw new Error("已取消");
+              await curlDownload(
+                `${MODEL_ENDPOINT}/${MODEL_REPO}/resolve/main/${entry.path}`,
+                join(weightsDir, ...entry.path.split("/")),
+                entry.size,
+              );
+            }
+          }
         } finally {
           stopWatch();
           rmSync(listFile, { force: true });

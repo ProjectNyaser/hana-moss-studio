@@ -113,10 +113,10 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 | 出图很糊、像没画完 | 步数太少。8 步是底线，抬到 16～24 |
 | 每次都要等三十多秒才动 | 文本编码器在从盘上重读（`te_weight_load`）。模型放 NVMe 会快五倍 |
 | `invalid_params: the size must be at most 4096 / 4.2 megapixels` | 撞硬限。降像素或改走 `hiresScale` |
-| 引擎未启动 / 模型未加载 | 在苔室工作区或左侧面板点「启动引擎」；路径未配就去填 |
-| 引擎起不来，报 `EACCES` | Linux 上解压丢了执行位 | `chmod 755 <serverPath>`，部署全流程见 `references/platform.md` |
-| 报找不到 `libcublasLt.so.N` / `cublasLt64_*.dll` | 装的是 `system-cuda` 包，库不在包里 | 补库或换 `bundled` 包，见 `references/platform.md` |
-| 换了台机器或换了显卡就起不来 | 包与平台的组合不对（驱动版本、算力） | 按 `references/platform.md` 重新选包 |
+| 引擎未启动 / 模型未加载 | 在苔室工作区或左侧面板点「启动引擎」；路径未配就先装或去填 |
+| 报找不到 `cublasLt64_*.dll` | 装的是 `system-cuda` 包，库里没有；补库或换 `bundled` 包（`references/platform.md`） |
+| 换了机器或换了显卡就起不来 | 包与平台的组合不对（驱动、算力），重新选包（`references/platform.md`） |
+| 点「装引擎」一直停在下载 | GitHub 的 release 资产链路差，不是本机问题。用 `references/platform.md` 的本地包接口，把已拿到的 zip 交给 App |
 | 进度卡停在「正在读取任务状态」 | 本机回环偶发 `ENOBUFS`，卡片会保留已画内容并重试。持续不恢复就刷新页面 |
 | 面板数据不更新 | 事件流 `/events` 断开会退化成轮询，刷新页面重连 |
 
