@@ -52,7 +52,7 @@
             <h2>正在跑</h2>
             <span class="hint" id="queue-running-state"></span>
           </header>
-          <div class="manage-list" id="queue-running"></div>
+          <div class="queue-cards" id="queue-running"></div>
         </section>
 
         <section class="manage-block">
@@ -60,7 +60,7 @@
             <h2>排队</h2>
             <span class="hint" id="queue-count"></span>
           </header>
-          <div class="manage-list" id="queue-list"></div>
+          <div class="queue-cards" id="queue-list"></div>
         </section>
 
         <section class="manage-block">
@@ -68,67 +68,88 @@
             <h2>最近的失败</h2>
             <span class="hint" id="queue-failed-count"></span>
           </header>
-          <div class="manage-list" id="queue-failed"></div>
+          <div class="queue-cards" id="queue-failed"></div>
         </section>
       </div>
     </section>
 
     <section class="studio-view" id="view-versions" hidden>
-      <div class="manage-scroll">
-        <section class="manage-block">
-          <header class="manage-head">
-            <h2>引擎</h2>
-            <span class="hint" id="versions-engine-state"></span>
-            <span class="spacer"></span>
-            <button class="btn small" id="versions-engine-toggle" type="button">启动引擎</button>
-          </header>
-          <p class="hint" id="versions-engine-note"></p>
-          <div class="manage-list" id="versions-installed"></div>
-        </section>
+      <div class="split">
+        <nav class="split-tabs" id="versions-tabs">
+          <button class="split-tab on" type="button" data-pane="engine">引擎</button>
+          <button class="split-tab" type="button" data-pane="model">模型</button>
+          <button class="split-tab" type="button" data-pane="host">这台机器</button>
+        </nav>
+        <div class="split-body">
+          <section class="split-pane" data-pane="engine">
+            <header class="manage-head">
+              <h2>引擎</h2>
+              <span class="hint" id="versions-engine-state"></span>
+              <span class="spacer"></span>
+              <button class="btn small" id="versions-engine-toggle" type="button">启动引擎</button>
+            </header>
+            <p class="hint" id="versions-engine-note"></p>
+            <div class="manage-list" id="versions-installed"></div>
+          </section>
 
-        <section class="manage-block">
-          <header class="manage-head">
-            <h2>模型</h2>
-            <span class="hint" id="versions-model-state"></span>
-            <span class="spacer"></span>
-            <button class="btn ghost small" id="versions-remove-model" type="button">卸载</button>
-          </header>
-          <div class="manage-list" id="versions-model"></div>
-        </section>
+          <section class="split-pane" data-pane="model" hidden>
+            <header class="manage-head">
+              <h2>模型</h2>
+              <span class="hint" id="versions-model-state"></span>
+              <span class="spacer"></span>
+              <button class="btn ghost small" id="versions-remove-model" type="button">卸载</button>
+            </header>
+            <div class="manage-list" id="versions-model"></div>
+          </section>
 
-        <section class="manage-block">
-          <header class="manage-head">
-            <h2>这台机器</h2>
-          </header>
-          <div class="manage-list" id="versions-host"></div>
-        </section>
+          <section class="split-pane" data-pane="host" hidden>
+            <header class="manage-head">
+              <h2>这台机器</h2>
+            </header>
+            <div class="manage-list" id="versions-host"></div>
+          </section>
+        </div>
       </div>
     </section>
 
     <section class="studio-view" id="view-download" hidden>
       <div class="manage-scroll">
-        <section class="manage-block">
+        <section class="manage-block" id="download-progress-block">
           <header class="manage-head">
             <h2>下载</h2>
             <span class="hint" id="download-state"></span>
-          </header>
-          <div class="manage-actions">
-            <button class="btn small" id="download-engine" type="button">装最新引擎</button>
-            <button class="btn ghost small" id="download-weights" type="button">下载 SFT</button>
-            <button class="btn ghost small" id="download-base" type="button">下载 Base</button>
+            <span class="spacer"></span>
             <button class="btn ghost small" id="download-cancel" type="button" hidden>取消</button>
-          </div>
+          </header>
           <div class="bar" id="download-bar" hidden><i></i></div>
           <p class="hint" id="download-message"></p>
         </section>
 
-        <section class="manage-block">
-          <header class="manage-head">
-            <h2>可装版本</h2>
-            <span class="hint" id="download-available-state"></span>
-          </header>
-          <div class="manage-list" id="download-available"></div>
-        </section>
+        <div class="split">
+          <nav class="split-tabs" id="download-tabs">
+            <button class="split-tab on" type="button" data-pane="engine">引擎</button>
+            <button class="split-tab" type="button" data-pane="model">模型</button>
+          </nav>
+          <div class="split-body">
+            <section class="split-pane" data-pane="engine">
+              <header class="manage-head">
+                <h2>引擎版本</h2>
+                <span class="hint" id="download-available-state"></span>
+                <span class="spacer"></span>
+                <button class="btn small" id="download-engine" type="button">装最新</button>
+              </header>
+              <div class="manage-list" id="download-available"></div>
+            </section>
+
+            <section class="split-pane" data-pane="model" hidden>
+              <header class="manage-head">
+                <h2>模型权重</h2>
+                <span class="hint">两个仓库各 27 GB，可同时装</span>
+              </header>
+              <div class="manage-list" id="download-models"></div>
+            </section>
+          </div>
+        </div>
       </div>
     </section>
   </main>

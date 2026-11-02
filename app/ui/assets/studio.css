@@ -143,6 +143,96 @@ body {
 .manage-row.dim { opacity: 0.6; }
 .manage-row.dim .name { font-weight: 400; }
 
+/* ── 分栏：左侧类别、右侧内容 ──────────────────────────────── */
+.split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.split-tabs {
+  flex: none;
+  width: 116px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--ui-line);
+  overflow-y: auto;
+}
+
+.split-tab {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.split-tab:hover { background: var(--ui-tint); color: var(--ui-text); }
+.split-tab.on { background: var(--ui-tint); color: var(--ui-accent); font-weight: 600; }
+
+.split-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+.split-pane { display: flex; flex-direction: column; gap: 8px; }
+.split-pane[hidden] { display: none; }
+
+/* ── 队列卡片 ────────────────────────────────────────── */
+.queue-cards { display: flex; flex-direction: column; gap: 8px; }
+
+.queue-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+}
+
+.queue-card.on { border-color: var(--ui-accent); }
+
+.queue-card .qc-thumb {
+  flex: none;
+  width: 50px;
+  height: 50px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--ui-tint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--ui-text-3);
+}
+
+.queue-card .qc-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.queue-card .qc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+
+.queue-card .qc-title {
+  font-size: 12.5px;
+  color: var(--ui-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-card .qc-meta { font-size: 11px; color: var(--ui-text-3); }
+.queue-card .qc-bar { height: 3px; border-radius: 999px; background: var(--ui-line); overflow: hidden; }
+.queue-card .qc-bar i { display: block; height: 100%; background: var(--ui-accent); }
+
 .manage-more { margin-top: 8px; border-top: 1px dashed var(--ui-line); padding-top: 6px; }
 .manage-more > summary {
   cursor: pointer;

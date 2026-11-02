@@ -55,8 +55,9 @@ const nodes = {
   // 下载
   downloadState: el("download-state"),
   downloadEngine: el("download-engine"),
-  downloadWeights: el("download-weights"),
-  downloadBase: el("download-base"),
+  downloadModels: el("download-models"),
+  versionsTabs: el("versions-tabs"),
+  downloadTabs: el("download-tabs"),
   downloadCancel: el("download-cancel"),
   downloadBar: el("download-bar"),
   downloadMessage: el("download-message"),
@@ -482,43 +483,112 @@ const runSafe = async (fn, label) => {
 };
 
 // ── 队列 ───────────────────────────────────────────────────────────────
+/** 左侧类别切换：同一套结构给版本页与下载页共用。 */
+function bindSplitTabs(container) {
+  if (!container) return;
+  container.addEventListener("click", (event) => {
+    const tab = event.target.closest(".split-tab");
+    if (!tab?.dataset.pane) return;
+    for (const item of container.querySelectorAll(".split-tab")) {
+      item.classList.toggle("on", item === tab);
+    }
+    const body = container.parentElement?.querySelector(".split-body");
+    if (!body) return;
+    for (const pane of body.querySelectorAll(".split-pane")) {
+      pane.hidden = pane.dataset.pane !== tab.dataset.pane;
+    }
+  });
+}
+
+/** 队列里的一张卡：缩略图、标题、元信息、可选进度条。 */
+function queueCard({ title, meta, percent, thumb, on }) {
+  const card = document.createElement("div");
+  card.className = on ? "queue-card on" : "queue-card";
+  const box = document.createElement("div");
+  box.className = "qc-thumb";
+  if (thumb) {
+    const img = document.createElement("img");
+    img.src = thumb;
+    img.alt = "";
+    box.appendChild(img);
+  } else {
+    box.textContent = on ? "采样" : "";
+  }
+  const main = document.createElement("div");
+  main.className = "qc-main";
+  const titleNode = document.createElement("div");
+  titleNode.className = "qc-title";
+  titleNode.textContent = title;
+  titleNode.title = title;
+  main.appendChild(titleNode);
+  if (meta) {
+    const metaNode = document.createElement("div");
+    metaNode.className = "qc-meta";
+    metaNode.textContent = meta;
+    main.appendChild(metaNode);
+  }
+  if (typeof percent === "number") {
+    const bar = document.createElement("div");
+    bar.className = "qc-bar";
+    const fill = document.createElement("i");
+    fill.style.width = `${Math.max(2, Math.min(100, percent))}%`;
+    bar.appendChild(fill);
+    main.appendChild(bar);
+  }
+  card.append(box, main);
+  return card;
+}
+
 function renderQueue(data) {
   const active = data.engine.active;
   const queue = Array.isArray(data.queue) ? data.queue : [];
   const failed = data.jobs.filter((job) => job.status === "error");
   nodes.tabQueue.textContent = active || queue.length ? ` ${queue.length + (active ? 1 : 0)}` : "";
 
-  nodes.queueRunningState.textContent = active ? `${active.prompt?.slice(0, 24) ?? ""}…` : "空闲";
+  nodes.queueRunningState.textContent = active ? "" : "空闲";
   nodes.queueRunning.replaceChildren(
     ...(active
       ? [
-          manageRow({
-            name: active.prompt || "(无提示词)",
-            meta: `${active.phase ?? "生成中"}${active.progress?.total ? ` ${active.progress.step}/${active.progress.total}` : ""}`,
+          queueCard({
+            title: active.prompt || "(无提示词)",
+            meta: `${active.phase ?? "生成中"}${active.progress?.total ? ` · ${active.progress.step}/${active.progress.total}` : ""}${active.progress?.etaMs ? ` · 约剩 ${formatDuration(active.progress.etaMs)}` : ""}`,
+            percent: active.progress?.percent,
+            thumb: active.previewAt ? previewUrl(active.previewAt) : null,
             on: true,
           }),
         ]
-      : [manageRow({ name: "没有正在跑的任务" })]),
+      : [queueCard({ title: "没有正在跑的任务" })]),
   );
 
   nodes.queueCount.textContent = queue.length ? `${queue.length} 条` : "";
   nodes.queueList.replaceChildren(
     ...(queue.length
-      ? queue.map((job, index) => manageRow({ name: `${index + 1}. ${job.prompt || "(无提示词)"}`, meta: "排队中" }))
-      : [manageRow({ name: "队列是空的" })]),
+      ? queue.map((job, index) =>
+          queueCard({
+            title: job.prompt || "(无提示词)",
+            meta: `第 ${index + 1} 位 · ${job.width}×${job.height} · ${job.steps} 步`,
+          }),
+        )
+      : [queueCard({ title: "队列是空的" })]),
   );
 
   nodes.queueFailedCount.textContent = failed.length ? `${failed.length} 条` : "";
   nodes.queueFailed.replaceChildren(
     ...(failed.length
-      ? failed.slice(0, 8).map((job) =>
-          manageRow({
-            name: job.prompt || "(无提示词)",
-            meta: (job.error ?? "失败").slice(0, 40),
-            remove: { label: "删除", armedLabel: "确认", run: () => removeJob(job.id) },
-          }),
-        )
-      : [manageRow({ name: "没有失败的记录" })]),
+      ? failed.slice(0, 8).map((job) => {
+          const card = queueCard({
+            title: job.prompt || "(无提示词)",
+            meta: (job.error ?? "失败").slice(0, 60),
+          });
+          const button = document.createElement("button");
+          button.className = "btn ghost small";
+          button.type = "button";
+          button.textContent = "删除";
+          armable(button, "确认", "删除", () => removeJob(job.id));
+          card.appendChild(button);
+          return card;
+        })
+      : [queueCard({ title: "没有失败的记录" })]),
   );
 }
 
@@ -597,9 +667,35 @@ function renderVersions(data) {
 // ── 下载 ───────────────────────────────────────────────────────────────
 function renderDownload(data) {
   const job = data.install;
-  nodes.downloadEngine.disabled = Boolean(job && !job.finishedAt);
-  nodes.downloadWeights.disabled = Boolean(job && !job.finishedAt);
-  nodes.downloadBase.disabled = Boolean(job && !job.finishedAt);
+  const busy = Boolean(job && !job.finishedAt);
+  nodes.downloadEngine.disabled = busy;
+
+  // 模型：每个仓库一行，没装的给下载按钮。
+  const models = Array.isArray(data.models) ? data.models : [];
+  nodes.downloadModels.replaceChildren(
+    ...models.map((item) => {
+      const row = manageRow({
+        name: item.label,
+        meta: item.installed
+          ? `已装 ${formatSize(item.bytes)}${item.active ? " · 当前" : ""}`
+          : `约 27 GB · ${item.note}`,
+        on: item.active,
+      });
+      if (!item.installed) {
+        const button = document.createElement("button");
+        button.className = "btn ghost small";
+        button.type = "button";
+        button.textContent = "下载";
+        button.disabled = busy;
+        button.addEventListener("click", () =>
+          void runSafe(() => post("/install/weights", { variant: item.variant }), `下载 ${item.label}`),
+        );
+        row.appendChild(button);
+      }
+      return row;
+    }),
+  );
+
   if (!job) {
     nodes.downloadBar.hidden = true;
     nodes.downloadCancel.hidden = true;
@@ -878,8 +974,8 @@ nodes.engineToggle.addEventListener("click", () => {
   void runSafe(() => post(running ? "/engine/stop" : "/engine/start"), running ? "停止" : "启动");
 });
 nodes.downloadEngine.addEventListener("click", () => void runSafe(() => post("/install/engine"), "安装"));
-nodes.downloadWeights.addEventListener("click", () => void runSafe(() => post("/install/weights", { variant: "sft" }), "下载 SFT"));
-nodes.downloadBase.addEventListener("click", () => void runSafe(() => post("/install/weights", { variant: "base" }), "下载 Base"));
+bindSplitTabs(nodes.versionsTabs);
+bindSplitTabs(nodes.downloadTabs);
 nodes.downloadCancel.addEventListener("click", () => void runSafe(() => post("/install/cancel"), "取消"));
 nodes.removeModel.addEventListener("click", () =>
   armable(nodes.removeModel, "再点一次删 25 GiB", "卸载", () => {
