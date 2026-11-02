@@ -670,10 +670,12 @@ function renderVersions(data) {
       ? "运行中 · 模型已加载"
       : "运行中"
     : engine.serverFound
-      ? "已安装，未启动"
+      ? "空闲（出图时自动启动）"
       : "未安装";
-  nodes.engineToggle.textContent = engine.running ? "停止引擎" : "启动引擎";
-  nodes.engineToggle.disabled = !engine.serverFound && !engine.running;
+  // 不需要手动启动：出图会自己拉起。只留一个「停止」给想立刻腾显存的人。
+  nodes.engineToggle.hidden = !engine.running;
+  nodes.engineToggle.textContent = "停止引擎";
+  nodes.engineToggle.disabled = false;
   const cublasError = engine.device?.cublaslt?.error;
   nodes.engineNote.textContent = cublasError
     ? "缺 cuBLASLt：这个包能启动但出不了图，换 bundled 版本"
@@ -1050,8 +1052,7 @@ nodes.tabs.addEventListener("click", (event) => {
   if (tab?.dataset.view) showView(tab.dataset.view);
 });
 nodes.engineToggle.addEventListener("click", () => {
-  const running = latest?.engine?.running;
-  void runSafe(() => post(running ? "/engine/stop" : "/engine/start"), running ? "停止" : "启动");
+  void runSafe(() => post("/engine/stop"), "停止");
 });
 nodes.downloadEngine.addEventListener("click", () => void runSafe(() => post("/install/engine"), "安装"));
 bindSplitTabs(nodes.versionsTabs);
