@@ -696,17 +696,38 @@ async function boot() {
     /* 非宿主环境 */
   }
   await refresh();
-  startLive({
-    hana,
-    onState: (state) => render(state),
-    fetchState: () => api("/state"),
-    source: "panel",
-    onError: (error) => {
-      if (latest) return;
-      nodes.state.textContent = error instanceof Error ? error.message : String(error);
-      nodes.dot.className = "dot err";
-    },
+  // 主界面会把它收到的整帧状态广播过来。同源推送比自己开连接便宜得多，
+  // 收到一帧就把自己的通道关掉；主界面关了（单独开侧栏）再自己接管。
+  const startOwnLive = () =>
+    startLive({
+      hana,
+      onState: (state) => render(state),
+      fetchState: () => api("/state"),
+      source: "panel",
+      onError: (error) => {
+        if (latest) return;
+        nodes.state.textContent = error instanceof Error ? error.message : String(error);
+        nodes.dot.className = "dot err";
+      },
+    });
+  let ownLive = startOwnLive();
+  const stopOwnLive = () => {
+    ownLive?.();
+    ownLive = null;
+  };
+  let lastBroadcast = 0;
+  reuseChannel?.addEventListener("message", (event) => {
+    if (event.data?.type !== "state" || !event.data.state) return;
+    lastBroadcast = Date.now();
+    stopOwnLive();
+    render(event.data.state);
   });
+  // 主界面关闭后广播会断，超过十五秒没收到就自己重新接上。
+  setInterval(() => {
+    if (ownLive) return;
+    if (Date.now() - lastBroadcast < 15000) return;
+    ownLive = startOwnLive();
+  }, 5000);
 }
 
 void boot();

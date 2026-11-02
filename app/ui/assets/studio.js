@@ -1228,6 +1228,24 @@ function render(data) {
     // 状态没变但采样在出预览：只换那张图，不重建整面墙。
     updateGalleryPreview(data);
   }
+  broadcastState(data);
+}
+
+/**
+ * 把整帧状态广播给侧栏。同源推送比自己开一条连接便宜：侧栏收到后就不再
+ * 轮询、也不再占 SSE 的位子。节流 250ms，生成中每秒最多四帧。
+ */
+let broadcastAt = 0;
+function broadcastState(data) {
+  if (!channel || typeof BroadcastChannel !== "function") return;
+  const now = Date.now();
+  if (now - broadcastAt < 250) return;
+  broadcastAt = now;
+  try {
+    channel.postMessage({ type: "state", state: data });
+  } catch {
+    /* 结构化克隆失败（含函数之类）就这一帧不发，不影响主界面 */
+  }
 }
 
 /** 采样中那格的文字：阶段、步数、百分比。 */
