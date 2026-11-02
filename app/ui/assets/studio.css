@@ -846,8 +846,12 @@ body {
 .thumb .thumb-meta {
   position: absolute;
   inset: auto 0 0 0;
-  padding: 14px 7px 5px;
-  font-size: 10.5px;
+  padding: 16px 8px 6px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px 7px;
   color: var(--ui-surface);
   background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ui-text) 72%, transparent));
   /* 只是遮盖信息，点击与悬停都该落到下面的图上。 */
@@ -858,6 +862,17 @@ body {
 }
 
 .thumb:hover .thumb-meta { opacity: 1; }
+
+/* 种子位数长，等宽数字不抖。 */
+.thumb .thumb-seed {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.thumb .thumb-meta span {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 
 .thumb.placeholder {
   flex-direction: column;
