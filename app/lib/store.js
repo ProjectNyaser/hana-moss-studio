@@ -4,9 +4,9 @@ import { scanOutputs } from "./outputs.js";
 
 /** 苔室的持久化。
  *
- *  记录跟着文件走：出图目录里的 PNG 自带生成参数，记录由它派生。
- *  jobs.json 只存文件里没有的那部分（排队中、运行中、失败的记录，
- *  以及完成记录上补的耗时与 report），不存能重新扫出来的东西。 */
+ *  记录跟着文件走：出图目录里的 PNG 自带生成参数，记录由它派生，不落台账。
+ *  运行态（排队、运行中、失败）只放内存：进程重启，队列本来也一起没了。
+ *  唯一写盘的是设置。 */
 
 export const DEFAULT_SETTINGS = {
   serverPath: null,
@@ -29,14 +29,15 @@ const MEMORY_MODES = ["min_memory", "balanced", "max_speed"];
 /** 精度档就是引擎协议里的三个值，不做改名。 */
 const TIERS = ["reference", "high", "turbo"];
 const SCAN_TTL_MS = 1000;
+const RUNTIME_KEEP = 300;
 
 export function createStore(dataDir, outputsDir) {
   mkdirSync(dataDir, { recursive: true });
   const settingsFile = join(dataDir, "settings.json");
-  const jobsFile = join(dataDir, "jobs.json");
 
   let settings = null;
-  let jobs = null;
+  // 内存里的运行态：排队、运行中、失败，以及完成记录的耗时与 report。
+  let runtime = [];
   let scanCache = { at: 0, list: [] };
 
   function readJson(file, fallback) {
@@ -46,14 +47,6 @@ export function createStore(dataDir, outputsDir) {
     } catch {
       return fallback;
     }
-  }
-
-  function readJobs() {
-    if (!jobs) {
-      const raw = readJson(jobsFile, []);
-      jobs = Array.isArray(raw) ? raw : [];
-    }
-    return jobs;
   }
 
   /** 磁盘扫描加一秒缓存：state 每 180ms 推一次，没必要每次都 stat 整个目录。 */
@@ -100,14 +93,13 @@ export function createStore(dataDir, outputsDir) {
       return settings;
     },
 
-    /** 已完成 → 从图里读；未完成或失败 → 从 jobs.json 读。 */
+    /** 已完成 → 从图里读；排队、运行中、失败 → 内存里的运行态。 */
     listJobs() {
-      const records = scan();
-      const byId = new Map(records.map((record) => [record.id, record]));
+      const byId = new Map(scan().map((record) => [record.id, record]));
       const extras = [];
-      for (const job of readJobs()) {
+      for (const job of runtime) {
         if (job.status === "done") {
-          // 完成记录只用来补耗时与 report；图不在了就整条作废。
+          // 完成记录只补耗时与 report；图不在了就整条作废。
           const record = byId.get(job.id);
           if (record) {
             byId.set(job.id, {
@@ -126,44 +118,24 @@ export function createStore(dataDir, outputsDir) {
       );
     },
 
-    saveJobs(next) {
-      // 已完成只留文件里没有的两样：耗时与 report。其余全从 PNG 扫。
-      jobs = next
-        .map((job) =>
-          job.status === "done"
-            ? { id: job.id, status: "done", elapsedMs: job.elapsedMs ?? null, report: job.report ?? null }
-            : job,
-        )
-        .slice(0, 300);
-      writeFileSync(jobsFile, JSON.stringify(jobs, null, 2), "utf8");
-      return jobs;
-    },
-
     upsertJob(record) {
-      const list = readJobs();
-      const index = list.findIndex((job) => job.id === record.id);
-      if (index >= 0) list[index] = { ...list[index], ...record };
-      else list.unshift(record);
+      const index = runtime.findIndex((job) => job.id === record.id);
+      if (index >= 0) runtime[index] = { ...runtime[index], ...record };
+      else runtime.unshift(record);
+      runtime = runtime.slice(0, RUNTIME_KEEP);
       if (record.status === "done") invalidateScan();
-      return this.saveJobs(list);
+      return runtime;
     },
 
     getJob(id) {
       return this.listJobs().find((job) => job.id === id) ?? null;
     },
 
-    /** 删记录：图跟着一起删，文件才是真相源。 */
+    /** 删记录：图由调用方删，文件才是真相源。 */
     removeJob(id) {
-      const list = readJobs().filter((job) => job.id !== id);
+      runtime = runtime.filter((job) => job.id !== id);
       invalidateScan();
-      return this.saveJobs(list);
-    },
-
-    /** 清掉指向已不存在文件的完成记录。 */
-    pruneMissing() {
-      const onDisk = new Set(scan().map((record) => record.id));
-      const kept = readJobs().filter((job) => job.status !== "done" || onDisk.has(job.id));
-      return this.saveJobs(kept);
+      return runtime;
     },
   };
 }

@@ -1006,8 +1006,7 @@ export default defineApp(async (sdk) => {
     });
 
     app.post(`/${APP_ID}/jobs/clear`, (c) => {
-      // 记录跟着图走：这里只清掉指向已不存在文件的那部分，不删图。
-      store.pruneMissing();
+      // 记录跟着图走，这里只把成功过的任务清出运行态，不动文件。
       schedulePush(0);
       return c.json(state());
     });
