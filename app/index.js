@@ -71,8 +71,12 @@ export default defineApp(async (sdk) => {
   /** 改设置的后置动作：路径变了就停引擎，模型下次生成重新 load。装完与切换版本都走这里。 */
   const applySettings = (patch) => {
     store.saveSettings(patch);
-    // 只要动了 serverPath（包括清空）就把引擎停掉，旧的那份不能再往上跑。
-    if (Object.prototype.hasOwnProperty.call(patch, "serverPath") && engine.snapshot().running) engine.stop();
+    // 动了 serverPath 就把旧引擎停掉，但任务在跑时不动：停引擎会把正在采样的
+    // 那张打断，任务就卡在运行中。新路径下次启动时自然生效。
+    if (Object.prototype.hasOwnProperty.call(patch, "serverPath")) {
+      const snap = engine.snapshot();
+      if (snap.running && !snap.busy) engine.stop();
+    }
     engine.loadedKey = null;
   };
   const installer = createInstaller({

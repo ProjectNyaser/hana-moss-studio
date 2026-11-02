@@ -86,7 +86,6 @@ const nodes = {
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
   errors: el("pn-errors"),
-  engineVersion: el("pn-engine-version"),
 };
 
 let latest = null;
