@@ -850,6 +850,8 @@ body {
   font-size: 10.5px;
   color: var(--ui-surface);
   background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ui-text) 72%, transparent));
+  /* 只是遮盖信息，点击与悬停都该落到下面的图上。 */
+  pointer-events: none;
   opacity: 0;
   transition: opacity var(--ui-fast) var(--ui-ease);
   font-variant-numeric: tabular-nums;

@@ -396,9 +396,9 @@ async function renderGallery(data) {
         image.loading = "lazy";
         image.title = job.prompt;
         if (job.width && job.height) image.style.aspectRatio = `${job.width} / ${job.height}`;
-        // 左键直接看大图，不切页；要把这张拿到画布去用右键。
-        image.addEventListener("click", () => openViewer(job.id));
         tile.appendChild(image);
+        // 点整块都算：底部的分辨率与步数是盖在上面的，不能让它拦住点击。
+        tile.addEventListener("click", () => openViewer(job.id));
         const meta = document.createElement("div");
         meta.className = "thumb-meta";
         meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
