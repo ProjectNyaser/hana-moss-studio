@@ -67,6 +67,8 @@ const nodes = {
 const views = ["canvas", "gallery", "queue", "versions", "download"];
 const imageCache = new Map();
 let latest = null;
+// 耗时锚点：{ at, ms }，每次后端推送更新，两次之间由定时器补差。
+let elapsedAnchor = null;
 let renderedJobsKey = null;
 let selectedId = null;
 let newestJobId = null;
@@ -182,12 +184,18 @@ function renderStage(data) {
     label = engine.loaded ? "就绪 · 模型已加载" : "就绪 · 模型未加载";
   }
 /** 高清修正开着时，引擎的总步数会多出第二阶段：设 16 步会看到 24。 */
-  const activeJob = engine.active ? data.jobs.find((job) => job.id === engine.active.jobId) : null;
-  if (engine.active && activeJob?.hiresScale > 1.001) label += " · 含高清修正";
+  if (engine.active && engine.active.hiresScale > 1.001) label += " · 含高清修正";
   nodes.stageDot.className = dotClass;
   nodes.stageText.textContent = label;
   // 进度条：有百分比就走百分比，算不出来时来回扫。
   const activeProgress = engine.active?.progress ?? null;
+  // 耗时锚点：每次推送对一次表，两次推送之间由定时器补差。
+  if (engine.active && activeProgress) {
+    const measured = activeProgress.liveElapsedMs ?? activeProgress.elapsedMs;
+    if (typeof measured === "number") elapsedAnchor = { at: Date.now(), ms: measured };
+  } else {
+    elapsedAnchor = null;
+  }
   nodes.topProgress.hidden = !engine.active;
   if (activeProgress) {
     const percent = typeof activeProgress.percent === "number" ? activeProgress.percent : 0;
@@ -200,6 +208,25 @@ function renderStage(data) {
   nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
 
+
+/** 生成中那行的文字：尺寸、步数、CFG、种子、实时耗时。
+ *  耗时按墙钟算，与引擎回帧频率无关。 */
+function activeCaption(active) {
+  const parts = [];
+  if (active.width && active.height) parts.push(`${active.width}×${active.height}`);
+  if (active.steps) parts.push(`${active.steps} 步`);
+  if (active.cfg) parts.push(`CFG ${active.cfg}`);
+  if (active.seed != null) parts.push(`种子 ${active.seed}`);
+  const used = formatDuration(liveElapsed(active));
+  if (used) parts.push(`已用 ${used}`);
+  return parts.join(" · ");
+}
+
+/** 实时耗时：后端每次推送给一个基准，两次之间自己走秒。 */
+function liveElapsed(active) {
+  if (elapsedAnchor) return elapsedAnchor.ms + (Date.now() - elapsedAnchor.at);
+  return active.progress?.liveElapsedMs ?? active.progress?.elapsedMs ?? 0;
+}
 
 /** 画布上要显示的那张：只有显式载入或刚生成完才有，初始是空的。 */
 function shownJob(data) {
@@ -227,14 +254,7 @@ async function renderCanvas(data) {
     }
     img.classList.toggle("preview", Boolean(active.previewAt));
     img.onclick = null;
-    const parts = [];
-    if (active.width && active.height) parts.push(`${active.width}×${active.height}`);
-    if (active.steps) parts.push(`${active.steps} 步`);
-    if (active.cfg) parts.push(`CFG ${active.cfg}`);
-    if (active.seed != null) parts.push(`种子 ${active.seed}`);
-    const used = formatDuration(active.progress?.elapsedMs ?? 0);
-    if (used) parts.push(`已用 ${used}`);
-    nodes.resultCaption.textContent = parts.join(" · ");
+    nodes.resultCaption.textContent = activeCaption(active);
     return;
   }
 
@@ -835,6 +855,12 @@ nodes.viewerStage.addEventListener(
   { passive: false },
 );
 document.addEventListener("click", () => closeMenu());
+// 引擎回帧间隔可能好几秒，这里每秒把「已用」自己走一格。
+setInterval(() => {
+  const active = latest?.engine?.active;
+  if (!active || nodes.result.hidden) return;
+  nodes.resultCaption.textContent = activeCaption(active);
+}, 1000);
 nodes.stageCancel.addEventListener("click", () => {
   const active = latest?.engine?.active;
   if (!active) return;

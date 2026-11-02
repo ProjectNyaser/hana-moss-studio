@@ -177,6 +177,8 @@ export default defineApp(async (sdk) => {
       total: entry.total,
       etaMs: entry.etaMs,
       elapsedMs: entry.elapsedMs ?? (entry.startedAt ? Date.now() - Date.parse(entry.startedAt) : null),
+      // 跑起来之后按墙钟算：引擎的 elapsed 只在回帧时刷新，界面要每秒都动。
+      liveElapsedMs: entry.startedAt && entry.status === "running" ? Date.now() - Date.parse(entry.startedAt) : null,
     };
   }
 
@@ -542,6 +544,7 @@ export default defineApp(async (sdk) => {
               steps: active.steps,
               cfg: active.cfg,
               seed: active.report?.seedUsed ?? active.seed ?? null,
+              hiresScale: active.hiresScale ?? 0,
               phase: active.phase,
               progress: taskProgress(active),
               previewAt: active.previewAt ?? null,
