@@ -1072,7 +1072,14 @@ let viewerZoom = 1;
 let viewerNeedsFit = true;
 
 function openViewer(id) {
-  viewerList = (latest?.jobs ?? []).filter((job) => job.status === "done" && job.output);
+  // state 只带最近 24 条，画廊是分页拉的。两处合起来才是真列表，
+  // 否则靠后的图点了没反应（findIndex 返回 -1 就直接退出了）。
+  const merged = new Map();
+  for (const job of galleryJobs) merged.set(job.id, job);
+  for (const job of latest?.jobs ?? []) merged.set(job.id, { ...merged.get(job.id), ...job });
+  viewerList = [...merged.values()]
+    .filter((job) => job.status === "done" && job.output)
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   const index = viewerList.findIndex((job) => job.id === id);
   if (index < 0) return;
   viewerIndex = index;
