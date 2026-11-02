@@ -718,6 +718,14 @@ body {
   place-content: safe center;
   overflow: auto;
   padding: 12px 64px;
+  /* 看图时不露滚动条，但拖动与滚轮照样能滚。 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.viewer-stage::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 /* 放大到超窗口后右键按住平移，光标提示可抓。 */
