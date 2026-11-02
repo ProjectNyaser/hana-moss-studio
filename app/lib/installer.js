@@ -557,6 +557,9 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       let speedAt = 0;
       let speed = 0;
       const failedIds = new Set();
+      // 偶尔会有某一轮 RPC 返回不完整的字段（totalLength/completedLength 读成 0），
+      // 直接把 0 发出去，面板就会闪一下「0 / 0B」。记住上一轮的值当兵底。
+      const known = new Map();
 
       for (;;) {
         if (cancelled) {
@@ -572,7 +575,16 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         // 设备忙时容易一片超时，进度就会被误读成 0。
         let snapshot;
         try {
-          const keys = ["gid", "status", "completedLength", "totalLength", "errorCode", "errorMessage"];
+          const keys = [
+            "gid",
+            "status",
+            "completedLength",
+            "totalLength",
+            "errorCode",
+            "errorMessage",
+            "connections",
+            "downloadSpeed",
+          ];
           const [active, waiting, stopped] = await Promise.all([
             aria2Call(session.port, session.secret, "aria2.tellActive", [keys], 6000),
             aria2Call(session.port, session.secret, "aria2.tellWaiting", [0, 1000, keys], 6000),
@@ -600,6 +612,26 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           }
         }
         const pendingItem = items.find((item) => snapshot.get(item.gid)?.status === "active");
+        // 连接数按 aria2 CLI 里 CN 那一列的口径：所有活跃任务加起来。
+        let connections = 0;
+        for (const item of items) {
+          const state = snapshot.get(item.gid);
+          if (state?.status === "active") connections += Number(state.connections ?? 0);
+        }
+        // 每个文件的状态都带出去，面板按 aria2 那样一条文件一节。
+        const tasks = items.map((item) => {
+          const state = snapshot.get(item.gid) ?? {};
+          const prev = known.get(item.gid) ?? {};
+          const task = {
+            out: item.out,
+            size: Number(state.totalLength ?? 0) || prev.size || item.size || 0,
+            got: Number(state.completedLength ?? 0) || prev.got || 0,
+            speed: Number(state.downloadSpeed ?? 0),
+            status: state.status ?? prev.status ?? "waiting",
+          };
+          if (task.status !== "waiting") known.set(item.gid, task);
+          return task;
+        });
         // 速度直接问 aria2，不自己按字节差分：文件切换那一秒会算出假的高峰再归零。
         const now = Date.now();
         if (now - speedAt >= 1500) {
@@ -607,7 +639,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           const gs = await aria2Call(session.port, session.secret, "aria2.getGlobalStat", [], 4000).catch(() => null);
           speed = Number(gs?.downloadSpeed ?? 0);
         }
-        onTick?.({ bytes, totalBytes: total, done, total: items.length, speed, current: pendingItem?.out ?? null, failed: failed.length });
+        onTick?.({ bytes, totalBytes: total, done, total: items.length, speed, connections, tasks, current: pendingItem?.out ?? null, failed: failed.length });
 
         // 字节和完成数都不再变超过三分钟，就当这条链路已经停了；不能无限等下去。
         const settled = done + failedIds.size;
@@ -730,7 +762,15 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         dir: engineDir,
         concurrency: 1,
         totalBytes: asset.size ?? 0,
-        onTick: ({ bytes, totalBytes, speed }) => patch({ bytes, totalBytes, speed }),
+        onTick: ({ bytes, totalBytes, speed, connections, tasks }) =>
+          patch({
+            bytes,
+            totalBytes,
+            percent: totalBytes ? Math.min(99, Math.floor((bytes / totalBytes) * 100)) : 0,
+            speed,
+            connections,
+            tasks,
+          }),
       });
 
       patch({ phase: "verify", message: "校验 sha256" });
@@ -814,14 +854,17 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           dir: weightsDir,
           concurrency: 4,
           totalBytes,
-          onTick: ({ bytes, totalBytes: total, done, total: count, speed, current, failed: failedCount }) =>
+          onTick: ({ bytes, totalBytes: total, done, total: count, speed, connections, tasks, failed: failedCount }) =>
             patch({
               bytes,
               totalBytes: total,
+              percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
               speed,
-              current,
+              connections,
+              tasks,
               files: [done, count],
-              message: `${done}/${count} 个文件 · ${gib(bytes)} / ${gib(total)} GiB${failedCount ? ` · ${failedCount} 个失败` : ""}`,
+              // 文件数、字节、速度都在结构化字段里，message 只说异常。
+              message: failedCount ? `${failedCount} 个文件失败` : "",
             }),
         });
         const dead = outcome?.failed ?? [];

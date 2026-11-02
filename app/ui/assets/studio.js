@@ -57,10 +57,10 @@ const nodes = {
   downloadEngine: el("download-engine"),
   downloadModels: el("download-models"),
   versionsTabs: el("versions-tabs"),
-  downloadTabs: el("download-tabs"),
   downloadCancel: el("download-cancel"),
   downloadBar: el("download-bar"),
   downloadMessage: el("download-message"),
+  downloadFiles: el("download-files"),
   downloadAvailableState: el("download-available-state"),
   downloadAvailable: el("download-available"),
 };
@@ -159,7 +159,7 @@ function showView(view) {
     const section = el(`view-${name}`);
     if (section) section.hidden = name !== view;
   }
-  if (view === "download") void loadReleases();
+  if (view === "versions" || view === "download") void loadReleases();
   if (view === "gallery" && !galleryJobs.length) void loadGallery(true);
   // 画廊在隐藏状态下 clientWidth 是 0，首次算出来的列数偏少；显出来后重排一次。
   if (view === "gallery" && galleryEntries.length) {
@@ -740,6 +740,58 @@ function renderVersions(data) {
   nodes.host.replaceChildren(...hostRows);
 }
 
+
+/** 每个文件一行：名字与速度一行，进度条里写百分比，大小单独一行。 */
+function renderDownloadTasks(tasks) {
+  if (!Array.isArray(tasks) || !tasks.length) {
+    nodes.downloadFiles.replaceChildren();
+    return;
+  }
+  nodes.downloadFiles.replaceChildren(
+    ...tasks.map((task) => {
+      const total = Number(task.size) || 0;
+      const got = Number(task.got) || 0;
+      const pct = total ? Math.min(100, Math.floor((got / total) * 100)) : 0;
+      const speed = Number(task.speed) || 0;
+      const done = task.status === "complete";
+
+      const row = document.createElement("div");
+      row.className = done ? "dl-row done" : task.status === "error" ? "dl-row bad" : pct < 12 ? "dl-row low" : "dl-row";
+
+      const line = document.createElement("div");
+      line.className = "dl-line";
+      const name = document.createElement("span");
+      name.className = "dl-name";
+      name.textContent = task.out.split("/").pop();
+      name.title = task.out;
+      const right = document.createElement("span");
+      right.className = "dl-speed";
+      right.textContent = done ? "完成" : speed > 0 ? `${formatSize(speed)}/s` : "等待";
+      line.append(name, right);
+
+      const track = document.createElement("div");
+      track.className = "dl-track";
+      const fill = document.createElement("i");
+      fill.style.width = done ? "100%" : `${Math.max(0.5, pct)}%`;
+      const label = document.createElement("span");
+      label.className = "dl-pct";
+      label.textContent = `${pct}%`;
+      track.append(fill, label);
+
+      const foot = document.createElement("div");
+      foot.className = "dl-foot";
+      const bits = [`${formatSize(got)} / ${formatSize(total)}`];
+      if (!done && speed > 0 && total > got) {
+        bits.push(`剩 ${formatDuration(((total - got) / speed) * 1000)}`);
+      }
+      foot.textContent = bits.join(" · ");
+
+      row.append(line, track, foot);
+      return row;
+    }),
+  );
+}
+
 // ── 下载 ───────────────────────────────────────────────────────────────
 function renderDownload(data) {
   const job = data.install;
@@ -777,26 +829,40 @@ function renderDownload(data) {
     nodes.downloadBar.hidden = true;
     nodes.downloadCancel.hidden = true;
     nodes.downloadState.textContent = "";
-    nodes.downloadMessage.textContent = waiting.length ? `等待中：${waiting.join("、")}` : "";
+    nodes.downloadFiles.replaceChildren();
+    nodes.downloadMessage.textContent = waiting.length ? `等待中：${waiting.join("、")}` : "没有进行中的下载。去「版本」页选一个。";
     return;
   }
+  renderDownloadTasks(job.tasks);
   const percent = Math.max(0, Math.min(100, job.percent ?? 0));
   nodes.downloadBar.hidden = false;
   nodes.downloadBar.querySelector("i").style.width = `${percent || 4}%`;
   nodes.downloadCancel.hidden = Boolean(job.finishedAt);
   nodes.downloadState.textContent = job.phase ?? "";
-  // 速度、文件数、当前文件都是「在不在动」的直接证据，比一个百分比更有用。
+  // 按 aria2 CLI 的口径排：SIZE → 百分比 → 速度 → 剩余 → 连接数。
   const parts = [];
-  if (job.label) parts.push(job.label);
-  if (Array.isArray(job.files) && job.files[1]) parts.push(`${job.files[0]}/${job.files[1]} 个文件`);
-  if (job.totalBytes) parts.push(`${formatSize(job.bytes ?? 0)} / ${formatSize(job.totalBytes)}`);
+  if (job.totalBytes) {
+    const pct = Math.min(100, Math.floor(((job.bytes ?? 0) / job.totalBytes) * 100));
+    parts.push(`${formatSize(job.bytes ?? 0)} / ${formatSize(job.totalBytes)}`);
+    parts.push(`${pct}%`);
+  }
   if (job.speed > 0) parts.push(`${formatSize(job.speed)}/s`);
-  if (job.current) parts.push(`当前 ${job.current.split("/").pop()}`);
-  const base = job.error ? `${job.phase}：${job.error}` : (parts.join(" · ") || job.message || "").trim();
-  const tail = job.error ? "" : job.message && parts.length ? `　${job.message}` : "";
+  if (job.speed > 0 && job.totalBytes > (job.bytes ?? 0)) {
+    parts.push(`剩 ${formatDuration(((job.totalBytes - (job.bytes ?? 0)) / job.speed) * 1000)}`);
+  }
+  if (job.connections > 0) parts.push(`${job.connections} 连接`);
+  if (Array.isArray(job.files) && job.files[1]) parts.push(`${job.files[0]}/${job.files[1]} 个文件`);
+
+  const head = job.label ? `${job.label}：` : "";
+  const base = job.error
+    ? `${job.phase}：${job.error}`
+    : parts.length
+      ? `${head}${parts.join(" · ")}`
+      : (job.message ?? "");
+  const current = job.current && parts.length ? `　当前 ${job.current.split("/").pop()}` : "";
   nodes.downloadMessage.textContent = waiting.length
-    ? `${base}${tail}　等待中：${waiting.join("、")}`
-    : `${base}${tail}`;
+    ? `${base}${current}　等待中：${waiting.join("、")}`
+    : `${base}${current}`;
 }
 
 async function loadReleases(force = false) {
@@ -1064,7 +1130,6 @@ nodes.engineToggle.addEventListener("click", () => {
 });
 nodes.downloadEngine.addEventListener("click", () => void runSafe(() => post("/install/engine"), "安装"));
 bindSplitTabs(nodes.versionsTabs);
-bindSplitTabs(nodes.downloadTabs);
 nodes.downloadCancel.addEventListener("click", () => void runSafe(() => post("/install/cancel"), "取消"));
 nodes.removeModel.addEventListener("click", () =>
   armable(nodes.removeModel, "再点一次删 25 GiB", "卸载", () => {
