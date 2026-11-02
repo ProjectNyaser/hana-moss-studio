@@ -178,7 +178,8 @@ function hiresMax() {
   const height = Number(nodes.height.value) || 768;
   const sideLimit = MAX_SIDE / Math.max(width, height);
   const pixelLimit = Math.sqrt((MAX_MP * 1e6) / (width * height));
-  return Math.max(1, Math.min(3, sideLimit, pixelLimit));
+  // 两个硬限取更严的那个：单边 4096、总量 4.2MP。256×256 时约能到 ×8。
+  return Math.max(1, Math.min(sideLimit, pixelLimit));
 }
 
 function currentMP() {
