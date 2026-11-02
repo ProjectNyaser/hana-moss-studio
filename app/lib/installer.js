@@ -28,7 +28,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import path, { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { MOSSIMAGE } from "./mossimage.js";
@@ -333,11 +333,19 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate }
     begin("engine", "引擎");
     try {
       // 预先下好的包：跳过探测与下载，只做校验与解压。网络不行时的出路。
-      const localZip = typeof options.zipPath === "string" && options.zipPath.trim() ? resolve(options.zipPath.trim()) : null;
-      if (localZip) {
-        if (!existsSync(localZip)) throw new Error(`找不到 ${localZip}`);
-        if (!/\.zip$/i.test(localZip)) throw new Error("本地安装包必须是 .zip");
-        await installFromLocalZip(localZip);
+      // App 只能读自己的目录与 app-data，所以包只能从 app-data 里拿；
+      // 传相对名就从 incoming/ 找，传绝对路径则必须在 dataDir 下。
+      const raw = typeof options.zipPath === "string" ? options.zipPath.trim() : "";
+      if (raw) {
+        const incoming = join(dataDir, "incoming");
+        const zip = path.isAbsolute(raw) ? resolve(raw) : resolve(join(incoming, raw));
+        const root = resolve(dataDir);
+        if (!zip.toLowerCase().startsWith(root.toLowerCase() + path.sep)) {
+          throw new Error(`安装包必须放在 ${incoming} 里再传文件名；App 只能读自己的目录与 app-data`);
+        }
+        if (!existsSync(zip)) throw new Error(`找不到安装包：${zip}`);
+        if (!/\.zip$/i.test(zip)) throw new Error("安装包必须是 .zip");
+        await installFromLocalZip(zip);
         return;
       }
 

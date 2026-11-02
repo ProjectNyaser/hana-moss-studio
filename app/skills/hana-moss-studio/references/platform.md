@@ -104,14 +104,16 @@ console.log("就绪    "+path.resolve(bin));
 
 ## 网络不行时：用本地包
 
-装引擎那一步走 GitHub 的 release 资产。这条链路在部分网络下极慢甚至断，此时不要反复重试下载，改用已经拿到的 zip：
+装引擎那一步走 GitHub 的 release 资产。这条链路在部分网络下极慢甚至断，此时不要反复重试下载，改用已经拿到的 zip。
+
+App 只能读自己的目录与 app-data，所以包要放进 `<app-data>/hana-moss-studio/incoming/`（`<app-data>` 就是 `<HANA_HOME>/app-data/hana-moss-studio`）：
 
 ```http
 POST /api/apps/hana-moss-studio/routes/hana-moss-studio/install/engine
-{ "zipPath": "D:\\dl\\mossinfer-2.1.2-windows-cu13-x86_64.zip" }
+{ "zipPath": "mossinfer-2.1.2-windows-cu13-x86_64.zip" }
 ```
 
-App 会去 Release 取 `SHA256SUMS` 校验，通过才解压；拿不到校验文件时照装并在结果里标注未校验。
+`zipPath` 传相对名就从 `incoming/` 找，传绝对路径则必须在 app-data 下。App 会去 Release 取 `SHA256SUMS` 校验，通过才解压；拿不到校验文件时照装并在结果里标注未校验。
 **包名必须保持发布时的原名**，App 用它决定解压后的目录名，也用它去校验文件里找对应行。
 
 ## 只有 system-cuda 才补库
