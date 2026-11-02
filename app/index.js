@@ -554,6 +554,8 @@ export default defineApp(async (sdk) => {
       queue: queue.map((job) => ({ id: job.id, prompt: job.prompt })),
       running,
       jobs: store.listJobs().slice(0, 24).map(slimJob),
+      // 全量记录数：state 只带最近 24 条，界面上的总数不能跟着它算。
+      jobTotal: store.listJobs().length,
       progress: Object.fromEntries([...live.values()].map((entry) => [entry.id, taskProgress(entry)])),
       mossimage: {
         repo: MOSSIMAGE.repo,

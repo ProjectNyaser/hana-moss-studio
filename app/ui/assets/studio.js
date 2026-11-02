@@ -214,7 +214,7 @@ function renderStage(data) {
   // 生成中才给一个明确的取消按钮，不做「点状态块就取消」那种隐式交互。
   nodes.stageCancel.hidden = !engine.active;
   nodes.stageChip.title = engine.lastError ?? "";
-  nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
+  nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobTotal ?? data.jobs.length} 条`;
 }
 
 
@@ -380,6 +380,12 @@ async function renderGallery(data) {
         meta.className = "thumb-meta";
         meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
         tile.appendChild(meta);
+      } else {
+        // 记录还在但图不在了（手动删了 outputs 里的文件）：占位说明，不留空白。
+        tile.classList.add("placeholder");
+        const text = document.createElement("span");
+        text.textContent = "图片已缺失";
+        tile.appendChild(text);
       }
     } else if (job.status === "error") {
       tile.classList.add("placeholder", "bad");
