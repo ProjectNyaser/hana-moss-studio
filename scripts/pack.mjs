@@ -31,9 +31,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import zlib from "node:zlib";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+
+import yazl from "yazl";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
@@ -43,8 +44,7 @@ const OUT_DIR = path.join(ROOT, "dist-extensions");
 
 const KIND = "app";
 /** ZIP 内固定时间戳（1980-01-01 00:00），让产物可复现。 */
-const FIXED_DOS_TIME = 0;
-const FIXED_DOS_DATE = (1 << 5) | 1;
+const FIXED_MTIME = new Date(1980, 0, 1, 0, 0, 0);
 
 /** 打进包里的东西：app/ 下的全部内容，排掉开发件。app/node_modules 是派生出来的运行时依赖，要带走。 */
 const SKIP = new Set([".DS_Store", "Thumbs.db", ".git"]);
@@ -56,86 +56,22 @@ const fatal = (m) => {
   process.exit(1);
 };
 
-const crcTable = (() => {
-  const table = new Int32Array(256);
-  for (let i = 0; i < 256; i += 1) {
-    let c = i;
-    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[i] = c;
-  }
-  return table;
-})();
-
-function crc32(buf) {
-  let c = -1;
-  for (let i = 0; i < buf.length; i += 1) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ -1) >>> 0;
-}
-
-/** 最小 ZIP 写入器（deflate + 固定时间戳）。不引第三方库，本 App 零运行时依赖。 */
-function writeZip(entries, outPath) {
-  const locals = [];
-  const centrals = [];
-  let offset = 0;
-
+/** 打包成 zip。用 yazl，时间戳固定到 1980-01-01，产物可复现。 */
+async function writeZip(entries, outPath) {
+  const zip = new yazl.ZipFile();
   for (const entry of entries) {
-    const nameBuf = Buffer.from(entry.name.replace(/\\/g, "/"), "utf8");
-    const raw = fs.readFileSync(entry.abs);
-    const deflated = zlib.deflateRawSync(raw, { level: 9 });
-    const useDeflate = deflated.length < raw.length;
-    const data = useDeflate ? deflated : raw;
-    const method = useDeflate ? 8 : 0;
-    const crc = crc32(raw);
-
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(0x0800, 6);
-    local.writeUInt16LE(method, 8);
-    local.writeUInt16LE(FIXED_DOS_TIME, 10);
-    local.writeUInt16LE(FIXED_DOS_DATE, 12);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(raw.length, 22);
-    local.writeUInt16LE(nameBuf.length, 26);
-    local.writeUInt16LE(0, 28);
-    locals.push(local, nameBuf, data);
-
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(20, 4);
-    central.writeUInt16LE(20, 6);
-    central.writeUInt16LE(0x0800, 8);
-    central.writeUInt16LE(method, 10);
-    central.writeUInt16LE(FIXED_DOS_TIME, 12);
-    central.writeUInt16LE(FIXED_DOS_DATE, 14);
-    central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(raw.length, 24);
-    central.writeUInt16LE(nameBuf.length, 28);
-    central.writeUInt16LE(0, 30);
-    central.writeUInt16LE(0, 32);
-    central.writeUInt16LE(0, 34);
-    central.writeUInt16LE(0, 36);
-    central.writeUInt32LE(0o644 << 16, 38);
-    central.writeUInt32LE(offset, 42);
-    centrals.push(central, nameBuf);
-
-    offset += local.length + nameBuf.length + data.length;
+    zip.addFile(entry.abs, entry.name.replace(/\\/g, "/"), {
+      mtime: FIXED_MTIME,
+      mode: 0o100644,
+    });
   }
-
-  const centralBuf = Buffer.concat(centrals);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(0, 4);
-  end.writeUInt16LE(0, 6);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
-  end.writeUInt32LE(centralBuf.length, 12);
-  end.writeUInt32LE(offset, 16);
-  end.writeUInt16LE(0, 20);
-
-  fs.writeFileSync(outPath, Buffer.concat([...locals, centralBuf, end]));
+  zip.end();
+  await new Promise((resolve, reject) => {
+    zip.outputStream
+      .pipe(fs.createWriteStream(outPath))
+      .on("close", resolve)
+      .on("error", reject);
+  });
 }
 
 function collect(dir, prefix = "") {
@@ -157,7 +93,7 @@ function iconDataUri(iconRel) {
   return `data:${mime};base64,${fs.readFileSync(abs).toString("base64")}`;
 }
 
-function main() {
+async function main() {
   const manifestPath = path.join(SOURCE, "manifest.json");
   if (!fs.existsSync(manifestPath)) fatal("app/manifest.json 不存在");
   // 入口 import 的是 App 内的 SDK 副本（app/sdk），它不在库里，由 pnpm run derive 展开。
@@ -206,7 +142,7 @@ function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const zipName = `${manifest.id}-v${manifest.version}.zip`;
   const zipPath = path.join(OUT_DIR, zipName);
-  writeZip(entries, zipPath);
+  await writeZip(entries, zipPath);
 
   const bytes = fs.readFileSync(zipPath);
   const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
@@ -235,4 +171,4 @@ function main() {
   log(`sha256（approvals.json 用）：${sha256}`);
 }
 
-main();
+void main();
