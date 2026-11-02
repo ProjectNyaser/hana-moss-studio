@@ -7,7 +7,7 @@ export const DEFAULT_SETTINGS = {
   serverPath: null,
   modelPath: null,
   memoryMode: "min_memory",
-  tier: "bf16",
+  tier: "reference",
   device: 0,
   defaults: {
     width: 768,
@@ -21,8 +21,8 @@ export const DEFAULT_SETTINGS = {
 };
 
 const MEMORY_MODES = ["min_memory", "balanced", "max_speed"];
-/** 精度档存的就是 DiT 的精度名；发给引擎时再转回协议的 reference/high/turbo。 */
-const TIERS = ["bf16", "fp8", "int4"];
+/** 精度档就是引擎协议里的三个值，不做改名。 */
+const TIERS = ["reference", "high", "turbo"];
 
 export function createStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
