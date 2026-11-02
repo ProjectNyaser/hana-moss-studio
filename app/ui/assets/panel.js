@@ -76,6 +76,9 @@ let hiresScale = 1;
 // 正在拖哪个滑块（ratio / mp / hires）。拖动中不去搬其他两个的拇指，
 // 否则改一项会看到另两项跟着跳。
 let draggingName = null;
+// 拖动开始时锁住另一个维度：拖比例时像素量不动，拖像素量时比例不动。
+let pinnedMP = null;
+let pinnedRatio = null;
 let settingsLoaded = false;
 /** 正在发 /generate 请求的瞬间，按钮短暂禁用，避免连点堆任务。 */
 let submitting = false;

@@ -11,7 +11,7 @@
     "sync:sdk": "node scripts/vendor/sdk.mjs",
     "sync:aria2": "node scripts/vendor/aria2.mjs",
     "derive": "node scripts/derive.mjs",
-    "check": "node scripts/derive.mjs --check && node scripts/vendor/aria2.mjs --check && node scripts/package.mjs",
+    "check": "node scripts/check-undeclared.mjs app/index.js app/ui/assets/panel.js app/ui/assets/studio.js app/ui/assets/live.js && node scripts/derive.mjs --check && node scripts/vendor/aria2.mjs --check && node scripts/package.mjs",
     "build": "node scripts/vendor/aria2.mjs && node scripts/derive.mjs && node scripts/package.mjs",
     "pack": "node scripts/vendor/aria2.mjs && node scripts/derive.mjs && node scripts/pack.mjs",
     "market": "node scripts/market.mjs"
