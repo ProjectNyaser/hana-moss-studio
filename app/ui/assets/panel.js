@@ -54,7 +54,10 @@ const nodes = {
   width: el("pn-width"),
   height: el("pn-height"),
   steps: el("pn-steps"),
-  hires: el("pn-hires"),
+  hiresSlider: el("pn-hires-slider"),
+  hiresFill: el("pn-hires-fill"),
+  hiresThumb: el("pn-hires-thumb"),
+  hiresNote: el("pn-hires-note"),
   hiresSteps: el("pn-hires-steps"),
   cfg: el("pn-cfg"),
   seed: el("pn-seed"),
@@ -67,6 +70,8 @@ const nodes = {
 };
 
 let latest = null;
+// 高清修正倍率，1 等于关闭。滑块上限按当前基础尺寸算，存的是用户选的倍率。
+let hiresScale = 1;
 let settingsLoaded = false;
 /** 正在发 /generate 请求的瞬间，按钮短暂禁用，避免连点堆任务。 */
 let submitting = false;
@@ -139,9 +144,19 @@ function setSettings(settings) {
   nodes.height.value = settings.defaults.height;
   nodes.steps.value = settings.defaults.steps;
   nodes.cfg.value = settings.defaults.cfg;
-  nodes.hires.value = String(settings.defaults.hiresScale ?? 0);
+  hiresScale = Math.max(1, Number(settings.defaults.hiresScale) || 1);
   nodes.hiresSteps.value = settings.defaults.hiresSteps ?? 0;
   renderSize();
+}
+
+/** 高清修正的上限：换算出的目标尺寸不能越过引擎那条线。
+ *  超了就拖不动，所以滑块的最大值按当前基础尺寸算。 */
+function hiresMax() {
+  const width = Number(nodes.width.value) || 768;
+  const height = Number(nodes.height.value) || 768;
+  const sideLimit = MAX_SIDE / Math.max(width, height);
+  const pixelLimit = Math.sqrt((MAX_MP * 1e6) / (width * height));
+  return Math.max(1, Math.min(3, sideLimit, pixelLimit));
 }
 
 function currentMP() {
@@ -244,12 +259,23 @@ function renderSize() {
 
   // 这个位置报的是**最终出图尺寸**：含高清修正收后的结果，而不只是基础图。
   const base = fitToEngine(width, height);
-  const scale = Number(nodes.hires.value) || 0;
+  // 基础图变了，可行倍率也跟着变，先把滑块与当前倍率对准。
+  const maxScale = hiresMax();
+  hiresScale = Math.min(Math.max(1, hiresScale), maxScale);
+  const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, maxScale > 1 ? (hiresScale - 1) / (maxScale - 1) : 0);
+  nodes.hiresFill.style.width = `${hx}px`;
+  nodes.hiresThumb.textContent = `×${hiresScale.toFixed(1)}`;
+  nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
+  nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
+  nodes.hiresNote.textContent = maxScale <= 1.001
+    ? "这张图已在上限"
+    : `最多 ×${maxScale.toFixed(1)}`;
+
   let finalW = base.width;
   let finalH = base.height;
-  if (scale > 0) {
+  if (hiresScale > 1.001) {
     const round16 = (value) => Math.max(16, Math.round(value / 16) * 16);
-    const target = fitToEngine(round16(base.width * scale), round16(base.height * scale));
+    const target = fitToEngine(round16(base.width * hiresScale), round16(base.height * hiresScale));
     if (target.width > base.width || target.height > base.height) {
       finalW = target.width;
       finalH = target.height;
@@ -292,6 +318,13 @@ function bindSizeSliders() {
     setSize(w, h);
   }
 
+  function applyHires(clientX) {
+    const maxScale = hiresMax();
+    hiresScale = maxScale <= 1.001 ? 1 : 1 + pctFromEvent(nodes.hiresSlider, clientX) * (maxScale - 1);
+    renderSize();
+    scheduleSave();
+  }
+
   function bindDrag(container, apply) {
     let dragging = false;
     container.addEventListener("pointerdown", (event) => {
@@ -315,6 +348,18 @@ function bindSizeSliders() {
 
   bindDrag(nodes.ratioSlider, applyRatio);
   bindDrag(nodes.slider, applyMP);
+  bindDrag(nodes.hiresSlider, applyHires);
+
+  nodes.hiresThumb.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 0.5 : 0.1;
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") hiresScale -= step;
+    else if (event.key === "ArrowRight" || event.key === "ArrowUp") hiresScale += step;
+    else return;
+    event.preventDefault();
+    hiresScale = Math.min(hiresMax(), Math.max(1, hiresScale));
+    renderSize();
+    scheduleSave();
+  });
 
   nodes.ratioThumb.addEventListener("keydown", (event) => {
     const step = event.shiftKey ? 0.08 : 0.02;
@@ -444,9 +489,8 @@ async function onGenerate() {
     steps,
     cfg: Number(nodes.cfg.value),
   };
-  const hiresScale = Number(nodes.hires.value) || 0;
-  if (hiresScale > 0) {
-    payload.hiresScale = hiresScale;
+  if (hiresScale > 1.001) {
+    payload.hiresScale = Math.round(hiresScale * 100) / 100;
     const hiresSteps = Math.round(Number(nodes.hiresSteps.value) || 0);
     if (hiresSteps > 0) payload.hiresSteps = hiresSteps;
   }
@@ -510,7 +554,6 @@ for (const node of [
   nodes.height,
   nodes.steps,
   nodes.cfg,
-  nodes.hires,
   nodes.hiresSteps,
   nodes.memoryMode,
   nodes.tier,
@@ -521,8 +564,6 @@ for (const node of [
 
 nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
-// 改高清修正也要重算最终尺寸。
-nodes.hires.addEventListener("change", renderSize);
 bindSizeSliders();
 
 // ── 主区域的“用这张的参数” ─────────────────────────────────────

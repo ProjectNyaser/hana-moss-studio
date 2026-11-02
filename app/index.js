@@ -363,7 +363,8 @@ export default defineApp(async (sdk) => {
       output: fileName,
     };
     // 引擎的高清修正要的是具体目标尺寸，不是倍数，这里先算好。
-    if (record.hiresScale > 0) {
+    // 1.0 等于关闭：目标与基础图同尺寸，第二阶段没有意义。
+    if (record.hiresScale > 1.001) {
       const round16 = (value) => Math.max(16, Math.round((value * record.hiresScale) / 16) * 16);
       // 修正目标同样受基础图那条上限，超了按比例收，而不是把任务拒掉。
       const fitted = fitToLimit(round16(box.width), round16(box.height));

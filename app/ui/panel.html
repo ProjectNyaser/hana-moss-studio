@@ -327,15 +327,16 @@
           <button class="btn ghost small" id="pn-reroll" type="button" title="换成随机种子">随机</button>
         </div>
       </div>
+      <div class="pn-head" style="margin-top: 14px">
+        <span>高清修正</span>
+        <span class="hint" id="pn-hires-note">关闭</span>
+      </div>
+      <div class="pn-slider" id="pn-hires-slider">
+        <div class="pn-slider-rail"><i class="pn-slider-fill" id="pn-hires-fill"></i></div>
+        <span class="pn-slider-thumb" id="pn-hires-thumb" role="slider" tabindex="0"
+              aria-label="高清修正倍率" aria-valuemin="1" aria-valuemax="3">×1.0</span>
+      </div>
       <div class="pn-grid">
-        <label class="field"><span class="label">高清修正</span>
-          <select id="pn-hires">
-            <option value="0">×1.0</option>
-            <option value="1.5">×1.5</option>
-            <option value="2">×2.0</option>
-            <option value="3">×3.0</option>
-          </select>
-        </label>
         <label class="field"><span class="label">修正步数</span><input id="pn-hires-steps" type="number" min="0" max="80" value="0" placeholder="跟主步数"></label>
       </div>
       <div class="pn-grid">

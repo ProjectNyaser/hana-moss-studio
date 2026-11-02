@@ -219,7 +219,7 @@ body {
   color: var(--ui-text-2);
 }
 
-.canvas-empty .hint { max-width: 340px; }
+.canvas-empty .hint { max-width: min(100%, 640px); text-wrap: pretty; }
 
 /* ── 底部进度带 ────────────────────────────────────────────────────── */
 .progress-band {
