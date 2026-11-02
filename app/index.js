@@ -808,6 +808,15 @@ export default defineApp(async (sdk) => {
 
     app.get(`/${APP_ID}/diag/gpu`, async (c) => c.json(await probeGpuDetailed()));
 
+    // 下载走 aria2 的 JSON-RPC，这条能看出来到底是进程没起还是回环连不上。
+    app.get(`/${APP_ID}/diag/rpc`, async (c) => {
+      try {
+        return c.json(await installer.diagRpc());
+      } catch (error) {
+        return c.json({ ok: false, error: String(error?.message ?? error) }, 500);
+      }
+    });
+
     app.get(`/${APP_ID}/state`, (c) => c.json(state()));
 
   // 画廊分页：state 只带最近 24 条，剩下的从这里拉。

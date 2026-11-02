@@ -19,9 +19,11 @@ import crypto from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import {
+  closeSync,
   createReadStream,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -539,6 +541,14 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
       if (cancelled) throw new Error("已取消");
       const port = 6800 + Math.floor(Math.random() * 200);
       const secret = crypto.randomBytes(8).toString("hex");
+      // aria2c 的 stderr 落一份盘，起不来的时候才有东西可看。
+      let logFd = null;
+      try {
+        mkdirSync(cacheDir, { recursive: true });
+        logFd = openSync(join(cacheDir, "aria2.log"), "a");
+      } catch {
+        /* 写不了日志不影响干活 */
+      }
       const proc = spawn(
         ARIA2,
         [
@@ -549,7 +559,7 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
           "--no-conf",
           ...globalOptions,
         ],
-        { windowsHide: true, stdio: "ignore" },
+        { windowsHide: true, stdio: logFd === null ? "ignore" : ["ignore", "ignore", logFd] },
       );
       let exited = false;
       proc.on("close", () => {
@@ -560,18 +570,31 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
       });
       child = proc;
 
+      // 上一次 RPC 失败的原因要留住，否则只能看到「起不来」这种无用的结论。
+      let detail = null;
+      let ready = null;
       for (let i = 0; i < 40; i += 1) {
         if (exited) break;
         try {
           await aria2Call(port, secret, "aria2.getVersion", [], 3000);
-          return { proc, port, secret, exited: () => exited };
-        } catch {
+          ready = { proc, port, secret, exited: () => exited };
+          break;
+        } catch (error) {
+          detail = error;
           await sleep(150);
         }
       }
+      if (logFd !== null) {
+        try {
+          closeSync(logFd);
+        } catch {
+          /* 已经关了 */
+        }
+      }
+      if (ready) return ready;
       proc.kill();
       child = null;
-      lastError = new Error("aria2c 起不来或端口被占");
+      lastError = new Error(`aria2c 起不来或端口被占：${brief(detail ?? "进程没有起来")}`);
     }
     throw lastError;
   }
@@ -1036,6 +1059,17 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
     return rows.length ? rows : null;
   }
 
+  /** 自检：真的把 aria2 拉起来并问一句版本，出错时带回真实原因。 */
+  async function diagRpc() {
+    const session = await startAria2Rpc(["--console-log-level=warn", "--summary-interval=0"]);
+    try {
+      const version = await aria2Call(session.port, session.secret, "aria2.getVersion", [], 3000);
+      return { ok: true, port: session.port, version: version?.version ?? null, exe: ARIA2 };
+    } finally {
+      await stopAria2Rpc(session);
+    }
+  }
+
   return {
     /** 给 state() 用：没有安装任务时给最近一次的结果。 */
     snapshot() {
@@ -1043,6 +1077,7 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
       return base ? { ...base, queue: pending.map((item) => item.label) } : { queue: pending.map((item) => item.label) };
     },
     enqueue,
+    diagRpc,
     busy() {
       return Boolean(job && !job.finishedAt);
     },

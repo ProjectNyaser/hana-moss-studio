@@ -14,7 +14,7 @@
     "app/session.start-turn"
   ],
   "network": {
-    "allowedHosts": ["api.github.com", "github.com", "huggingface.co", "hf-mirror.com"],
+    "allowedHosts": ["api.github.com", "github.com", "huggingface.co", "hf-mirror.com", "127.0.0.1", "localhost"],
     "methods": ["GET", "HEAD", "POST"],
     "allowLocalhost": true,
     "defaultTimeoutMs": 45000,
