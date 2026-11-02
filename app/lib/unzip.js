@@ -33,12 +33,27 @@ export async function unzipTo(zipPath, destDir, { onProgress } = {}) {
   let files = 0;
 
   await new Promise((resolve, reject) => {
-    zipfile.on("error", reject);
+    // 出错时先把 zipfile 关掉：lazyEntries 模式下不再 readEntry，autoClose 不会触发，
+    // 句柄就留着了。
+    let failed = false;
+    const fail = (error) => {
+      if (failed) return;
+      failed = true;
+      try {
+        zipfile.close();
+      } catch {
+        /* 已经关了 */
+      }
+      reject(error);
+    };
+
+    zipfile.on("error", fail);
     zipfile.on("end", resolve);
     zipfile.on("entry", (entry) => {
+      if (failed) return;
       const target = normalize(join(destDir, entry.fileName));
       if (!target.startsWith(root)) {
-        reject(new Error(`压缩包里有越界路径：${entry.fileName}`));
+        fail(new Error(`压缩包里有越界路径：${entry.fileName}`));
         return;
       }
       if (entry.fileName.endsWith("/")) {
@@ -49,16 +64,16 @@ export async function unzipTo(zipPath, destDir, { onProgress } = {}) {
       mkdirSync(dirname(target), { recursive: true });
       zipfile.openReadStream(entry, (error, stream) => {
         if (error) {
-          reject(error);
+          fail(error);
           return;
         }
         const out = createWriteStream(target);
-        stream.on("error", reject);
-        out.on("error", reject);
+        stream.on("error", fail);
+        out.on("error", fail);
         out.on("close", () => {
           files += 1;
           onProgress?.(files, entry.fileName);
-          zipfile.readEntry();
+          if (!failed) zipfile.readEntry();
         });
         stream.pipe(out);
       });
