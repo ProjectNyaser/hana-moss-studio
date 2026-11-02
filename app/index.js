@@ -866,20 +866,22 @@ export default defineApp(async (sdk) => {
     });
 
     app.post(`/${APP_ID}/install/engine`, async (c) => {
-      if (installer.busy()) return c.json({ ...state(), error: "已有安装在进行" }, 409);
       const body = await c.req.json().catch(() => ({}));
-      installer
-        .installEngine({ zipPath: body?.zipPath, preferCuda: body?.preferCuda, tag: body?.tag })
-        .catch((error) => sdk.logger.warn(`引擎安装失败：${message(error)}`));
-      return c.json(state());
+      const result = installer.enqueue("engine", {
+        zipPath: body?.zipPath,
+        preferCuda: body?.preferCuda,
+        tag: body?.tag,
+      });
+      schedulePush(0);
+      return c.json({ ...state(), queued: result.queued, position: result.position });
     });
 
     app.post(`/${APP_ID}/install/weights`, async (c) => {
-      if (installer.busy()) return c.json({ ...state(), error: "已有安装在进行" }, 409);
       const body = await c.req.json().catch(() => ({}));
       const variant = body?.variant === "base" ? "base" : "sft";
-      installer.installWeights(variant).catch((error) => sdk.logger.warn(`权重下载失败：${message(error)}`));
-      return c.json(state());
+      const result = installer.enqueue("weights", { variant });
+      schedulePush(0);
+      return c.json({ ...state(), queued: result.queued, position: result.position });
     });
 
     app.post(`/${APP_ID}/install/cancel`, (c) => {

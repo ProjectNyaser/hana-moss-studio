@@ -678,7 +678,8 @@ function renderVersions(data) {
 function renderDownload(data) {
   const job = data.install;
   const busy = Boolean(job && !job.finishedAt);
-  nodes.downloadEngine.disabled = busy;
+  const waiting = Array.isArray(job?.queue) ? job.queue : [];
+  nodes.downloadEngine.disabled = false;
 
   // 模型：每个仓库一行，没装的给下载按钮。
   const models = Array.isArray(data.models) ? data.models : [];
@@ -695,8 +696,7 @@ function renderDownload(data) {
         const button = document.createElement("button");
         button.className = "btn ghost small";
         button.type = "button";
-        button.textContent = "下载";
-        button.disabled = busy;
+        button.textContent = busy ? "排队" : "下载";
         button.addEventListener("click", () =>
           void runSafe(() => post("/install/weights", { variant: item.variant }), `下载 ${item.label}`),
         );
@@ -706,11 +706,12 @@ function renderDownload(data) {
     }),
   );
 
-  if (!job) {
+  // 快照可能只带 queue（还没开始过任何安装）。
+  if (!job?.phase) {
     nodes.downloadBar.hidden = true;
     nodes.downloadCancel.hidden = true;
     nodes.downloadState.textContent = "";
-    nodes.downloadMessage.textContent = "";
+    nodes.downloadMessage.textContent = waiting.length ? `等待中：${waiting.join("、")}` : "";
     return;
   }
   const percent = Math.max(0, Math.min(100, job.percent ?? 0));
@@ -718,9 +719,10 @@ function renderDownload(data) {
   nodes.downloadBar.querySelector("i").style.width = `${percent || 4}%`;
   nodes.downloadCancel.hidden = Boolean(job.finishedAt);
   nodes.downloadState.textContent = job.phase ?? "";
-  nodes.downloadMessage.textContent = job.error
+  const base = job.error
     ? `${job.phase}：${job.error}`
     : `${job.label ?? ""} ${job.message ?? ""}${job.totalBytes ? ` ${formatSize(job.bytes)} / ${formatSize(job.totalBytes)}` : ""}`.trim();
+  nodes.downloadMessage.textContent = waiting.length ? `${base}　等待中：${waiting.join("、")}` : base;
 }
 
 async function loadReleases(force = false) {

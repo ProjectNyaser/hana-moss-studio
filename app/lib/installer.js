@@ -356,6 +356,31 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     return true;
   }
 
+  /** 安装任务串行：忙时排队，完成一个自动起下一个。 */
+  let pending = [];
+
+  function startNext() {
+    const next = pending.shift();
+    if (!next) return;
+    const run = next.kind === "engine" ? installEngine(next.args) : installWeights(next.args);
+    run.catch(() => {});
+  }
+
+  function enqueue(kind, args) {
+    if (job && !job.finishedAt) {
+      pending.push({
+        kind,
+        args,
+        label: kind === "engine" ? `引擎 ${args?.tag ?? "latest"}` : `权重 ${args?.variant === "base" ? "Base" : "SFT"}`,
+      });
+      onUpdate?.();
+      return { queued: true, position: pending.length };
+    }
+    const run = kind === "engine" ? installEngine(args) : installWeights(args);
+    run.catch(() => {});
+    return { queued: false, position: 0 };
+  }
+
   function patch(update) {
     if (!job) return;
     Object.assign(job, update);
@@ -384,6 +409,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
 
   function finish(update) {
     patch({ ...update, percent: 100, finishedAt: new Date().toISOString() });
+    setTimeout(startNext, 0);
   }
 
   function fail(error) {
@@ -394,6 +420,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       error: error instanceof Error ? error.message : String(error),
       finishedAt: new Date().toISOString(),
     });
+    setTimeout(startNext, 0);
   }
 
   /**
@@ -893,13 +920,17 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   return {
     /** 给 state() 用：没有安装任务时给最近一次的结果。 */
     snapshot() {
-      return job ? { ...job } : null;
+      const base = job ? { ...job } : null;
+      return base ? { ...base, queue: pending.map((item) => item.label) } : { queue: pending.map((item) => item.label) };
     },
+    enqueue,
     busy() {
       return Boolean(job && !job.finishedAt);
     },
     cancel() {
       if (!job || job.finishedAt) return false;
+      // 取消就是全停：排着的也一起清掉，否则用户按了取消却又有新任务自己开始。
+      pending = [];
       cancelled = true;
       child?.kill();
       patch({ phase: "cancelled", message: "已取消", finishedAt: new Date().toISOString() });
