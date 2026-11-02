@@ -193,37 +193,22 @@ function currentRatio() {
   return (Number(nodes.width.value) || 768) / (Number(nodes.height.value) || 768);
 }
 
-/** 标准比对应的最小 16 倍数整数对：16:9 就是 256:144 的倍数。 */
-const RATIO_UNITS = [
-  [256, 144],
-  [48, 32],
-  [64, 48],
-  [16, 16],
-  [48, 64],
-  [32, 48],
-  [144, 256],
-];
-
-/** 像素量定了宽高就定了。
- *  标准比用整数对成倍放大，比例才能保持精确；
- *  非标准比只能分别向下取整（会偏离一点，但总像素不超上限）。 */
+/** 像素量定了宽高就定了：两边都取最近的 16 倍数。
+ *  round 而不是 floor：向下取会把长边系统性地拉偏（1440×16/9 = 2560，floor 得 2544）。
+ *  取整后可能擦线超上限，交给 fitToEngine 收。 */
 function sizeFor(ratio, megapixels) {
-  const unit = RATIO_UNITS.find(([p, q]) => Math.abs(p / q - ratio) < 1e-9);
-  if (unit) {
-    const [p, q] = unit;
-    let m = Math.max(1, Math.round(Math.sqrt((megapixels * 1e6) / (p * q))));
-    while (m > 1 && m * m * p * q > MAX_MP * 1e6) m -= 1;
-    return [p * m, q * m];
-  }
   const spread = ratio >= 1 ? ratio : 1 / ratio;
-  const short = Math.max(256, Math.floor(Math.sqrt((megapixels * 1e6) / spread) / 16) * 16);
-  const long = Math.floor((short * spread) / 16) * 16;
+  const clamp16 = (value) => Math.max(256, Math.round(value / 16) * 16);
+  const short = clamp16(Math.sqrt((megapixels * 1e6) / spread));
+  const long = clamp16(short * spread);
   return ratio >= 1 ? [long, short] : [short, long];
 }
 
 function setSize(width, height) {
-  nodes.width.value = width;
-  nodes.height.value = height;
+  // 输入框里永远写合法值：取整后擦线超上限的（2736×1536 = 4.20MP）在这里收掉。
+  const fitted = fitToEngine(width, height);
+  nodes.width.value = fitted.width;
+  nodes.height.value = fitted.height;
   renderSize();
 }
 
