@@ -72,9 +72,9 @@ const nodes = {
   save: el("pn-save"),
   planTotal: el("pn-plan-total"),
   planList: el("pn-plan-list"),
-  upstreamNote: el("pn-upstream-note"),
+  engineNote: el("pn-engine-note"),
   errors: el("pn-errors"),
-  upstream: el("pn-upstream"),
+  engineVersion: el("pn-engine-version"),
 };
 
 let latest = null;
@@ -446,10 +446,10 @@ function renderPlan(data) {
       nodes.planList.appendChild(line);
     }
   }
-  const upstream = data.upstream ?? {};
-  nodes.upstreamNote.textContent = `上游快照 ${upstream.commit ?? "?"}（${String(upstream.commitDate ?? "").slice(0, 10)}），协议 v${upstream.protocolVersion ?? "?"}。`;
-  nodes.upstream.textContent = `协议 v${upstream.protocolVersion ?? "?"}`;
-  nodes.upstream.title = `上游 ${upstream.commit ?? "?"}`;
+  const mossimage = data.mossimage ?? {};
+  nodes.engineNote.textContent = `引擎 ${mossimage.repo ?? "mossimage.cpp"} ${mossimage.version ?? "?"}（protocol ${mossimage.protocolVersion ?? "?"}）。`;
+  nodes.engineVersion.textContent = `引擎 ${mossimage.version ?? "?"}`;
+  nodes.engineVersion.title = `${mossimage.repo ?? ""} · protocol ${mossimage.protocolVersion ?? "?"}`;
 }
 
 function render(data) {

@@ -1,6 +1,6 @@
 # 苔室（hana-moss-studio）
 
-把 [MossStudio](https://github.com/CloverIris/MossStudio) 的推理链路接进 HanaAgent 的 App：自带 CUDA 引擎进程、串行队列、提示词面板与画廊，工具出图在对话里挂实时进度卡。
+把 [MossInfer](https://github.com/mossimage-cpp/mossimage.cpp) 的本机推理引擎接进 HanaAgent 的 App：自带 CUDA 引擎进程、串行队列、提示词面板与画廊，工具出图在对话里挂实时进度卡。苔室自己管理 `moss-server` 进程，不依赖 Electron 外壳，也不用手抄 token。
 
 苔室自己管理 `moss-server` 进程，不依赖 Electron 外壳，也不用手抄 token。
 
@@ -12,7 +12,7 @@ app/                    App 本体，打包后就是安装包内容
   index.js              路由、串行队列、宿主任务桥、工具注册
   lib/engine.js         moss-server 生命周期与 JSON-lines 协议
   lib/store.js          设置与任务台账
-  lib/upstream.js       生成物，来自 scripts/sync-upstream.mjs
+  lib/mossimage.js      引擎版本、协议号与模型组件清单（手写常量，不派生）
   assets/icon.png       应用图标（MOSS-Image 画的）
   skills/hana-moss-studio/
                         SKILL.md 与 references/，装了 App 就有这个技能
@@ -23,12 +23,12 @@ app/                    App 本体，打包后就是安装包内容
 scripts/
   vendor/sdk.mjs        从本机宿主同步 vendor/hana-app-sdk 的快照
   derive.mjs            从依赖树展开 app/sdk、ui 侧副本与 manifest#minAppVersion
-  sync-upstream.mjs     从 submodule 抽取上游契约
   package.mjs           产出 build/<appId>/
   pack.mjs              出安装包与市场投稿条目
   fetch-weights.mjs     按清单续传拉权重（三平台同一份）
   smoke-generate.mjs    绕开 UI 直跑引擎
-vendor/MossStudio       git submodule，上游源仓
+vendor/mossimage.cpp    引擎源与权威文档（git submodule，shallow）
+vendor/aria2            下载器源（git submodule，shallow，GPLv2）
 vendor/hana-app-sdk     App SDK 快照（tgz + source-manifest.json），见该目录的 README
 ```
 
@@ -46,16 +46,24 @@ vendor/hana-app-sdk     App SDK 快照（tgz + source-manifest.json），见该�
 
 流内进度卡靠工具回执里的 `details.card` 落地（卡页路由静态，身份经宿主 surface 上下文的 `cardInstanceId` 反查），同时按 `app/tasks.manage` + `app/session.start-turn` 建宿主任务：完成后结果自动投递回会话。缺这两条能力时降级成「只跟踪、不投递」，回执里写明。
 
-## 上游当成 submodule 用
+## 只依赖引擎，不依赖任何客户端项目
 
-`vendor/MossStudio` 是 upstream 的 git submodule，用来吃它的更新。苔室真正依赖上游的只有三样：`release/models.json` 的模型目录、`mossInfer.ts` 里的协议版本、`mossInferDownload.ts` 里的引擎仓。
+苔室直接对 `moss-server` 说话（stdio JSON-lines），中间没有别的项目。仓库里挂两份源码快照，都是 shallow：
+
+| submodule | 用途 |
+| --- | --- |
+| `vendor/mossimage.cpp` | 引擎本体。`docs/server-protocol.md` 是协议的权威原文，`docs/integration.md` 是支持矩阵与集成面。二进制从它的 Release 取，不在这里编译 |
+| `vendor/aria2` | 下载器。GPLv2，源码在手即满足对应源码可得性；运行时用官方 Windows 预编译 |
+
+[MossStudio](https://github.com/CloverIris/MossStudio) 是同一引擎的另一个客户端（Electron 壳），只能当参考读，苔室不继承它的代码也不跟它的版本。
 
 ```bash
-git submodule update --remote vendor/MossStudio
-node scripts/sync-upstream.mjs
+git submodule update --init --depth 1
 ```
 
-同步脚本把这三样抽到 `app/lib/upstream.js`，并与上次快照对比，打印上游提交变化、协议版本变化、模型增删。协议版本一旦变了必须回去复核 `lib/engine.js`（事件名与参数形状都在那里）。
+引擎版本、协议号与模型组件清单写在 `app/lib/mossimage.js`，手写常量，不派生。改引擎版本时两件事一起做：动这个文件，动 `vendor/mossimage.cpp` 的指针。
+
+协议号变了必须回去复核 `lib/engine.js`：请求名、参数形状与事件类型都在那里，`hello` 返回的 `protocol_version` 对不上会直接拒。
 
 ## SDK 与派生
 

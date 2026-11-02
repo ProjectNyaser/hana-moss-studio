@@ -10,6 +10,8 @@
 | Linux x64 | 引擎上游有正式资产，苔室没验证过，不承诺 |
 | macOS | 没有任何引擎构建，不可用 |
 
+支持矩阵以 `vendor/mossimage.cpp/docs/integration.md` 为准，协议细节在 `docs/server-protocol.md`。
+
 硬盘、显卡、驱动的门槛照旧：NVIDIA 卡，驱动主版本 ≥ 580 才能用 cu13。
 
 ## 先判能不能跑

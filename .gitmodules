@@ -1,3 +1,8 @@
-[submodule "vendor/MossStudio"]
-	path = vendor/MossStudio
-	url = https://github.com/CloverIris/MossStudio
+[submodule "vendor/aria2"]
+	path = vendor/aria2
+	url = https://github.com/aria2/aria2
+	shallow = true
+[submodule "vendor/mossimage.cpp"]
+	path = vendor/mossimage.cpp
+	url = https://github.com/mossimage-cpp/mossimage.cpp
+	shallow = true

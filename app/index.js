@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
-import { UPSTREAM } from "./lib/upstream.js";
+import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
 
 export const name = "hana-moss-studio";
 
@@ -385,33 +385,15 @@ export default defineApp(async (sdk) => {
 
   // ── 视图数据 ──────────────────────────────────────────────────────────────
   function modelPlan() {
-    const models = UPSTREAM.catalog.models;
-    const official = (model) => Array.isArray(model.tags) && (model.tags.includes("official") || model.tags.includes("shared"));
-    const pick = (role) =>
-      models.find((model) => model.role === role && official(model)) ?? models.find((model) => model.role === role) ?? null;
-    const components = ["dit", "text_encoder", "vae", "support"]
-      .map((role) => pick(role))
-      .filter(Boolean)
-      .map((model) => ({
-        role: model.role,
-        id: model.id,
-        name: model.name,
-        repo: model.repo,
-        files: model.files,
-        subfolder: model.subfolder,
-        sizeBytes: model.sizeBytes,
-      }));
-    const totalBytes = components.reduce((sum, item) => sum + (item.sizeBytes ?? 0), 0);
-    return {
-      components,
-      totalBytes,
-      estimated:
-        models.length === 0
-          ? []
-          : models
-              .filter((model) => model.role === "dit" && Array.isArray(model.tags) && model.tags.includes("official"))
-              .map((model) => ({ id: model.id, name: model.name, sizeBytes: model.sizeBytes })),
-    };
+    const components = MOSSIMAGE.components.map((item) => ({
+      role: item.role,
+      id: item.id,
+      name: item.name,
+      repo: MOSSIMAGE.model.repo,
+      files: item.files,
+      sizeBytes: item.sizeBytes,
+    }));
+    return { model: MOSSIMAGE.model, components, totalBytes: MODEL_BYTES };
   }
 
   function deviceOf(snapshot) {
@@ -479,14 +461,13 @@ export default defineApp(async (sdk) => {
       running,
       jobs: store.listJobs().slice(0, 24).map(slimJob),
       progress: Object.fromEntries([...live.values()].map((entry) => [entry.id, taskProgress(entry)])),
-      upstream: {
-        commit: UPSTREAM.source.commit,
-        commitDate: UPSTREAM.source.commitDate,
-        generatedAt: UPSTREAM.generatedAt,
-        protocolVersion: UPSTREAM.protocol.protocolVersion,
-        engineRepo: UPSTREAM.engine.repo,
-        catalogUpdatedAt: UPSTREAM.catalog.updatedAt,
-        models: UPSTREAM.catalog.models.length,
+      mossimage: {
+        repo: MOSSIMAGE.repo,
+        version: MOSSIMAGE.version,
+        protocolVersion: MOSSIMAGE.protocolVersion,
+        abiVersion: MOSSIMAGE.abiVersion,
+        model: MOSSIMAGE.model.id,
+        modelBytes: MODEL_BYTES,
       },
       plan: modelPlan(),
     };
@@ -520,9 +501,9 @@ export default defineApp(async (sdk) => {
         done: store.listJobs().filter((job) => job.status === "done").length,
         failed: store.listJobs().filter((job) => job.status === "error").length,
       },
-      upstream: {
-        commit: UPSTREAM.source.commit,
-        protocolVersion: UPSTREAM.protocol.protocolVersion,
+      mossimage: {
+        version: MOSSIMAGE.version,
+        protocolVersion: MOSSIMAGE.protocolVersion,
       },
     };
   }
@@ -643,7 +624,7 @@ export default defineApp(async (sdk) => {
   // ── 路由 ──────────────────────────────────────────────────────────────────
   await sdk.routes.register((app) => {
     app.get(`/${APP_ID}/health`, (c) =>
-      c.json({ ok: true, app: { id: APP_ID, version: APP_VERSION }, protocol: UPSTREAM.protocol.protocolVersion, ts: new Date().toISOString() }),
+      c.json({ ok: true, app: { id: APP_ID, version: APP_VERSION }, protocol: MOSSIMAGE.protocolVersion, ts: new Date().toISOString() }),
     );
 
     app.get(`/${APP_ID}/state`, (c) => c.json(state()));
@@ -727,16 +708,15 @@ export default defineApp(async (sdk) => {
 
     app.get(`/${APP_ID}/models`, (c) =>
       c.json({
-        upstream: {
-          repo: UPSTREAM.source.repo,
-          commit: UPSTREAM.source.commit,
-          commitDate: UPSTREAM.source.commitDate,
-          generatedAt: UPSTREAM.generatedAt,
-          protocolVersion: UPSTREAM.protocol.protocolVersion,
-          engineRepo: UPSTREAM.engine.repo,
+        engine: {
+          repo: MOSSIMAGE.repo,
+          version: MOSSIMAGE.version,
+          protocolVersion: MOSSIMAGE.protocolVersion,
+          abiVersion: MOSSIMAGE.abiVersion,
         },
-        models: UPSTREAM.catalog.models,
-        plan: modelPlan(),
+        model: MOSSIMAGE.model,
+        components: MOSSIMAGE.components,
+        totalBytes: MODEL_BYTES,
       }),
     );
 

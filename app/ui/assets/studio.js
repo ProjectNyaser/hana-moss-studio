@@ -123,7 +123,7 @@ function renderProgress(data) {
     nodes.bandBar.querySelector("i").style.width = percent > 0 ? `${percent}%` : "36%";
     nodes.bandEta.textContent = progress.etaMs ? `约剩 ${formatDuration(progress.etaMs)}` : progress.elapsedMs ? `已跑 ${formatDuration(progress.elapsedMs)}` : "";
   }
-  nodes.canvasMeta.textContent = `协议 v${data.upstream.protocolVersion ?? "?"} · 上游 ${data.upstream.commit ?? "?"} · 记录 ${data.jobs.length} 条`;
+  nodes.canvasMeta.textContent = `引擎 ${data.mossimage?.version ?? "?"} · 协议 v${data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobs.length} 条`;
 }
 
 function latestDone(data) {
