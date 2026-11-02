@@ -511,8 +511,6 @@ function renderEngine(data) {
   nodes.dot.className = dotClass;
   nodes.state.textContent = label;
   nodes.state.title = engine.lastError ?? "";
-  nodes.engineVersion.textContent = `引擎 ${data.mossimage?.version ?? "?"}`;
-  nodes.engineVersion.title = `${data.mossimage?.repo ?? ""} · protocol ${data.mossimage?.protocolVersion ?? "?"}`;
 }
 
 
