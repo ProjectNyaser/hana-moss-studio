@@ -5,14 +5,13 @@
  * app/lib/installer.js — 引擎与权重的下载安装。
  *
  * 两类文件都很大（引擎约 1 GB，权重 25 GiB），App 进程里的 sdk.network.fetch 有响应
- * 字节上限，够不着这种量级。所以对外请求一律交给子进程：curl 取 JSON 与校验文件，
- * aria2c 下大文件（随包在 vendor-bin/，多连接 + 自带重连）。子进程有自己的网络栈，
- * 不需要在 manifest 里声明 network。
+ * 字节上限，够不着这种量级。所以下载交给 aria2c（随包在 vendor-bin/，多连接 + 自带重连）。
+ * 小的文本请求（版本列表、目录树、SHA256SUMS）用 Node 自带的 fetch，不起外部进程。
  *
  * 下载进度走 aria2 的 JSON-RPC：任务用 aria2.addUri 下发，进度读引擎自报的
  * completedLength，失败有 errorCode，取消能逐任务 forceRemove，收尾用 aria2.shutdown
  * 让它自己退。不解析 stdout（动态行按 \r 切很脆），也不靠扫目录猜体积。
- * 调 RPC 用 curl 子进程，App 自己的网络权限面不因此扩大。
+ * 调 RPC 用回环地址的 fetch。
  *
  * 装完只做一件事：把路径写进设置，让 Engine 那边直接用。
  */
@@ -26,6 +25,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import path, { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,29 +71,29 @@ const sha256File = (file) =>
 
 const mb = (bytes) => (bytes / 1024 / 1024).toFixed(0);
 const gib = (bytes) => (bytes / 1024 ** 3).toFixed(1);
-const brief = (error) => String(error?.message ?? error).replace(/\s+/g, " ").slice(0, 90);
+const brief = (error) => String(error?.message ?? error).replace(/\s+/g, " ").slice(0, 300);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 const runFile = promisify(execFile);
 
 /**
- * 取一段文本（JSON、SHA256SUMS）。走异步 execFile：同步版会在网络慢时卡住事件循环，
- * 那段时间 SSE 推不出去、面板跟着停。
+ * 取一段文本（JSON、SHA256SUMS）。
+ * 走 Node 自带的 fetch：不起外部进程，也不会在慢网络下卡住事件循环。
+ * GitHub 的接口要求带 User-Agent，不带就是 403。
  */
-async function curlText(url) {
+async function fetchText(network, url, timeoutMs = 40_000) {
+  let response;
   try {
-    const { stdout } = await runFile(
-      "curl.exe",
-      // -sS：静默但保留错误文字。只用 -s 时 --fail 的失败原因会被吞掉，
-      // 上层只能拿到一个空字符串，看着就像「失败：」后面什么都没有。
-      ["-sS", "-L", "--fail", "--retry", "3", "--connect-timeout", "20", url],
-      { timeout: 60_000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
-    );
-    return stdout;
+    response = await network.fetch(url, { headers: { "user-agent": "hana-moss-studio" }, timeoutMs });
   } catch (error) {
-    const detail = String(error?.stderr ?? error?.message ?? error).trim().slice(0, 200);
-    throw new Error(`取 ${url} 失败：${detail || "没有返回内容（可能是限流或网络不通）"}`);
+    throw new Error(`取 ${url} 失败：${brief(error)}`);
   }
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    const hint = response.status === 403 || response.status === 429 ? "，可能是接口限流" : "";
+    throw new Error(`取 ${url} 失败：HTTP ${response.status} ${response.statusText}${hint} ${body.slice(0, 160)}`.trim());
+  }
+  return await response.text();
 }
 
 /**
@@ -273,7 +273,7 @@ export function compareEngineVersion(a, b) {
   return 0;
 }
 
-export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, onInstalled }) {
+export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, onInstalled, network }) {
   /** 当前安装任务；null 表示空闲。 */
   let job = null;
   let child = null;
@@ -323,10 +323,44 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
 
   /** 可装的引擎版本：Release 列表，标出哪些已经装了。缓存十分钟，不必每次开面板都拉一遍。 */
   let releaseCache = null;
+  /** 上次拉到的版本列表。拉不到时靠它，存磁盘所以重启也在。 */
+  function readReleaseCache(cacheFile) {
+    try {
+      const raw = JSON.parse(readFileSync(cacheFile, "utf8"));
+      return Array.isArray(raw?.items) && raw.items.length ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 发布记录的 Atom feed。GitHub 的 API 匿名限流时还能用，代价是没有资产信息。
+   */
+  async function listReleasesViaAtom() {
+    const xml = await fetchText(network, `https://github.com/${ENGINE_REPO}/releases.atom`);
+    const items = [];
+    for (const match of xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {
+      const block = match[1];
+      const tag = (block.match(/<title>([^<]+)<\/title>/) ?? [])[1] ?? "";
+      if (!tag) continue;
+      const publishedAt = (block.match(/<updated>([^<]+)<\/updated>/) ?? [])[1] ?? null;
+      items.push({
+        tag,
+        version: tag.replace(/^v/, ""),
+        publishedAt,
+        prerelease: false,
+        windowsAssets: 0,
+        bundledBytes: 0,
+      });
+    }
+    return items;
+  }
+
   async function listReleases() {
+    const cacheFile = join(dataDir, "cache", "releases.json");
     if (!releaseCache || Date.now() - releaseCache.at > 10 * 60_000) {
       try {
-        const raw = JSON.parse(await curlText(`${ENGINE_API.replace(/\/latest$/, "")}?per_page=20`));
+        const raw = JSON.parse(await fetchText(network, `${ENGINE_API.replace(/\/latest$/, "")}?per_page=20`));
         const items = (Array.isArray(raw) ? raw : []).map((rel) => ({
           tag: rel.tag_name ?? "",
           version: String(rel.tag_name ?? "").replace(/^v/, ""),
@@ -341,13 +375,21 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           ),
         }));
         releaseCache = { at: Date.now(), items, stale: false };
+        try {
+          writeFileSync(cacheFile, JSON.stringify({ at: releaseCache.at, items }), "utf8");
+        } catch {
+          // 写不进去不影响本次结果
+        }
       } catch (error) {
-        // 拉不到时用上一次的结果，并标明是旧的。GitHub 匿名接口每小时 60 次，
-        // 用完会直接 403，这时候列表还是能用的（版本不会几分钟一换）。
-        if (releaseCache?.items?.length) {
-          releaseCache = { ...releaseCache, stale: true, error: brief(error) };
+        // GitHub 匿名接口每小时 60 次，用完就是 403。Atom feed 不限流，只是没有
+        // 资产体积和变体数，能列出可以装哪些版本。两者都没有才报错。
+        const cached = releaseCache?.items?.length ? releaseCache : readReleaseCache(cacheFile);
+        if (cached?.items?.length) {
+          releaseCache = { ...cached, stale: true };
         } else {
-          throw new Error(`拿不到版本列表（GitHub 接口可能限流了，稍后再试）：${brief(error)}`);
+          const viaAtom = await listReleasesViaAtom().catch(() => []);
+          if (!viaAtom.length) throw new Error(`拿不到版本列表：${brief(error)}`);
+          releaseCache = { at: Date.now(), items: viaAtom, stale: true, atom: true };
         }
       }
     }
@@ -451,8 +493,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   }
 
   /**
-   * 调 aria2 的 JSON-RPC。走 curl 子进程而不是 App 内 fetch：子进程有自己的网络栈，
-   * manifest 不用为回环地址多开一扇门。
+   * 调 aria2 的 JSON-RPC。回环地址，fetch 直连。
    */
   async function aria2Call(port, secret, method, params = [], timeoutMs = 8000) {
     const payload = JSON.stringify({
@@ -461,23 +502,20 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       method,
       params: [`token:${secret}`, ...params],
     });
-    const { stdout } = await runFile(
-      "curl.exe",
-      [
-        "-s",
-        "--max-time",
-        String(Math.max(1, Math.round(timeoutMs / 1000))),
-        "-H",
-        "content-type: application/json",
-        "--data-binary",
-        payload,
-        `http://127.0.0.1:${port}/jsonrpc`,
-      ],
-      { timeout: timeoutMs + 2000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-    );
+    let response;
+    try {
+      response = await network.fetch(`http://127.0.0.1:${port}/jsonrpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: payload,
+        timeoutMs,
+      });
+    } catch (error) {
+      throw new Error(`${method}：连不上 aria2（${brief(error)}）`);
+    }
     let data;
     try {
-      data = JSON.parse(stdout);
+      data = JSON.parse(await response.text());
     } catch {
       throw new Error(`${method}：RPC 返回不是 JSON`);
     }
@@ -721,9 +759,9 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       const version = parseEngineName(baseName).version;
       const tag = version ? `v${version}` : null;
       const release = tag
-        ? JSON.parse(await curlText(`https://api.github.com/repos/${ENGINE_REPO}/releases/tags/${encodeURIComponent(tag)}`))
-        : JSON.parse(await curlText(ENGINE_API));
-      const sums = await curlText(`https://github.com/${ENGINE_REPO}/releases/download/${release.tag_name}/SHA256SUMS`);
+        ? JSON.parse(await fetchText(network, `https://api.github.com/repos/${ENGINE_REPO}/releases/tags/${encodeURIComponent(tag)}`))
+        : JSON.parse(await fetchText(network, ENGINE_API));
+      const sums = await fetchText(network, `https://github.com/${ENGINE_REPO}/releases/download/${release.tag_name}/SHA256SUMS`);
       const want = sums
         .split(/\r?\n/)
         .map((line) => line.trim().split(/\s+/))
@@ -796,7 +834,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       const releaseUrl = tag
         ? `https://api.github.com/repos/${ENGINE_REPO}/releases/tags/${encodeURIComponent(tag)}`
         : ENGINE_API;
-      const release = JSON.parse(await curlText(releaseUrl));
+      const release = JSON.parse(await fetchText(network, releaseUrl));
       const version = String(release.tag_name ?? "").replace(/^v/, "");
       if (!version) throw new Error("Release 没有可用的 tag");
       const assets = Array.isArray(release.assets) ? release.assets : [];
@@ -828,7 +866,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       const sumsUrl = asset.browser_download_url.replace(/[^/]+$/, "SHA256SUMS");
       let sums = "";
       try {
-        sums = await curlText(sumsUrl);
+        sums = await fetchText(network, sumsUrl);
       } catch {
         sums = "";
       }
@@ -870,7 +908,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     begin("weights", `权重 · ${MODELS[key].label}`);
     try {
       patch({ phase: "listing", message: "读取文件清单" });
-      const tree = JSON.parse(await curlText(`${MODEL_ENDPOINT}/api/models/${repo}/tree/main?recursive=true`));
+      const tree = JSON.parse(await fetchText(network, `${MODEL_ENDPOINT}/api/models/${repo}/tree/main?recursive=true`));
       const wanted = (tree ?? []).filter((entry) => {
         if (entry.type !== "file") return false;
         return MODEL_INCLUDES.some((pattern) =>

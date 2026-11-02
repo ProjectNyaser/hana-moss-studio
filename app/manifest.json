@@ -13,6 +13,13 @@
     "app/tasks.manage",
     "app/session.start-turn"
   ],
+  "network": {
+    "allowedHosts": ["api.github.com", "github.com", "huggingface.co", "hf-mirror.com"],
+    "methods": ["GET", "HEAD", "POST"],
+    "allowLocalhost": true,
+    "defaultTimeoutMs": 45000,
+    "maxResponseBytes": 16777216
+  },
   "contributes": {
     "cards": [
       {

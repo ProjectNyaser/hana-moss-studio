@@ -53,6 +53,7 @@ export default defineApp(async (sdk) => {
     getSettings: () => store.getSettings(),
     saveSettings: applySettings,
     onUpdate: () => schedulePush(0),
+    network: sdk.network,
     // 装完直接拉起来，省用户一次点击；失败不影响安装结果。
     onInstalled: (kind) => {
       if (kind !== "engine") return;
