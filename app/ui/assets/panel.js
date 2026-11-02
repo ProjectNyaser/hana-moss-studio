@@ -71,6 +71,8 @@ const nodes = {
   engine: el("pn-engine"),
   enginePick: el("pn-engine-pick"),
   engineSelect: el("pn-engine-select"),
+  cuda: el("pn-engine-cuda"),
+  adv: el("pn-fold-adv"),
   save: el("pn-save"),
   planTotal: el("pn-plan-total"),
   planList: el("pn-plan-list"),
@@ -539,6 +541,9 @@ function renderInstall(data) {
   const tip = job.error && job.target === "engine" ? "（网络不行时把 zip 放进 app-data/hana-moss-studio/incoming 再装）" : "";
   nodes.installMessage.textContent = `${job.message ? `${head}｜${job.message}` : head}${tip}`;
   nodes.installMessage.className = job.error ? "hint bad" : job.phase === "done" ? "hint ok" : "hint";
+
+  // 没读到显卡时，手动选 CUDA 版本的入口就在下面，直接展开给人看。
+  if (job.target === "engine" && /没读到显卡/.test(job.message ?? "")) nodes.adv.open = true;
 }
 
 function render(data) {
@@ -667,7 +672,8 @@ nodes.save.addEventListener("click", onSaveSettings);
 
 async function onInstall(kind) {
   try {
-    render(await post(`/install/${kind}`));
+    // 引擎装哪份由 cuda 选择器决定；权重不需要这个参数。
+    render(await post(`/install/${kind}`, kind === "engine" ? { preferCuda: nodes.cuda.value } : undefined));
     say(kind === "engine" ? "开始装引擎" : "开始下权重", "ok");
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");

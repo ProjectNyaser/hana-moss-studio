@@ -110,7 +110,7 @@ const parseSmi = (stdout) => {
   };
 };
 
-/** 带诊断的探测：每个候选都留下结果，方便在 App 里查为什么没读到。 */
+/** 带诊断的探测：每个候选都留下退出码与环境，方便查 App 里为何没读到。 */
 export async function probeGpuDetailed() {
   const args = ["--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader"];
   const tried = [];
@@ -119,17 +119,32 @@ export async function probeGpuDetailed() {
       const { stdout, stderr } = await runFile(exe, args, { timeout: 15_000, windowsHide: true });
       tried.push({ exe, ok: true, stdout: String(stdout ?? "").trim().slice(0, 200), stderr: String(stderr ?? "").trim().slice(0, 200) });
       const gpu = parseSmi(stdout);
-      if (gpu) return { gpu, tried };
+      if (gpu) return { gpu, tried, env: envSummary() };
     } catch (error) {
       tried.push({
         exe,
         ok: false,
+        code: typeof error?.code === "number" ? error.code : String(error?.code ?? ""),
+        signal: error?.signal ?? null,
         error: String(error?.message ?? error).slice(0, 200),
         stderr: String(error?.stderr ?? "").trim().slice(0, 200),
+        stdout: String(error?.stdout ?? "").trim().slice(0, 200),
       });
     }
   }
-  return { gpu: null, tried };
+  return { gpu: null, tried, env: envSummary() };
+}
+
+/** 只报几条与子进程启动相关的环境，不把整个 env 抛出去。 */
+function envSummary() {
+  return {
+    cwd: process.cwd(),
+    execPath: process.execPath,
+    SystemRoot: process.env.SystemRoot ?? null,
+    windir: process.env.windir ?? null,
+    PATH: String(process.env.PATH ?? "").slice(0, 400),
+    PATHLength: String(process.env.PATH ?? "").length,
+  };
 }
 
 export async function probeGpu() {
