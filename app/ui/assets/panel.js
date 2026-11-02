@@ -220,7 +220,10 @@ function ratioLabel(ratio) {
 }
 
 function placeThumb(container, thumb, pct) {
-  const usable = Math.max(0, container.clientWidth - THUMB);
+  // 拖动期间用按下那一刻量好的宽度：否则每次都要读 clientWidth，
+  // 而旁边刚写过样式，会反复触发同步布局。
+  const total = container.__dragWidth ?? container.clientWidth;
+  const usable = Math.max(0, total - THUMB);
   const x = THUMB / 2 + pct * usable;
   thumb.style.left = `${x}px`;
   return x;
@@ -329,12 +332,13 @@ function renderSize() {
     : `${width}×${height} · ${finalMP.toFixed(2)}MP`;
   nodes.sizeNote.className = base.adjusted ? "hint bad" : "hint";
 
-  // 首次渲染时布局可能还没落定，宽度为零就等下一帧重算。
-  if (!nodes.slider.clientWidth) requestAnimationFrame(renderSize);
+  // 容器还没撑开（切视图的中间帧）时，下一帧再量一次就够，
+  // 不能在这里递归自己：宽度一直是 0 的话会每帧重跑一遍整块渲染。
+  if (!nodes.slider.clientWidth) setTimeout(renderSize, 40);
 }
 
 function pctFromEvent(container, clientX) {
-  const rect = container.getBoundingClientRect();
+  const rect = container.__dragRect ?? container.getBoundingClientRect();
   const usable = Math.max(1, rect.width - THUMB);
   return Math.min(1, Math.max(0, (clientX - rect.left - THUMB / 2) / usable));
 }
@@ -368,16 +372,30 @@ function bindSizeSliders() {
 
   function bindDrag(container, name, apply) {
     let dragging = false;
+    let rafId = 0;
+    let pendingX = 0;
+    // pointermove 每秒会给上百个事件，每个都跑一遍渲染会明显拖手。
+    // 只记最新坐标，下一帧统一处理。
+    const flush = () => {
+      rafId = 0;
+      apply(pendingX);
+    };
     container.addEventListener("pointerdown", (event) => {
       dragging = true;
       draggingName = name;
       pinnedMP = currentMP();
       pinnedRatio = currentRatio();
+      // 量一次就够：拖动中容器尺寸不会变。
+      container.__dragRect = container.getBoundingClientRect();
+      container.__dragWidth = container.clientWidth;
       container.setPointerCapture?.(event.pointerId);
-      apply(event.clientX);
+      pendingX = event.clientX;
+      apply(pendingX);
     });
     container.addEventListener("pointermove", (event) => {
-      if (dragging) apply(event.clientX);
+      if (!dragging) return;
+      pendingX = event.clientX;
+      if (!rafId) rafId = requestAnimationFrame(flush);
     });
     const stop = () => {
       if (!dragging) return;
@@ -385,6 +403,12 @@ function bindSizeSliders() {
       draggingName = null;
       pinnedMP = null;
       pinnedRatio = null;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      delete container.__dragRect;
+      delete container.__dragWidth;
       // 松手后把三个滑块一起归位，拖动期间没搬的那两个在这里补上。
       renderSize();
     };
