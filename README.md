@@ -11,8 +11,10 @@ app/                    App 本体，打包后就是安装包内容
   manifest.json         v2 manifest（整页卡片 + 功能面板 + 两个工具）
   index.js              路由、串行队列、宿主任务桥、工具注册
   lib/engine.js         moss-server 生命周期与 JSON-lines 协议
+  lib/installer.js      引擎与权重的下载安装（面板上的两个按钮）
   lib/store.js          设置与任务台账
   lib/mossimage.js      引擎版本、协议号与模型组件清单（手写常量，不派生）
+  vendor-bin/           aria2c.exe，构建时按 vendor/aria2-bin.json 取，不入库
   assets/icon.png       应用图标（MOSS-Image 画的）
   skills/hana-moss-studio/
                         SKILL.md 与 references/，装了 App 就有这个技能
@@ -22,6 +24,7 @@ app/                    App 本体，打包后就是安装包内容
                         sdk.js 与 app-ui.* 也是派生物
 scripts/
   vendor/sdk.mjs        从本机宿主同步 vendor/hana-app-sdk 的快照
+  vendor/aria2.mjs      按 vendor/aria2-bin.json 把 aria2c.exe 取进 app/vendor-bin/
   derive.mjs            从依赖树展开 app/sdk、ui 侧副本与 manifest#minAppVersion
   package.mjs           产出 build/<appId>/
   pack.mjs              出安装包与市场投稿条目
@@ -64,6 +67,17 @@ git submodule update --init --depth 1
 引擎版本、协议号与模型组件清单写在 `app/lib/mossimage.js`，手写常量，不派生。改引擎版本时两件事一起做：动这个文件，动 `vendor/mossimage.cpp` 的指针。
 
 协议号变了必须回去复核 `lib/engine.js`：请求名、参数形状与事件类型都在那里，`hello` 返回的 `protocol_version` 对不上会直接拒。
+
+## 装引擎与权重
+
+用户不需要命令行。左侧面板「引擎与模型」里两个按钮：
+
+- **装引擎**：读 `nvidia-smi` 拿驱动与算力 → 定 cuda 版本与 sm75 → 在 Release 里挑 bundled 包 → aria2c 下载 → 对 `SHA256SUMS` 校 sha256 → `tar` 解压 → 把 `bin\moss-server.exe` 写进设置。
+- **下权重**：列 HF 镜像的文件树 → 过滤出六个部分 → 已完整的跳过 → aria2c 批量下 → 逐个对大小。
+
+两个都能中途取消。进度不解析 aria2 输出（那是无换行的动态行），而是定期扫目标目录的体积。
+
+命令行版本（装到自定义目录、补 cuBLASLt）在 `app/skills/hana-moss-studio/references/platform.md`。
 
 ## SDK 与派生
 

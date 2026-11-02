@@ -75,6 +75,11 @@ const nodes = {
   engineNote: el("pn-engine-note"),
   errors: el("pn-errors"),
   engineVersion: el("pn-engine-version"),
+  installEngine: el("pn-install-engine"),
+  installWeights: el("pn-install-weights"),
+  installCancel: el("pn-install-cancel"),
+  installBar: el("pn-install-bar"),
+  installMessage: el("pn-install-message"),
 };
 
 let latest = null;
@@ -452,6 +457,41 @@ function renderPlan(data) {
   nodes.engineVersion.title = `${mossimage.repo ?? ""} · protocol ${mossimage.protocolVersion ?? "?"}`;
 }
 
+const PHASE_LABEL = {
+  starting: "准备",
+  probing: "探测显卡",
+  release: "选包",
+  listing: "读清单",
+  download: "下载",
+  verify: "校验",
+  extracting: "解压",
+  done: "完成",
+  error: "失败",
+  cancelled: "已取消",
+};
+
+/** 安装区：没有任务时给一句提示，有任务时给进度与取消。 */
+function renderInstall(data) {
+  const job = data.install ?? null;
+  const busy = Boolean(job) && !job.finishedAt;
+  nodes.installEngine.disabled = busy;
+  nodes.installWeights.disabled = busy;
+  nodes.installCancel.hidden = !busy;
+  nodes.installBar.hidden = !busy;
+  nodes.installBar.querySelector("i").style.width = `${job?.percent ?? 0}%`;
+
+  if (!job) {
+    nodes.installMessage.textContent = "还没有装过引擎或权重。装完这两个就能出图。";
+    nodes.installMessage.className = "hint";
+    return;
+  }
+  const phase = PHASE_LABEL[job.phase] ?? job.phase;
+  const size = job.totalBytes ? ` ${formatSize(job.bytes)} / ${formatSize(job.totalBytes)}` : "";
+  const head = job.error ? `${phase}：${job.error}` : `${job.label} · ${phase}${size}`;
+  nodes.installMessage.textContent = job.message ? `${head}｜${job.message}` : head;
+  nodes.installMessage.className = job.error ? "hint bad" : job.phase === "done" ? "hint ok" : "hint";
+}
+
 function render(data) {
   latest = data;
   setSettings(data.settings);
@@ -459,6 +499,7 @@ function render(data) {
   renderJob(data);
   renderQueue(data);
   renderPlan(data);
+  renderInstall(data);
   nodes.generate.disabled = submitting;
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。
   const busy = Boolean(data.engine.active) || data.queue.length > 0;
@@ -574,6 +615,28 @@ nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
 nodes.engine.addEventListener("click", onEngineToggle);
 nodes.save.addEventListener("click", onSaveSettings);
+
+async function onInstall(kind) {
+  try {
+    render(await post(`/install/${kind}`));
+    say(kind === "engine" ? "开始装引擎" : "开始下权重", "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+}
+
+async function onCancelInstall() {
+  try {
+    render(await post("/install/cancel"));
+    say("已取消安装", "bad");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+}
+
+nodes.installEngine.addEventListener("click", () => void onInstall("engine"));
+nodes.installWeights.addEventListener("click", () => void onInstall("weights"));
+nodes.installCancel.addEventListener("click", () => void onCancelInstall());
 nodes.reroll.addEventListener("click", () => {
   nodes.seed.value = "";
   nodes.seed.placeholder = String(Math.floor(Math.random() * 4294967295));

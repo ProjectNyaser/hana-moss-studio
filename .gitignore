@@ -11,3 +11,6 @@ app/ui/assets/app-ui.js
 app/ui/assets/app-ui.js.LEGAL.txt
 app/ui/assets/app-ui.css
 app/ui/assets/THIRD_PARTY_NOTICES.txt
+
+# 构建期按 vendor/aria2-bin.json 取的 aria2c.exe（随包分发，不入库）
+app/vendor-bin/

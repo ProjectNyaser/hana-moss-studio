@@ -5,6 +5,7 @@ import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
 import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
+import { createInstaller } from "./lib/installer.js";
 
 export const name = "hana-moss-studio";
 
@@ -40,6 +41,12 @@ export default defineApp(async (sdk) => {
   for (const dir of [outputsDir, cacheDir]) mkdirSync(dir, { recursive: true });
 
   const store = createStore(dataDir);
+  const installer = createInstaller({
+    dataDir,
+    getSettings: () => store.getSettings(),
+    saveSettings: (patch) => store.saveSettings(patch),
+    onUpdate: () => schedulePush(0),
+  });
   const queue = [];
   /** jobId → 活跃任务快照（进度、阶段、宿主任务 id）。 */
   const live = new Map();
@@ -470,6 +477,7 @@ export default defineApp(async (sdk) => {
         modelBytes: MODEL_BYTES,
       },
       plan: modelPlan(),
+      install: installer.snapshot(),
     };
   }
 
@@ -505,6 +513,7 @@ export default defineApp(async (sdk) => {
         version: MOSSIMAGE.version,
         protocolVersion: MOSSIMAGE.protocolVersion,
       },
+      install: installer.snapshot(),
     };
   }
 
@@ -741,6 +750,24 @@ export default defineApp(async (sdk) => {
       } catch (error) {
         return c.json({ ...state(), error: message(error) }, 500);
       }
+    });
+
+    app.post(`/${APP_ID}/install/engine`, async (c) => {
+      if (installer.busy()) return c.json({ ...state(), error: "已有安装在进行" }, 409);
+      installer.installEngine().catch((error) => sdk.logger.warn(`引擎安装失败：${message(error)}`));
+      return c.json(state());
+    });
+
+    app.post(`/${APP_ID}/install/weights`, async (c) => {
+      if (installer.busy()) return c.json({ ...state(), error: "已有安装在进行" }, 409);
+      installer.installWeights().catch((error) => sdk.logger.warn(`权重下载失败：${message(error)}`));
+      return c.json(state());
+    });
+
+    app.post(`/${APP_ID}/install/cancel`, (c) => {
+      installer.cancel();
+      schedulePush(0);
+      return c.json(state());
     });
 
     app.post(`/${APP_ID}/engine/stop`, (c) => {

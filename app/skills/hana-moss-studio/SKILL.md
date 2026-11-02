@@ -22,16 +22,19 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 
 ## 环境部署
 
-苔室只支持 **Windows x64**。其他平台直接说不可用，不要试变通：引擎上游虽然也有 Linux 资产，苔室没验证过，不承诺。
+苔室只支持 **Windows x64**。其他平台直接说不可用，不要试变通。
+
+**首选让用户自己点**：左侧面板「引擎与模型」里有「装引擎」与「下权重」两个按钮。App 会自己探测显卡与驱动、选对包、下载、校验 sha256、解压、写设置；权重走同一套下载器，已完整的文件跳过。这条路不需要 Agent 介入，也适合用户不在对话里的场景。
+
+只有按钮走不通（要装到自定义目录、要补 cuBLASLt、包不匹配）时才掀命令行：`references/platform.md`。
 
 装哪个包由驱动与算力决定：
 
 - 驱动主版本 < 580 只能装 `cu12`；compute_cap 7.5 只能装 `-sm75` 且必须 cu13。
-- 选包、下载、校验、解压、补库都在一条 PowerShell 命令里。**照拄 `references/platform.md`，不要自己拼包名**。
 - 优先 `bundled` 包；`system-cuda` 要自己补 cuBLASLt。
-- 权重约 27 GB，放 NVMe，用 `scripts/fetch-weights.mjs`。
+- 权重 25.4 GiB，放 NVMe。
 
-完整判定树与失败对照在 `references/platform.md`。部署完写回 `settings.json` 并重载 App，用 `moss_status()` 验收，不要拿 1024² 试。
+验收：`moss_status()` 会把引擎拉起来跑一次 `hello`，再拿 512²/8 步出一张，不要用 1024² 试。
 
 ## 工具面
 

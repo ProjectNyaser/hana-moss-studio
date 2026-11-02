@@ -180,6 +180,11 @@
 
     .pn-foot { margin-top: auto; display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--ui-text-3); }
 
+    /* 安装：引擎与权重各一个按钮，进度条复用 .bar */
+    .pn-install-actions { display: flex; gap: 6px; margin: 6px 0; }
+    .pn-install-actions .btn { flex: 1; }
+    .pn-install .bar { margin: 0 0 4px; }
+
     @media (max-width: 280px) {
       .pn { padding: 8px 10px 12px; }
       .pn-grid { grid-template-columns: minmax(0, 1fr); }
@@ -301,6 +306,15 @@
     <details class="pn-fold" id="pn-fold-engine">
       <summary><svg class="ic"><use href="#i-engine"/></svg>引擎与模型</summary>
       <div class="fold-body">
+        <div class="pn-install" id="pn-install">
+          <div class="pn-install-actions">
+            <button class="btn ghost small" id="pn-install-engine" type="button">装引擎</button>
+            <button class="btn ghost small" id="pn-install-weights" type="button">下权重</button>
+            <button class="btn ghost small" id="pn-install-cancel" type="button" hidden>取消</button>
+          </div>
+          <div class="bar" id="pn-install-bar" hidden><i></i></div>
+          <p class="hint" id="pn-install-message"></p>
+        </div>
         <div class="pn-facts" id="pn-facts"></div>
         <p class="hint" id="pn-engine-detail"></p>
         <label class="field">
