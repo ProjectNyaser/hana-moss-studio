@@ -7,7 +7,7 @@ export const DEFAULT_SETTINGS = {
   serverPath: null,
   modelPath: null,
   memoryMode: "min_memory",
-  tier: "high",
+  tier: "reference",
   device: 0,
   defaults: {
     width: 768,
