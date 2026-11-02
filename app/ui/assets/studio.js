@@ -36,6 +36,7 @@ const nodes = {
   viewerZoomIn: el("viewer-zoom-in"),
   viewerZoomOut: el("viewer-zoom-out"),
   viewerZoomFit: el("viewer-zoom-fit"),
+  viewerZoomActual: el("viewer-zoom-actual"),
   // 队列
   queueRunningState: el("queue-running-state"),
   queueRunning: el("queue-running"),
@@ -1062,11 +1063,13 @@ async function loadReleases(force = false) {
 }
 
 // ── 图片查看器 ─────────────────────────────────────────────────────────
-/** 缩放档位；1 就是适应窗口。 */
-const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8];
+/** 缩放档位，一律相对图片原始像素：1 就是 1:1，不是「适应窗口」。 */
+const ZOOM_STEPS = [0.1, 0.15, 0.25, 0.33, 0.5, 0.67, 1, 1.5, 2, 3, 4, 6, 8, 12, 16];
 let viewerList = [];
 let viewerIndex = 0;
 let viewerZoom = 1;
+// 刚打开或翻页时先按窗口整图，之后倍率就只跟原图比。
+let viewerNeedsFit = true;
 
 function openViewer(id) {
   viewerList = (latest?.jobs ?? []).filter((job) => job.status === "done" && job.output);
@@ -1074,6 +1077,7 @@ function openViewer(id) {
   if (index < 0) return;
   viewerIndex = index;
   viewerZoom = 1;
+  viewerNeedsFit = true;
   nodes.viewer.hidden = false;
   applyViewer();
 }
@@ -1082,7 +1086,7 @@ function closeViewer() {
   nodes.viewer.hidden = true;
 }
 
-/** 先算出「适应窗口」的尺寸，再乘缩放倍率。 */
+/** 倍率直接乘原图像素：100% 就是原大。打开与翻页先算一次适应值。 */
 function layoutViewerImage() {
   const img = nodes.viewerImage;
   const stage = nodes.viewerStage;
@@ -1090,12 +1094,15 @@ function layoutViewerImage() {
   const natH = img.naturalHeight || 1;
   const boxW = Math.max(120, stage.clientWidth - 128);
   const boxH = Math.max(120, stage.clientHeight - 24);
-  // 默认按原始像素显示；只有超出窗口才缩到适应。小图不放大，放大按了算。
   const fit = Math.min(1, Math.min(boxW / natW, boxH / natH));
-  img.style.width = `${Math.round(natW * fit * viewerZoom)}px`;
-  img.style.height = `${Math.round(natH * fit * viewerZoom)}px`;
-  const zoom = viewerZoom === 1 ? "" : ` · ${Math.round(viewerZoom * 100)}%`;
-  nodes.viewerIndex.textContent = `${viewerIndex + 1} / ${viewerList.length}${zoom}`;
+  // 遮罩刚显示时尺寸可能还是 0，那一次不算数，等下一次布局。
+  if (viewerNeedsFit && stage.clientWidth > 50 && stage.clientHeight > 50) {
+    viewerZoom = fit;
+    viewerNeedsFit = false;
+  }
+  img.style.width = `${Math.max(1, Math.round(natW * viewerZoom))}px`;
+  img.style.height = `${Math.max(1, Math.round(natH * viewerZoom))}px`;
+  nodes.viewerIndex.textContent = `${viewerIndex + 1} / ${viewerList.length} · ${Math.round(viewerZoom * 100)}%`;
 }
 
 function applyViewer() {
@@ -1115,6 +1122,7 @@ function stepViewer(delta) {
   if (viewerList.length < 2) return;
   viewerIndex = (viewerIndex + delta + viewerList.length) % viewerList.length;
   viewerZoom = 1;
+  viewerNeedsFit = true;
   applyViewer();
 }
 
@@ -1312,7 +1320,12 @@ nodes.viewerNext.addEventListener("click", () => stepViewer(1));
 nodes.viewerZoomIn.addEventListener("click", () => zoomAtCenter(1));
 nodes.viewerZoomOut.addEventListener("click", () => zoomAtCenter(-1));
 nodes.viewerZoomFit.addEventListener("click", () => {
+  viewerNeedsFit = true;
+  layoutViewerImage();
+});
+nodes.viewerZoomActual.addEventListener("click", () => {
   viewerZoom = 1;
+  viewerNeedsFit = false;
   layoutViewerImage();
 });
 // 点图的周围空白处关掉；点图本身不关。
@@ -1366,11 +1379,16 @@ document.addEventListener("keydown", (event) => {
   else if (event.key === "+" || event.key === "=") zoomAtCenter(1);
   else if (event.key === "-") zoomAtCenter(-1);
   else if (event.key === "0") {
+    viewerNeedsFit = true;
+    layoutViewerImage();
+  } else if (event.key === "1") {
+    // 原大：一个 CSS 像素对应一个图像像素。
     viewerZoom = 1;
+    viewerNeedsFit = false;
     layoutViewerImage();
   }
 });
-// 窗口尺寸变了，适应窗口的基准跟着变。
+// 窗口尺寸变了，适应窗口的基准跟着变；已手动缩放过就保持原倍率。
 window.addEventListener("resize", () => {
   if (!nodes.viewer.hidden) layoutViewerImage();
 });
