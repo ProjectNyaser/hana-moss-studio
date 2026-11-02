@@ -127,7 +127,13 @@ POST /api/apps/hana-moss-studio/routes/hana-moss-studio/install/engine
 
 ## 只有 system-cuda 才补库
 
-选的是 `-system-cuda` 包、且引擎报找不到 `cublasLt64_*.dll` 时才做。DLL 从 NVIDIA 的 PyPI wheel 里取，不用 pip、不用 Python：
+选的是 `-system-cuda` 包、且引擎报找不到 `cublasLt64_*.dll` 时才做。
+
+**版本门槛先说清**：引擎要 cuBLASLt ≥ 13.6.0。cuBLAS 是独立发版的库，版本号不跟 CUDA Toolkit 同步：Toolkit 最新稳定版是 13.4.3，自带的 cuBLAS 就只有 13.4.3，**装上也不够**；cuBLAS 自己已经到 13.8.x。所以 `-system-cuda` 包在只装了标准 Toolkit 的机器上基本都会缺库，这是预期行为，不是配置错。
+
+想让它能用就得单独取新一点的 cuBLAS（下面这段就是），否则直接换 bundled 包：它自带 13.6.0，不碰系统 CUDA。
+
+DLL 从 NVIDIA 的 PyPI wheel 里取，不用 pip、不用 Python：
 
 | CUDA | 包名 |
 | --- | --- |
