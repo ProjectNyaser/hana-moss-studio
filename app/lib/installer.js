@@ -582,6 +582,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         // 一次拿全量再按 gid 对号：逐个 tellStatus 在 20 个文件时会并发 20 次 RPC，
         // 设备忙时容易一片超时，进度就会被误读成 0。
         let snapshot;
+        let waitingStates = [];
         try {
           const keys = [
             "gid",
@@ -599,6 +600,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
             aria2Call(session.port, session.secret, "aria2.tellStopped", [0, 1000, keys], 6000),
           ]);
           snapshot = new Map([...active, ...waiting, ...stopped].map((state) => [state.gid, state]));
+          waitingStates = waiting;
         } catch {
           // 这一轮没读到就跳过，不把上一轮的进度写成 0。
           continue;
@@ -629,7 +631,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
           if (state?.status === "active") connections += Number(state.connections ?? 0);
         }
         // 排队位置从 tellWaiting 的顺序里取，而不是自己编号。
-        const waitingGids = waiting.map((state) => state.gid);
+        const waitingGids = waitingStates.map((state) => state.gid);
         // 每个文件的状态都带出去，面板按 aria2 那样一条文件一节。
         const tasks = items.map((item) => {
           const state = snapshot.get(item.gid) ?? {};

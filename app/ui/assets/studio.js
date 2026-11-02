@@ -477,7 +477,29 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
     button.className = "btn ghost small";
     button.type = "button";
     button.textContent = remove.label;
-    armable(button, remove.armedLabel, remove.label, remove.run);
+    button.addEventListener("click", () => {
+      // 整行换成确认条，不复用这个按钮：行会被重建，靠按钮自己的状态记住「待确认」
+      // 很容易看起来像别的行变成了待确认。
+      const bar = document.createElement("div");
+      bar.className = "confirm-bar";
+      const text = document.createElement("span");
+      text.textContent = remove.question ?? `${remove.label}？`;
+      const yes = document.createElement("button");
+      yes.className = "btn small";
+      yes.type = "button";
+      yes.textContent = "确认";
+      yes.addEventListener("click", () => void remove.run());
+      const no = document.createElement("button");
+      no.className = "btn ghost small";
+      no.type = "button";
+      no.textContent = "取消";
+      no.addEventListener("click", () => {
+        versionsKey = "";
+        void refresh();
+      });
+      bar.append(text, yes, no);
+      row.replaceChildren(bar);
+    });
     row.append(button);
   }
 
@@ -513,6 +535,7 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
 
 /** 两段式确认：再点一次才真删，四秒不复位就恢复原样。 */
 function armable(button, armedLabel, idleLabel, run) {
+  button.dataset.idle = idleLabel;
   if (button.dataset.armed === "1") {
     delete button.dataset.armed;
     button.classList.remove("armed");
@@ -530,6 +553,28 @@ function armable(button, armedLabel, idleLabel, run) {
     button.textContent = idleLabel;
   }, 4000);
 }
+
+/**
+ * 点别处就把待确认状态收回去。
+ * 否则一行停在「确认卸载」上，用户去点另一行的按钮，看着像是那个按钮自己变红的。
+ */
+function disarmOthers(target) {
+  for (const button of document.querySelectorAll("[data-armed='1']")) {
+    if (button === target) continue;
+    delete button.dataset.armed;
+    button.classList.remove("armed");
+    button.textContent = button.dataset.idle ?? button.textContent;
+  }
+}
+
+document.addEventListener(
+  "pointerdown",
+  (event) => {
+    const hit = event.target.closest("button");
+    disarmOthers(hit);
+  },
+  true,
+);
 
 const runSafe = async (fn, label) => {
   try {
@@ -702,8 +747,13 @@ async function startInstall(path, body, label) {
   }
 }
 
+let versionsKey = "";
 function renderVersions(data) {
   const { engine } = data;
+  // 数据没变就别重建：每帧 replaceChildren 会把点击中的按钮换掉，交互会发抖。
+  const key = JSON.stringify({ engine, engines: data.engines, models: data.models, gpu: data.gpu });
+  if (key === versionsKey) return;
+  versionsKey = key;
 
   nodes.engineState.textContent = engine.running
     ? engine.loaded
@@ -737,7 +787,7 @@ function renderVersions(data) {
               : [{ label: "切换", run: () => runSafe(() => post("/engine/use", { name: item.name }), "切换") }],
             remove: {
               label: "卸载",
-              armedLabel: "确认卸载",
+              question: `卸载 ${item.version}？`,
               run: () => runSafe(() => post("/engines/remove", { name: item.name }), "卸载"),
             },
           }),
@@ -998,7 +1048,7 @@ async function loadReleases(force = false) {
           on: item.installed,
           actions: item.installed
             ? []
-            : [{ label: "装", run: () => startInstall("/install/engine", { tag: item.tag }, `安装引擎 ${item.version}`) }],
+            : [{ label: "安装", run: () => startInstall("/install/engine", { tag: item.tag }, `安装引擎 ${item.version}`) }],
         }),
       ),
     );

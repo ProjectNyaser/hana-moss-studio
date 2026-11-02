@@ -349,6 +349,26 @@ body {
   border-color: var(--ui-text-3);
 }
 
+/* 行内确认条：整行换成一句问题加两个按钮 */
+.confirm-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--ui-text-2);
+}
+
+.confirm-bar > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 待确认的危险动作：状态要看得出来，不能只是文字变了 */
 .btn.armed {
   color: var(--ui-danger, #c0503c);
