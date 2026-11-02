@@ -56,6 +56,7 @@ const nodes = {
   downloadState: el("download-state"),
   downloadEngine: el("download-engine"),
   downloadWeights: el("download-weights"),
+  downloadBase: el("download-base"),
   downloadCancel: el("download-cancel"),
   downloadBar: el("download-bar"),
   downloadMessage: el("download-message"),
@@ -421,9 +422,9 @@ async function renderGallery(data) {
 }
 
 // ── 行与确认 ───────────────────────────────────────────────────────────
-function manageRow({ name, meta, on, actions = [], remove }) {
+function manageRow({ name, meta, on, dim, actions = [], remove }) {
   const row = document.createElement("div");
-  row.className = on ? "manage-row on" : "manage-row";
+  row.className = on ? "manage-row on" : dim ? "manage-row dim" : "manage-row";
   const nameNode = document.createElement("span");
   nameNode.className = "name";
   nameNode.textContent = name;
@@ -560,15 +561,30 @@ function renderVersions(data) {
       : [manageRow({ name: "还没有装引擎，去「下载」页装一个" })]),
   );
 
-  const modelDir = data.settings?.modelPath;
-  nodes.modelState.textContent = engine.modelFound ? "已就位" : "未安装";
-  nodes.removeModel.hidden = !engine.modelFound;
+  // 模型：两个仓库并列，装了几个就列几个，激活的那个标出来。
+  const models = Array.isArray(data.models) ? data.models : [];
+  const installedCount = models.filter((item) => item.installed).length;
+  nodes.modelState.textContent = installedCount ? `${installedCount} 个已装` : "未安装";
+  const activeModel = models.find((item) => item.active) ?? null;
+  nodes.removeModel.hidden = !activeModel;
   nodes.modelList.replaceChildren(
-    manageRow({
-      name: engine.modelFound ? tail(modelDir) || "模型目录" : "还没有下载权重",
-      meta: engine.modelFound && data.plan?.totalBytes ? formatSize(data.plan.totalBytes) : "",
-      on: engine.modelFound,
-    }),
+    ...models.map((item) =>
+      manageRow({
+        name: `${item.label}${item.active ? " · 当前" : ""}`,
+        meta: item.installed ? formatSize(item.bytes) : `${item.note} · 未安装`,
+        on: item.active,
+        dim: !item.installed,
+        actions:
+          item.installed && !item.active
+            ? [
+                {
+                  label: "用这个",
+                  run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
+                },
+              ]
+            : [],
+      }),
+    ),
   );
 
   const hostRows = [];
@@ -583,6 +599,7 @@ function renderDownload(data) {
   const job = data.install;
   nodes.downloadEngine.disabled = Boolean(job && !job.finishedAt);
   nodes.downloadWeights.disabled = Boolean(job && !job.finishedAt);
+  nodes.downloadBase.disabled = Boolean(job && !job.finishedAt);
   if (!job) {
     nodes.downloadBar.hidden = true;
     nodes.downloadCancel.hidden = true;
@@ -861,12 +878,14 @@ nodes.engineToggle.addEventListener("click", () => {
   void runSafe(() => post(running ? "/engine/stop" : "/engine/start"), running ? "停止" : "启动");
 });
 nodes.downloadEngine.addEventListener("click", () => void runSafe(() => post("/install/engine"), "安装"));
-nodes.downloadWeights.addEventListener("click", () => void runSafe(() => post("/install/weights"), "下载"));
+nodes.downloadWeights.addEventListener("click", () => void runSafe(() => post("/install/weights", { variant: "sft" }), "下载 SFT"));
+nodes.downloadBase.addEventListener("click", () => void runSafe(() => post("/install/weights", { variant: "base" }), "下载 Base"));
 nodes.downloadCancel.addEventListener("click", () => void runSafe(() => post("/install/cancel"), "取消"));
 nodes.removeModel.addEventListener("click", () =>
-  armable(nodes.removeModel, "再点一次删 25 GiB", "卸载", () =>
-    runSafe(() => post("/models/remove", { confirm: true }), "删除模型"),
-  ),
+  armable(nodes.removeModel, "再点一次删 25 GiB", "卸载", () => {
+    const active = latest?.models?.find((item) => item.active);
+    return runSafe(() => post("/models/remove", { confirm: true, variant: active?.variant ?? "sft" }), "删除模型");
+  }),
 );
 nodes.viewerImage.addEventListener("load", layoutViewerImage);
 nodes.viewerClose.addEventListener("click", closeViewer);

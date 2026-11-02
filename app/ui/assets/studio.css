@@ -139,6 +139,10 @@ body {
 .manage-row .meta { font-size: 11px; color: var(--ui-text-3); flex: none; }
 .manage-row.on .name { font-weight: 600; }
 
+/* 未安装的条目压暗：列表里混着两种状态时能一眼分开。 */
+.manage-row.dim { opacity: 0.6; }
+.manage-row.dim .name { font-weight: 400; }
+
 .manage-more { margin-top: 8px; border-top: 1px dashed var(--ui-line); padding-top: 6px; }
 .manage-more > summary {
   cursor: pointer;

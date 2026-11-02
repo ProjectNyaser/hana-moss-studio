@@ -568,6 +568,7 @@ export default defineApp(async (sdk) => {
       plan: modelPlan(),
       install: installer.snapshot(),
       engines: installer.listEngines(),
+      models: installer.listModels(),
       gpu: gpuCache,
     };
   }
@@ -875,7 +876,9 @@ export default defineApp(async (sdk) => {
 
     app.post(`/${APP_ID}/install/weights`, async (c) => {
       if (installer.busy()) return c.json({ ...state(), error: "已有安装在进行" }, 409);
-      installer.installWeights().catch((error) => sdk.logger.warn(`权重下载失败：${message(error)}`));
+      const body = await c.req.json().catch(() => ({}));
+      const variant = body?.variant === "base" ? "base" : "sft";
+      installer.installWeights(variant).catch((error) => sdk.logger.warn(`权重下载失败：${message(error)}`));
       return c.json(state());
     });
 
@@ -909,12 +912,30 @@ export default defineApp(async (sdk) => {
       // 25 GiB 不能误点就没了，调用方要显式带 confirm。
       if (body?.confirm !== true) return c.json({ ...state(), error: "需要确认后才删模型" }, 400);
       try {
-        installer.removeWeights();
+        installer.removeWeights(body?.variant === "base" ? "base" : "sft");
         schedulePush(0);
         return c.json(state());
       } catch (error) {
         return c.json({ ...state(), error: message(error) }, 400);
       }
+    });
+
+    app.post(`/${APP_ID}/weights/use`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const variant = body?.variant === "base" ? "base" : "sft";
+      const found = installer.listModels().find((entry) => entry.variant === variant);
+      if (!found?.installed) return c.json({ ...state(), error: `没有已装模型 ${variant}` }, 404);
+      if (found.active) return c.json(state());
+      applySettings({ modelPath: found.path });
+      // 换模型得先把引擎停掉，否则它还在用旧的权重跑。
+      try {
+        engine.stop();
+        await engine.start();
+      } catch (error) {
+        sdk.logger.warn(`换模型后启动失败：${message(error)}`);
+      }
+      schedulePush(0);
+      return c.json(state());
     });
 
     app.post(`/${APP_ID}/engine/use`, async (c) => {

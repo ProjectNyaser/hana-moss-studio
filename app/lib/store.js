@@ -11,6 +11,8 @@ import { scanOutputs } from "./outputs.js";
 export const DEFAULT_SETTINGS = {
   serverPath: null,
   modelPath: null,
+  // 两个仓库可以同时装着，modelPath 指向当前生效的那个。
+  modelPaths: { sft: null, base: null },
   memoryMode: "min_memory",
   tier: "reference",
   device: 0,
@@ -64,9 +66,18 @@ export function createStore(dataDir, outputsDir) {
   function normalize(input) {
     const merged = { ...DEFAULT_SETTINGS, ...(input ?? {}) };
     const defaults = { ...DEFAULT_SETTINGS.defaults, ...(input?.defaults ?? {}) };
+    const paths = {
+      sft: typeof merged.modelPaths?.sft === "string" && merged.modelPaths.sft ? merged.modelPaths.sft : null,
+      base: typeof merged.modelPaths?.base === "string" && merged.modelPaths.base ? merged.modelPaths.base : null,
+    };
+    // 旧设置只有一个 modelPath：按目录名认出它是哪个仓库的。
+    const active = typeof merged.modelPath === "string" && merged.modelPath.trim() ? merged.modelPath.trim() : null;
+    if (active && !paths.sft && /moss-image-sft/i.test(active)) paths.sft = active;
+    if (active && !paths.base && /moss-image-base/i.test(active)) paths.base = active;
     return {
       serverPath: typeof merged.serverPath === "string" && merged.serverPath.trim() ? merged.serverPath.trim() : null,
-      modelPath: typeof merged.modelPath === "string" && merged.modelPath.trim() ? merged.modelPath.trim() : null,
+      modelPath: active,
+      modelPaths: paths,
       memoryMode: MEMORY_MODES.includes(merged.memoryMode) ? merged.memoryMode : DEFAULT_SETTINGS.memoryMode,
       tier: TIERS.includes(merged.tier) ? merged.tier : DEFAULT_SETTINGS.tier,
       device: Number.isInteger(merged.device) && merged.device >= 0 ? merged.device : 0,

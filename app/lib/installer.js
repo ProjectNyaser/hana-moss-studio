@@ -39,6 +39,11 @@ const ENGINE_REPO = "mossimage-cpp/mossimage.cpp";
 const ENGINE_API = `https://api.github.com/repos/${ENGINE_REPO}/releases/latest`;
 
 const MODEL_REPO = "OpenMOSS-Team/MOSS-Image-SFT";
+/** 两个可选的权重仓库：SFT 是官方微调版，Base 是基座模型。 */
+const MODELS = {
+  sft: { repo: "OpenMOSS-Team/MOSS-Image-SFT", dir: "moss-image-sft", label: "MOSS-Image-SFT", note: "官方微调版，提示词响应更准" },
+  base: { repo: "OpenMOSS-Team/MOSS-Image-Base", dir: "moss-image-base", label: "MOSS-Image-Base", note: "基座模型，适合自己微调" },
+};
 const MODEL_ENDPOINT = "https://hf-mirror.com";
 const MODEL_INCLUDES = [
   "model_index.json",
@@ -275,10 +280,12 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
    * 已有可用模型就装在原处，不另开一份 25 GiB 的副本。
    * 判据只看目录在不在：缺一两个文件也应该就地补齐，换目录等于把整份重下一遍。
    */
-  function weightsTarget() {
-    const existing = getSettings().modelPath;
-    if (existing && existsSync(existing)) return existing;
-    return join(dataDir, "models", "moss-image-sft");
+  /** 每个仓库一个目录：SFT 与 Base 可以同时装着，用哪个看 settings.modelPath。 */
+  function weightsTarget(variant = "sft") {
+    const key = MODELS[variant] ? variant : "sft";
+    const stored = getSettings().modelPaths?.[key];
+    if (stored && existsSync(stored)) return stored;
+    return join(dataDir, "models", MODELS[key].dir);
   }
 
   /**
@@ -338,11 +345,14 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   }
 
   /** 删掉已装模型。25 GiB，调用方必须先确认。 */
-  function removeWeights() {
-    const dir = getSettings().modelPath;
+  function removeWeights(variant = "sft") {
+    const key = MODELS[variant] ? variant : "sft";
+    const dir = getSettings().modelPaths?.[key];
     if (!dir || !existsSync(dir)) throw new Error("没有已装模型");
     rmSync(dir, { recursive: true, force: true });
-    saveSettings({ modelPath: "" });
+    const paths = { ...(getSettings().modelPaths ?? {}), [key]: null };
+    const active = getSettings().modelPath === dir ? (paths.sft ?? "") : getSettings().modelPath;
+    saveSettings({ modelPaths: paths, modelPath: active });
     return true;
   }
 
@@ -780,13 +790,15 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     }
   }
 
-  async function installWeights() {
+  async function installWeights(variant = "sft") {
     if (job && !job.finishedAt) throw new Error("已有安装在进行");
-    const weightsDir = weightsTarget();
-    begin("weights", "权重");
+    const key = MODELS[variant] ? variant : "sft";
+    const repo = MODELS[key].repo;
+    const weightsDir = weightsTarget(key);
+    begin("weights", `权重 · ${MODELS[key].label}`);
     try {
       patch({ phase: "listing", message: "读取文件清单" });
-      const tree = JSON.parse(await curlText(`${MODEL_ENDPOINT}/api/models/${MODEL_REPO}/tree/main?recursive=true`));
+      const tree = JSON.parse(await curlText(`${MODEL_ENDPOINT}/api/models/${repo}/tree/main?recursive=true`));
       const wanted = (tree ?? []).filter((entry) => {
         if (entry.type !== "file") return false;
         return MODEL_INCLUDES.some((pattern) =>
@@ -810,7 +822,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
 
       if (missing.length) {
         const entries = missing.map((entry) => ({
-          url: `${MODEL_ENDPOINT}/${MODEL_REPO}/resolve/main/${entry.path}`,
+          url: `${MODEL_ENDPOINT}/${repo}/resolve/main/${entry.path}`,
           out: entry.path,
           size: entry.size ?? 0,
         }));
@@ -850,12 +862,32 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       });
       if (broken.length) throw new Error(`${broken.length} 个文件不完整：${broken.slice(0, 3).map((e) => e.path).join("、")}`);
 
-      saveSettings({ modelPath: weightsDir });
-      finish({ phase: "done", message: `权重就绪：${wanted.length} 个文件`, detail: { modelPath: weightsDir } });
-      onInstalled?.("weights", { modelPath: weightsDir });
+      const paths = { ...(getSettings().modelPaths ?? {}), [key]: weightsDir };
+      saveSettings({ modelPaths: paths, modelPath: weightsDir });
+      finish({ phase: "done", message: `权重就绪：${wanted.length} 个文件`, detail: { modelPath: weightsDir, variant: key } });
+      onInstalled?.("weights", { modelPath: weightsDir, variant: key });
     } catch (error) {
       fail(error);
     }
+  }
+
+  /** 可选的两个权重仓库，以及各自装没装、是不是当前生效的那个。 */
+  function listModels() {
+    const settings = getSettings();
+    return Object.entries(MODELS).map(([variant, meta]) => {
+      const dir = settings.modelPaths?.[variant] ?? null;
+      const installed = Boolean(dir && existsSync(dir));
+      return {
+        variant,
+        label: meta.label,
+        note: meta.note,
+        repo: meta.repo,
+        installed,
+        path: installed ? dir : null,
+        bytes: installed ? dirBytes(dir) : null,
+        active: installed && settings.modelPath === dir,
+      };
+    });
   }
 
   return {
@@ -876,6 +908,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     installEngine,
     installWeights,
     listEngines,
+    listModels,
     listReleases,
     removeEngine,
     removeWeights,
