@@ -79,6 +79,9 @@
       align-items: center;
       cursor: pointer;
       touch-action: none;
+      /* 拖动时不要选中拇指上的数字：选中会中断拖拽，还会留下一块高亮。 */
+      user-select: none;
+      -webkit-user-select: none;
     }
     .pn-slider-rail {
       position: relative;
