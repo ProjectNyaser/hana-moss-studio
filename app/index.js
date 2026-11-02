@@ -386,6 +386,8 @@ export default defineApp(async (sdk) => {
     store.upsertJob(record);
     const entry = remember(liveEntry(record));
     queue.push({ ...record, output: join(outputsDir, fileName) });
+    // 有新任务就把待停的计时取消掉。
+    clearTimeout(idleStopTimer);
     schedulePush(0);
     void pump();
     return entry;
@@ -396,6 +398,14 @@ export default defineApp(async (sdk) => {
     const job = queue.shift();
     if (!job) return;
     running = true;
+    // 引擎可能因为空闲被停了，开始干活前先确保它活着。
+    if (!engine.snapshot().running) {
+      try {
+        await engine.start();
+      } catch (error) {
+        sdk.logger.warn(`出图前启动引擎失败：${message(error)}`);
+      }
+    }
     const entry = live.get(job.id);
     const startedAt = new Date();
     if (entry) {
@@ -451,7 +461,26 @@ export default defineApp(async (sdk) => {
       running = false;
       schedulePush(0);
       if (queue.length) void pump();
+      else scheduleIdleStop();
     }
+  }
+
+  /**
+   * 队列空了就把引擎停掉。启停本身只要 0.4 秒，模型加载约 1 秒，
+   * 而它带模型时占着 1.4 GB 显存——不生成的时候没必要占着。
+   * 留几秒缓冲：连着调参数再生成，不用每次重加载。
+   */
+  let idleStopTimer = null;
+  const IDLE_STOP_MS = 8000;
+
+  function scheduleIdleStop() {
+    clearTimeout(idleStopTimer);
+    idleStopTimer = setTimeout(() => {
+      if (running || queue.length) return;
+      if (!engine.snapshot().running) return;
+      engine.stop();
+      schedulePush(0);
+    }, IDLE_STOP_MS);
   }
 
   // ── 视图数据 ──────────────────────────────────────────────────────────────
