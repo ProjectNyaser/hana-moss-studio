@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename, dirname } from "node:path";
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
 import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
 import { createInstaller, probeGpu, probeGpuDetailed } from "./lib/installer.js";
+import { shrinkPng } from "./lib/image.js";
 
 export const name = "hana-moss-studio";
 
@@ -475,6 +476,8 @@ export default defineApp(async (sdk) => {
       if (result.status === "ok") {
         const report = pickReport(result.report);
         store.upsertJob({ id: job.id, status: "done", finishedAt: new Date().toISOString(), elapsedMs, report });
+        // 出图之后就把缩略图做出来，打开画廊時不必现等。
+        void ensureThumb(join(outputsDir, job.output));
         if (entry) {
           entry.status = "done";
           entry.percent = 100;
@@ -607,7 +610,24 @@ export default defineApp(async (sdk) => {
       .catch((error) => sdk.logger.warn(`显卡探测失败：${message(error)}`));
   }, 1500).unref?.();
 
-  function state() {
+  /** 缩略图缓存路径。画廊与预览都按这个规则落盘。 */
+function thumbPath(file, size) {
+  return join(cacheDir, "thumbs", `${basename(file).replace(/\.png$/i, "")}-${size}.png`);
+}
+
+/** 确保缩略图存在。已存在就直接返回，不重复转。 */
+async function ensureThumb(file, size = 320) {
+  const dst = thumbPath(file, size);
+  if (existsSync(dst) || !existsSync(file)) return;
+  try {
+    mkdirSync(dirname(dst), { recursive: true });
+    shrinkPng(file, dst, size);
+  } catch {
+    /* 转不出来就等路由那里退回原图 */
+  }
+}
+
+function state() {
     const settings = store.getSettings();
     const snapshot = engine.snapshot();
     const active = liveActive();
@@ -1164,6 +1184,19 @@ export default defineApp(async (sdk) => {
       if (!file) return c.text("not found", 404);
       const data = readFileSync(file);
       return c.body(data, 200, { "content-type": "image/png", "cache-control": "private, max-age=30" });
+    });
+
+    // 画廊用缩略图：一屏几十张，铺原图一张就是几 MB。首次请求生成一次，之后落盘复用。
+    app.get(`/${APP_ID}/thumb`, async (c) => {
+      const file = safeOutput(c.req.query("name"));
+      if (!file) return c.text("not found", 404);
+      const size = Math.min(1024, Math.max(64, Number(c.req.query("size")) || 320));
+      const dst = thumbPath(file, size);
+      if (!existsSync(dst)) await ensureThumb(file, size);
+      if (!existsSync(dst)) {
+        return c.body(readFileSync(file), 200, { "content-type": "image/png", "cache-control": "private, max-age=30" });
+      }
+      return c.body(readFileSync(dst), 200, { "content-type": "image/png", "cache-control": "private, max-age=86400" });
     });
 
     // 采样预览：引擎在采样过程中不断重写同一个文件。

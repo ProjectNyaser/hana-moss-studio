@@ -37,8 +37,21 @@ export function outputUrl(name) {
   return url.toString();
 }
 
-export function previewUrl(at) {
-  const url = new URL(`${ROUTE_BASE}${API}/preview`, location.origin);
+/**
+ * 缩略图地址。画廊一屏几十张，原图一张几 MB，这里走服务端缩出来的 JPEG。
+ * @param {string} name 输出文件名
+ * @param {number} [size] 宽度像素
+ */
+export function thumbUrl(name, size = 320) {
+  const url = new URL(`${ROUTE_BASE}${API}/thumb`, location.origin);
+  url.searchParams.set("name", name);
+  url.searchParams.set("size", String(size));
+  const session = new URLSearchParams(location.search).get("appSurfaceSession");
+  if (session) url.searchParams.set("appSurfaceSession", session);
+  return url.toString();
+}
+
+export function previewUrl(at) {  const url = new URL(`${ROUTE_BASE}${API}/preview`, location.origin);
   if (at) url.searchParams.set("t", String(at));
   const session = new URLSearchParams(location.search).get("appSurfaceSession");
   if (session) url.searchParams.set("appSurfaceSession", session);

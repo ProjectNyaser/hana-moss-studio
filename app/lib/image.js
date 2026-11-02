@@ -2,57 +2,86 @@
 // Copyright (c) 2026 Nyaser
 
 /**
- * app/lib/image.js — 预览图的体积压缩。
+ * app/lib/image.js — 图片降采样。
  *
- * 引擎写的采样预览是全尺寸 PNG，2560×1440 一张 10.5 MB。中间过程本来就糊，
- * 无损存它没有意义，而界面每次更新都要重新读一遍、解码一遍。
- * 转成 JPEG q70 同样画面约 250 KB，小了四十倍，肉眼差别在这个阶段看不出来。
+ * 两处用到：画廊的缩略图（一屏几十张，不能铺原图），采样预览（全尺寸 PNG 一张
+ * 十兆，界面只要看清形状）。
  *
- * 用的是系统自带的 System.Drawing（.NET），不引第三方依赖。
+ * PNG 的编解码交给 pngjs（派生在 app/node_modules 里，见 scripts/derive.mjs）；
+ * 缩放是自己写的面积平均，比最近邻干净，也不用为它拖一整个图像套件进来。
  */
 
-import { execFile } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
-import { promisify } from "node:util";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
-const run = promisify(execFile);
+import { PNG } from "pngjs";
 
-/** 小于这个体积的 PNG 不值得转：小图 PNG 也就几百 KB。 */
-const WORTH_CONVERTING = 800 * 1024;
+/** 小于这个体积的 PNG 不值得处理：小图本来就不大。 */
+const WORTH_RESIZING = 300 * 1024;
 
-/** PowerShell 单引号字符串里只需要把单引号翻倍。 */
-function psQuote(text) {
-  return `'${String(text).replace(/'/g, "''")}'`;
+/**
+ * 等比缩小到不超过 maxWidth。只缩不放。
+ * 面积平均：目标像素取源图对应矩形内所有像素的平均值。
+ */
+function downscale(source, maxWidth) {
+  const { width, height, data } = source;
+  if (width <= maxWidth) return null;
+  const ratio = maxWidth / width;
+  const outWidth = Math.max(1, Math.round(width * ratio));
+  const outHeight = Math.max(1, Math.round(height * ratio));
+  const out = new PNG({ width: outWidth, height: outHeight });
+  const xRatio = width / outWidth;
+  const yRatio = height / outHeight;
+  for (let y = 0; y < outHeight; y += 1) {
+    const y0 = Math.floor(y * yRatio);
+    const y1 = Math.min(height, Math.max(y0 + 1, Math.floor((y + 1) * yRatio)));
+    for (let x = 0; x < outWidth; x += 1) {
+      const x0 = Math.floor(x * xRatio);
+      const x1 = Math.min(width, Math.max(x0 + 1, Math.floor((x + 1) * xRatio)));
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      let count = 0;
+      for (let sy = y0; sy < y1; sy += 1) {
+        for (let sx = x0; sx < x1; sx += 1) {
+          const i = (sy * width + sx) * 4;
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+          a += data[i + 3];
+          count += 1;
+        }
+      }
+      const o = (y * outWidth + x) * 4;
+      out.data[o] = Math.round(r / count);
+      out.data[o + 1] = Math.round(g / count);
+      out.data[o + 2] = Math.round(b / count);
+      out.data[o + 3] = Math.round(a / count);
+    }
+  }
+  return out;
 }
 
 /**
- * 把 PNG 转成 JPEG。源文件不存在或转不动时抛错，调用方自己决定回退。
+ * 等比缩小并写成一个新的 PNG。
+ *
+ * 返回实际写出的尺寸；源图比目标宽度小、或者读不动时返回 null，调用方据此保持原样。
  */
-export async function pngToJpeg(src, dst, quality = 70) {
-  const script = [
-    "$ErrorActionPreference = 'Stop'",
-    "Add-Type -AssemblyName System.Drawing",
-    `$src = ${psQuote(src)}`,
-    `$dst = ${psQuote(dst)}`,
-    "$img = [System.Drawing.Image]::FromFile($src)",
-    "try {",
-    "  $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }",
-    "  $params = New-Object System.Drawing.Imaging.EncoderParameters(1)",
-    `  $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, ${Math.round(quality)})`,
-    "  $img.Save($dst, $codec, $params)",
-    "} finally { $img.Dispose() }",
-  ].join("; ");
-  await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-    windowsHide: true,
-    timeout: 20_000,
-  });
-}
-
-/** 值不值得转：源文件得存在，而且确实够大。 */
-export function worthConverting(src) {
+export function shrinkPng(src, dst, maxWidth) {
+  if (!existsSync(src)) return null;
+  const input = readFileSync(src);
+  if (input.length < WORTH_RESIZING) return null;
+  let image;
   try {
-    return existsSync(src) && statSync(src).size > WORTH_CONVERTING;
+    image = PNG.sync.read(input);
   } catch {
-    return false;
+    // 读不动的格式交给调用方处理，这里不抛。
+    return null;
   }
+  const small = downscale(image, maxWidth);
+  if (!small) return null;
+  mkdirSync(dirname(dst), { recursive: true });
+  writeFileSync(dst, PNG.sync.write(small, { colorType: 6, deflateLevel: 6 }));
+  return { width: small.width, height: small.height };
 }

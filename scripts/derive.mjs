@@ -136,12 +136,43 @@ function deriveMinAppVersion(version, changes) {
   fs.writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2) + "\n", "utf8");
 }
 
+/**
+ * 运行时依赖也以文件形态跟着 App 走：宿主不会替 App 解析 node_modules。
+ * 只复制 lib 与 package.json、LICENSE，其余读进来没用，白占体积。
+ */
+const RUNTIME_DEPS = ["pngjs"];
+
+function mirrorDeps(changes) {
+  for (const pkg of RUNTIME_DEPS) {
+    const src = path.join(ROOT, "node_modules", pkg);
+    const dst = path.join(ROOT, "app", "node_modules", pkg);
+    if (!fs.existsSync(src)) fatal(`依赖树里没有 ${pkg}（${rel(src)}）。先 pnpm install`);
+    const wanted = walk(src).filter(
+      (name) => name.startsWith("lib/") || name === "package.json" || name === "LICENSE",
+    );
+    const have = fs.existsSync(dst) ? walk(dst) : [];
+    for (const name of have) {
+      if (!wanted.includes(name)) changes.push(`app/node_modules/${pkg}/${name}（多余，删）`);
+    }
+    for (const name of wanted) {
+      const from = path.join(src, name);
+      const to = path.join(dst, name);
+      if (fs.existsSync(to) && sha256(to) === sha256(from)) continue;
+      changes.push(`app/node_modules/${pkg}/${name}`);
+      if (checkOnly) continue;
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+    }
+  }
+}
+
 const version = readVersion();
 console.log(`[derive] @hana/app-sdk ${version}（${rel(SDK_DIST)}）`);
 
 const changes = [];
 mirrorSdk(changes);
 copyUi(changes);
+mirrorDeps(changes);
 deriveMinAppVersion(version, changes);
 
 if (!changes.length) {

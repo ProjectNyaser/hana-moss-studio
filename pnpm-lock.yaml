@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      pngjs:
+        specifier: ^7.0.0
+        version: 7.0.0
     devDependencies:
       '@hana/app-sdk':
         specifier: file:vendor/hana-app-sdk/hana-app-sdk.tgz
@@ -26,6 +30,12 @@ packages:
       react-dom:
         optional: true
 
+  pngjs@7.0.0:
+    resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
+    engines: {node: '>=14.19.0'}
+
 snapshots:
 
   '@hana/app-sdk@file:vendor/hana-app-sdk/hana-app-sdk.tgz': {}
+
+  pngjs@7.0.0: {}

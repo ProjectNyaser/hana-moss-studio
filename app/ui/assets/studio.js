@@ -1,6 +1,6 @@
 // 苔室工作区：画布、画廊、队列、版本、下载五个视图。生成设置在左侧栏（panel.html）。
 import { hana } from "./sdk.js";
-import { startLive, outputUrl, previewUrl } from "./live.js";
+import { startLive, outputUrl, previewUrl, thumbUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
 const API = "/hana-moss-studio";
@@ -267,6 +267,15 @@ function loadImage(name) {
   return imageCache.get(name);
 }
 
+/** 画廊用的小图。原图留给画布与查看器，铺一屏几十张原图能把带宽吃干净。 */
+const thumbCache = new Map();
+function loadThumb(name, size = 320) {
+  if (!name) return null;
+  const key = `${name}@${size}`;
+  if (!thumbCache.has(key)) thumbCache.set(key, thumbUrl(name, size));
+  return thumbCache.get(key);
+}
+
 async function renderCanvas(data) {
   const active = data?.engine?.active;
   const img = nodes.resultImage;
@@ -364,7 +373,9 @@ async function renderGallery(data) {
     galleryJobs.filter((job) => !liveIds.has(job.id) && job.status !== "cancelled"),
   );
   await Promise.all(visible.filter((job) => job.status === "done" && job.output).map((job) => loadImage(job.output)));
-  const shownCount = galleryTotal || visible.length;
+  // 首帧还没有 /jobs 的结果，但 state 已经带了总数：角标先按它显示，
+  // 等分页回来自然对齐。
+  const shownCount = data.jobTotal ?? (galleryTotal || visible.length);
   nodes.galleryCount.textContent = shownCount ? `${visible.length} / ${shownCount} 张` : "";
   nodes.tabCount.textContent = shownCount ? ` ${shownCount}` : "";
   if (!visible.length) {
@@ -384,7 +395,7 @@ async function renderGallery(data) {
     const shown = shownJob(data);
     if (job.status === "done" && job.output) {
       if (shown && shown.id === job.id) tile.classList.add("on");
-      const url = imageCache.get(job.output);
+      const url = loadThumb(job.output, 320);
       if (url) {
         const image = document.createElement("img");
         image.src = url;
@@ -1300,9 +1311,9 @@ async function removeJob(id) {
     galleryJobs = galleryJobs.filter((job) => job.id !== id);
     if (gone) {
       galleryTotal = Math.max(0, galleryTotal - 1);
-      if (gone.output && imageCache.has(gone.output)) {
-        URL.revokeObjectURL(imageCache.get(gone.output));
+      if (gone.output) {
         imageCache.delete(gone.output);
+        thumbCache.delete(`${gone.output}@320`);
       }
     }
     renderedJobsKey = null;

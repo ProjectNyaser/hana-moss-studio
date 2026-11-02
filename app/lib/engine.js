@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, dirname, delimiter } from "node:path";
-import { pngToJpeg, worthConverting } from "./image.js";
+import { shrinkPng } from "./image.js";
 
 /**
  * moss-server 是一个外部 C++/CUDA 进程，协议为 stdio JSON-lines：
@@ -57,9 +57,9 @@ export class Engine {
     this.cacheDir = cacheDir;
     /** 采样预览图：每次生成覆盖同一张，不堆文件。 */
     this.previewPath = join(cacheDir, "preview.png");
-    /** 预览的 JPEG 版：全尺寸 PNG 一张 10 MB，界面只需要看得清形状。 */
-    this.previewJpegPath = join(cacheDir, "preview.jpg");
-    this.previewIsJpeg = false;
+    /** 预览的缩小版：全尺寸 PNG 一张十兆，界面只需要看清形状。 */
+    this.previewSmallPath = join(cacheDir, "preview-small.png");
+    this.previewIsSmall = false;
     this.previewBusy = false;
     this.onEvent = onEvent ?? (() => {});
     this.child = null;
@@ -145,30 +145,27 @@ export class Engine {
   }
 
   /**
-   * 预览先落一份 JPEG 再通知。转码要一两百毫秒，上一帧还没转完就跳过这一帧，
-   * 下一步还会来，不排长队。
+   * 预览先缩一份再通知。缩图是纯 JS 解码加面积平均，几十毫秒；上一帧还没好就
+   * 跳过这一帧，下一步还会来。
    */
   async publishPreview(jobId) {
     if (this.previewBusy) return;
     this.previewBusy = true;
-    let jpeg = false;
+    let small = false;
     try {
-      if (worthConverting(this.previewPath)) {
-        await pngToJpeg(this.previewPath, this.previewJpegPath);
-        jpeg = true;
-      }
+      small = Boolean(shrinkPng(this.previewPath, this.previewSmallPath, 640));
     } catch {
-      jpeg = false;
+      small = false;
     } finally {
       this.previewBusy = false;
     }
-    this.previewIsJpeg = jpeg;
-    this.onEvent({ type: "preview", jobId, at: Date.now(), jpeg });
+    this.previewIsSmall = small;
+    this.onEvent({ type: "preview", jobId, at: Date.now() });
   }
 
-  /** 界面读哪个文件：转成了 JPEG 就用它，否则退回引擎写的 PNG。 */
+  /** 界面读哪个文件：缩出来了就用小的，否则退回引擎写的原图。 */
   previewFile() {
-    return this.previewIsJpeg ? this.previewJpegPath : this.previewPath;
+    return this.previewIsSmall ? this.previewSmallPath : this.previewPath;
   }
 
   handleEvent(message) {
@@ -382,8 +379,8 @@ export class Engine {
       active.reject = reject;
     });
     this.active = active;
-    // 上一张的预览可能是 JPEG，新任务第一帧之前不能拿它充数。
-    this.previewIsJpeg = false;
+    // 上一张的预览可能是缩图，新任务第一帧之前不能拿它充数。
+    this.previewIsSmall = false;
     const params = {
       output: job.output,
       prompt: job.prompt,

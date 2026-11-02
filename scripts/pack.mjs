@@ -46,8 +46,8 @@ const KIND = "app";
 const FIXED_DOS_TIME = 0;
 const FIXED_DOS_DATE = (1 << 5) | 1;
 
-/** 打进包里的东西：app/ 下的全部内容，排掉开发件。 */
-const SKIP = new Set([".DS_Store", "Thumbs.db", ".git", "node_modules"]);
+/** 打进包里的东西：app/ 下的全部内容，排掉开发件。app/node_modules 是派生出来的运行时依赖，要带走。 */
+const SKIP = new Set([".DS_Store", "Thumbs.db", ".git"]);
 
 const log = (...a) => console.log("[pack]", ...a);
 const rel = (p) => path.relative(ROOT, p).replace(/\\/g, "/");
@@ -176,8 +176,17 @@ function main() {
   const stageDir = path.join(BUILD, manifest.id);
   fs.cpSync(SOURCE, stageDir, { recursive: true });
 
-  for (const banned of ["vendor", "node_modules", ".git", "build"]) {
+  for (const banned of ["vendor", ".git", "build"]) {
     if (fs.existsSync(path.join(stageDir, banned))) fatal("安装目录里混进了不该发布的目录：" + banned);
+  }
+  // node_modules 里只允许放派生出来的运行时依赖（见 derive.mjs 的 RUNTIME_DEPS），
+  // 整个依赖树被拷进来通常是误操作。
+  const stagedDeps = path.join(stageDir, "node_modules");
+  if (fs.existsSync(stagedDeps)) {
+    const allowed = new Set(["pngjs"]);
+    for (const name of fs.readdirSync(stagedDeps)) {
+      if (!allowed.has(name)) fatal(`app/node_modules 里出现了未派生的依赖：${name}`);
+    }
   }
 
   // 2) 声明的入口与图标必须在包里真的存在，否则装上去就是坏的。
