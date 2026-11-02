@@ -293,7 +293,7 @@ export function compareEngineVersion(a, b) {
   return 0;
 }
 
-export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, onInstalled, network }) {
+export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, onUpdate, onInstalled, network }) {
   /** 当前安装任务；null 表示空闲。 */
   let job = null;
   let child = null;
@@ -383,13 +383,15 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   }
 
   async function listReleases() {
-    const cacheFile = join(dataDir, "cache", "releases.json");
+    const cacheFile = join(cacheDir, "releases.json");
     if (!releaseCache || Date.now() - releaseCache.at > 10 * 60_000) {
       try {
         const items = await listReleasesViaAtom();
         if (!items.length) throw new Error("atom 里没有发布记录");
         releaseCache = { at: Date.now(), items };
         try {
+          // .runtime-tmp 可能被宿主清掉，写之前补一次目录。
+          mkdirSync(dirname(cacheFile), { recursive: true });
           writeFileSync(cacheFile, JSON.stringify({ at: releaseCache.at, items }), "utf8");
         } catch {
           // 写不进去不影响本次结果

@@ -1269,8 +1269,20 @@ async function refresh() {
 
 async function removeJob(id) {
   try {
-    render(await post("/jobs/remove", { id }));
+    const next = await post("/jobs/remove", { id });
+    // 画廊的数据源是分页拉来的 galleryJobs，不是 state。不把这条从这里剔掉，
+    // 后端已经删了、界面还在，看着就像没生效。
+    const gone = galleryJobs.find((job) => job.id === id);
+    galleryJobs = galleryJobs.filter((job) => job.id !== id);
+    if (gone) {
+      galleryTotal = Math.max(0, galleryTotal - 1);
+      if (gone.output && imageCache.has(gone.output)) {
+        URL.revokeObjectURL(imageCache.get(gone.output));
+        imageCache.delete(gone.output);
+      }
+    }
     renderedJobsKey = null;
+    render(next);
   } catch (error) {
     nodes.galleryCount.textContent = error instanceof Error ? error.message : String(error);
   }

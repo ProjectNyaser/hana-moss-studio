@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine } from "./lib/engine.js";
@@ -34,11 +34,38 @@ const STATUS_TEXT = {
   cancelled: "已取消",
 };
 
+/**
+ * 早期的缓存与 aria2 日志写在 dataDir 顶层，现在统一住 .runtime-tmp。
+ * 引擎的文本编码器缓存（.miemb）搬过去还能接着用，日志直接删。
+ */
+function migrateRuntimeDirs(dataDir, cacheDir) {
+  for (const name of ["cache", "logs"]) {
+    const from = join(dataDir, name);
+    if (!existsSync(from)) continue;
+    if (name === "cache") {
+      for (const entry of readdirSync(from)) {
+        const to = join(cacheDir, entry);
+        if (existsSync(to)) continue;
+        try {
+          renameSync(join(from, entry), to);
+        } catch {
+          // 搬不动的跟旧目录一起删；缓存丢了能重算。
+        }
+      }
+    }
+    rmSync(from, { recursive: true, force: true });
+  }
+}
+
 export default defineApp(async (sdk) => {
   const dataDir = sdk.dataDir;
   const outputsDir = join(dataDir, "generated");
-  const cacheDir = join(dataDir, "cache");
+  // 运行时产物（缓存、日志）统一放 .runtime-tmp，顶层只留持久数据：
+  // engine / models / generated / settings.json。
+  const runtimeDir = join(dataDir, ".runtime-tmp");
+  const cacheDir = join(runtimeDir, "cache");
   for (const dir of [outputsDir, cacheDir]) mkdirSync(dir, { recursive: true });
+  migrateRuntimeDirs(dataDir, cacheDir);
 
   const store = createStore(dataDir, outputsDir);
   /** 改设置的后置动作：路径变了就停引擎，模型下次生成重新 load。装完与切换版本都走这里。 */
@@ -50,6 +77,7 @@ export default defineApp(async (sdk) => {
   };
   const installer = createInstaller({
     dataDir,
+    cacheDir,
     getSettings: () => store.getSettings(),
     saveSettings: applySettings,
     onUpdate: () => schedulePush(0),
