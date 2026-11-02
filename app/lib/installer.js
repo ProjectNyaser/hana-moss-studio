@@ -110,6 +110,51 @@ const parseSmi = (stdout) => {
   };
 };
 
+/** 从 WMI 的 32.0.16.1692 推出 NVIDIA 自己的 616.92（后两段拼起来取末五位）。 */
+export function nvidiaDriverFromWmi(version) {
+  const parts = String(version ?? "").split(".");
+  if (parts.length < 4) return null;
+  const tail = `${parts[2]}${parts[3]}`.slice(-5);
+  if (!/^\d{5}$/.test(tail)) return null;
+  return `${Number(tail.slice(0, 3))}.${tail.slice(3)}`;
+}
+
+/**
+ * 备选通道：WMI 只看系统记录的显卡信息，不碰驱动设备。
+ * nvidia-smi 在 App 进程里会因为 NVML 初始化失败而退出（见 probeGpuDetailed），
+ * 但装包只需要驱动主版本，WMI 能给的正好够。拿不到算力，所以 sm75 判断会失效；
+ * 那类卡（算力 7.5）的驱动也老，会走 cu12 分支，不会误选。
+ */
+async function probeGpuViaWmi() {
+  const script =
+    "$g = Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' } | Select-Object -First 1; " +
+    'if ($g) { "' + '$' + '($g.Name)|' + '$' + '($g.DriverVersion)" }';
+  const exe = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+  try {
+    const { stdout } = await runFile(
+      exe,
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      { timeout: 20_000, windowsHide: true, maxBuffer: 1024 * 1024 },
+    );
+    const [name, raw] = String(stdout ?? "").trim().split("|");
+    const driver = nvidiaDriverFromWmi(raw);
+    if (!name || !driver) return { ok: false, name: name ?? null, raw: String(raw ?? "").trim(), error: "解析不出驱动版本" };
+    return {
+      ok: true,
+      gpu: {
+        name: name.trim(),
+        driver,
+        driverMajor: Number(driver.split(".")[0]) || null,
+        computeCapability: null,
+        source: "wmi",
+      },
+      raw: String(raw).trim(),
+    };
+  } catch (error) {
+    return { ok: false, error: String(error?.message ?? error).slice(0, 200) };
+  }
+}
+
 /** 带诊断的探测：每个候选都留下退出码与环境，方便查 App 里为何没读到。 */
 export async function probeGpuDetailed() {
   const args = ["--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader"];
@@ -119,7 +164,7 @@ export async function probeGpuDetailed() {
       const { stdout, stderr } = await runFile(exe, args, { timeout: 15_000, windowsHide: true });
       tried.push({ exe, ok: true, stdout: String(stdout ?? "").trim().slice(0, 200), stderr: String(stderr ?? "").trim().slice(0, 200) });
       const gpu = parseSmi(stdout);
-      if (gpu) return { gpu, tried, env: envSummary() };
+      if (gpu) return { gpu: { ...gpu, source: "nvidia-smi" }, tried, env: envSummary() };
     } catch (error) {
       tried.push({
         exe,
@@ -132,7 +177,9 @@ export async function probeGpuDetailed() {
       });
     }
   }
-  return { gpu: null, tried, env: envSummary() };
+
+  const wmi = await probeGpuViaWmi();
+  return { gpu: wmi.ok ? wmi.gpu : null, tried, wmi, env: envSummary() };
 }
 
 /** 只报几条与子进程启动相关的环境，不把整个 env 抛出去。 */
@@ -600,7 +647,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       patch({
         phase: "release",
         message: gpu
-          ? `${gpu.name} · 驱动 ${gpu.driver} · 算力 ${gpu.computeCapability ?? "?"}`
+          ? `${gpu.name} · 驱动 ${gpu.driver}${gpu.computeCapability ? ` · 算力 ${gpu.computeCapability}` : "（WMI 读的）"}`
           : "没读到显卡信息，按 cu13 选包（驱动不到 R580 就在自定义里选 cu12）",
         detail: gpu,
       });
