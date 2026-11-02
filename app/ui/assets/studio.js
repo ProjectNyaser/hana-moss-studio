@@ -228,7 +228,6 @@ async function renderCanvas(data) {
   if (nodes.resultImage.getAttribute("src") !== url) nodes.resultImage.src = url;
   const seed = job.report?.seedUsed ?? job.seed;
   nodes.resultCaption.textContent = `${job.width}×${job.height} · ${job.steps} 步 · CFG ${job.cfg} · 种子 ${seed} · ${formatDuration(job.elapsedMs)}`;
-  nodes.resultImage.onclick = () => openLightbox(url);
 }
 
 // ── 画廊 ───────────────────────────────────────────────────────────────
@@ -291,12 +290,8 @@ async function renderGallery(data) {
         image.loading = "lazy";
         image.title = job.prompt;
         if (job.width && job.height) image.style.aspectRatio = `${job.width} / ${job.height}`;
-        image.addEventListener("click", () => {
-          selectedId = job.id;
-          renderedJobsKey = null;
-          showView("canvas");
-          void refresh();
-        });
+        // 左键直接看大图，不切页；要把这张拿到画布去用右键。
+        image.addEventListener("click", () => openLightbox(url));
         tile.appendChild(image);
         const meta = document.createElement("div");
         meta.className = "thumb-meta";
@@ -552,7 +547,7 @@ function openMenu(event, job) {
   const menu = nodes.ctxMenu;
   const items = [];
   if (job.status === "done" && job.output) {
-    items.push({ label: "看大图", run: () => openLightbox(imageCache.get(job.output)) });
+    items.push({ label: "在画布中显示", run: () => focusOnCanvas(job.id) });
     items.push({ label: "用这张的参数", run: () => reuseParams(job) });
     items.push({ sep: true });
   }
@@ -588,6 +583,14 @@ function openMenu(event, job) {
   const top = Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8));
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
+}
+
+/** 把某一张设为画布上的主角。 */
+function focusOnCanvas(id) {
+  selectedId = id;
+  renderedJobsKey = null;
+  showView("canvas");
+  void refresh();
 }
 
 /** 把这张的提示词与参数送回侧栏，在画布页接着改。 */
