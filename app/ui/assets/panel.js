@@ -223,7 +223,13 @@ function placeThumb(container, thumb, pct) {
   return x;
 }
 
-/** 与后端同一套收敛规则：单边与总量取更严的缩放系数，比例不变。 */
+/** 高清修正倍率量化到 0.05：连续拖动时值太碎，显示与实际对不上。 */
+function quantizeHires(value, maxScale) {
+  const step = 0.05;
+  return Math.min(maxScale, Math.max(1, Math.round(value / step) * step));
+}
+
+/** 跟后端同一套收敛规则：单边与总量取更严的缩放系数，比例不变。 */
 function fitToEngine(width, height) {
   const MAX_PIXELS = 4.2e6;
   const floor16 = (value) => Math.max(256, Math.floor(value / 16) * 16);
@@ -264,14 +270,15 @@ function renderSize() {
   const base = fitToEngine(width, height);
   // 基础图变了，可行倍率也跟着变，先把滑块与当前倍率对准。
   const maxScale = hiresMax();
-  hiresScale = Math.min(Math.max(1, hiresScale), maxScale);
+  hiresScale = quantizeHires(Math.min(Math.max(1, hiresScale), maxScale), maxScale);
   const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, maxScale > 1 ? (hiresScale - 1) / (maxScale - 1) : 0);
   nodes.hiresFill.style.width = `${hx}px`;
-  nodes.hiresThumb.textContent = `×${hiresScale.toFixed(1)}`;
+  const hiresLabel = `×${Number(hiresScale.toFixed(2))}`;
+  nodes.hiresThumb.textContent = hiresLabel;
   nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
   nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
-  // 右侧报当前格，上限信息放在悬停里，不占位置。
-  nodes.hiresNote.textContent = hiresScale > 1.001 ? `×${hiresScale.toFixed(1)}` : "关闭";
+  // 右侧报当前倍率，上限信息放悬停里，不占位置。
+  nodes.hiresNote.textContent = hiresScale > 1.001 ? hiresLabel : "关闭";
   nodes.hiresThumb.title = maxScale <= 1.001
     ? "这张图已经贴到引擎上限，没法再放大"
     : `最多 ×${maxScale.toFixed(1)}`;
@@ -289,7 +296,7 @@ function renderSize() {
   const finalMP = (finalW * finalH) / 1e6;
   const differs = finalW !== base.width || finalH !== base.height;
   // 写成 w × h × 倍率 → 最终尺寸，一眼看出倍率起了多大作用。
-  const scaleLabel = hiresScale > 1.001 ? ` ×${hiresScale.toFixed(1)}` : "";
+  const scaleLabel = hiresScale > 1.001 ? ` ×${Number(hiresScale.toFixed(2))}` : "";
   nodes.sizeNote.textContent = differs || base.adjusted || scaleLabel
     ? `${width}×${height}${scaleLabel} → ${finalW}×${finalH} · ${finalMP.toFixed(2)}MP`
     : `${width}×${height} · ${finalMP.toFixed(2)}MP`;
@@ -327,7 +334,8 @@ function bindSizeSliders() {
 
   function applyHires(clientX) {
     const maxScale = hiresMax();
-    hiresScale = maxScale <= 1.001 ? 1 : 1 + pctFromEvent(nodes.hiresSlider, clientX) * (maxScale - 1);
+    const raw = maxScale <= 1.001 ? 1 : 1 + pctFromEvent(nodes.hiresSlider, clientX) * (maxScale - 1);
+    hiresScale = quantizeHires(raw, maxScale);
     renderSize();
     scheduleSave();
   }
@@ -363,7 +371,7 @@ function bindSizeSliders() {
     else if (event.key === "ArrowRight" || event.key === "ArrowUp") hiresScale += step;
     else return;
     event.preventDefault();
-    hiresScale = Math.min(hiresMax(), Math.max(1, hiresScale));
+    hiresScale = quantizeHires(hiresScale, hiresMax());
     renderSize();
     scheduleSave();
   });
