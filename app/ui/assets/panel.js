@@ -207,6 +207,24 @@ function placeThumb(container, thumb, pct) {
   return x;
 }
 
+/** 与后端同一套收敛规则：超限就按比例缩到限内，只缩不拉。 */
+function fitToEngine(width, height) {
+  const MAX_PIXELS = 4.2e6;
+  const floor16 = (value) => Math.max(256, Math.floor(value / 16) * 16);
+  let w = Math.min(MAX_SIDE, Math.max(256, width));
+  let h = Math.min(MAX_SIDE, Math.max(256, height));
+  if (w * h > MAX_PIXELS) {
+    const scale = Math.sqrt(MAX_PIXELS / (w * h));
+    w = floor16(w * scale);
+    h = floor16(h * scale);
+    while (w * h > MAX_PIXELS && w > 256 && h > 256) {
+      if (w >= h) w = floor16(w - 16);
+      else h = floor16(h - 16);
+    }
+  }
+  return { width: w, height: h, adjusted: w !== width || h !== height };
+}
+
 function renderSize() {
   const width = Number(nodes.width.value) || 768;
   const height = Number(nodes.height.value) || 768;
@@ -224,11 +242,13 @@ function renderSize() {
   nodes.sliderThumb.textContent = megapixels.toFixed(1);
   nodes.sliderThumb.setAttribute("aria-valuenow", megapixels.toFixed(1));
 
-  const over = megapixels > MAX_MP || Math.max(width, height) > MAX_SIDE;
-  nodes.sizeNote.textContent = over
-    ? `${width}×${height} · ${megapixels.toFixed(2)}MP，超出引擎上限（4.2MP / 单边 4096）`
-    : `${width}×${height} · ${megapixels.toFixed(2)}MP`;
-  nodes.sizeNote.className = over ? "hint bad" : "hint";
+  // 超限不报错，直接显示会实际用的尺寸，让人看得见。
+  const fitted = fitToEngine(width, height);
+  const actual = (fitted.width * fitted.height) / 1e6;
+  nodes.sizeNote.textContent = fitted.adjusted
+    ? `${width}×${height} → ${fitted.width}×${fitted.height} · ${actual.toFixed(2)}MP`
+    : `${width}×${height} · ${actual.toFixed(2)}MP`;
+  nodes.sizeNote.className = fitted.adjusted ? "hint bad" : "hint";
 
   // 首次渲染时布局可能还没落定，宽度为零就等下一帧重算。
   if (!nodes.slider.clientWidth) requestAnimationFrame(renderSize);
@@ -241,8 +261,11 @@ function pctFromEvent(container, clientX) {
 }
 
 function bindSizeSliders() {
-  // 拖比例时锁住像素量：横竖一换，付出去的算力不该跟着变。
+  // 拖比例时锁住像素量、拖像素量时锁住比例：
+  // 每次拿刚取整过的宽高比再算一遍，floor 的误差会一步步累积，
+  // 拖一会儿比例就塌到 1:1。
   let pinnedMP = null;
+  let pinnedRatio = null;
 
   function applyRatio(clientX) {
     const ratio = tToRatio(pctFromEvent(nodes.ratioSlider, clientX));
@@ -252,7 +275,8 @@ function bindSizeSliders() {
   }
 
   function applyMP(clientX) {
-    const [w, h] = sizeFor(currentRatio(), MIN_MP + pctFromEvent(nodes.slider, clientX) * (MAX_MP - MIN_MP));
+    const ratio = pinnedRatio ?? currentRatio();
+    const [w, h] = sizeFor(ratio, MIN_MP + pctFromEvent(nodes.slider, clientX) * (MAX_MP - MIN_MP));
     setSize(w, h);
   }
 
@@ -261,6 +285,7 @@ function bindSizeSliders() {
     container.addEventListener("pointerdown", (event) => {
       dragging = true;
       pinnedMP = currentMP();
+      pinnedRatio = currentRatio();
       container.setPointerCapture?.(event.pointerId);
       apply(event.clientX);
     });
@@ -270,6 +295,7 @@ function bindSizeSliders() {
     const stop = () => {
       dragging = false;
       pinnedMP = null;
+      pinnedRatio = null;
     };
     container.addEventListener("pointerup", stop);
     container.addEventListener("pointercancel", stop);

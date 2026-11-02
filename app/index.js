@@ -292,17 +292,39 @@ export default defineApp(async (sdk) => {
   const MAX_SIDE = 4096;
   const MIN_SIDE = 256;
 
+  /**
+   * 用户传什么就收什么，只把**实际出图尺寸**收进引擎限制。
+   * 超限时按比例往下缩（只缩不拉，16 的倍数），而不是直接把任务拒掉。
+   */
+  /** 把宽高收进引擎限制：只缩不拉，16 的倍数。基础图与高清修正共用。 */
+  function fitToLimit(width, height) {
+    const floor16 = (value) => Math.max(MIN_SIDE, Math.floor(value / 16) * 16);
+    let w = Math.min(MAX_SIDE, Math.max(MIN_SIDE, width));
+    let h = Math.min(MAX_SIDE, Math.max(MIN_SIDE, height));
+    if (w * h > MAX_PIXELS) {
+      const scale = Math.sqrt(MAX_PIXELS / (w * h));
+      w = floor16(w * scale);
+      h = floor16(h * scale);
+      while (w * h > MAX_PIXELS && w > MIN_SIDE && h > MIN_SIDE) {
+        if (w >= h) w = floor16(w - 16);
+        else h = floor16(h - 16);
+      }
+    }
+    return { width: w, height: h };
+  }
+
   function resolveSize(input, defaults) {
     const round16 = (value) => Math.max(16, Math.round(value / 16) * 16);
-    const width = round16(clamp(input?.width, MIN_SIDE, MAX_SIDE, defaults.width));
-    const height = round16(clamp(input?.height, MIN_SIDE, MAX_SIDE, defaults.height));
-    if (width * height > MAX_PIXELS) {
-      throw new Error(
-        `MOSS-Image 单张最大 4.2 百万像素（例如 2048×2048、2560×1600）。` +
-          `${width}×${height} 是 ${((width * height) / 1e6).toFixed(1)} 百万像素。高清修正受同一个上限，只能分两段提升细节，不能再把尺寸做大`,
-      );
-    }
-    return { width, height };
+    const requested = {
+      width: round16(clamp(input?.width, MIN_SIDE, MAX_SIDE, defaults.width)),
+      height: round16(clamp(input?.height, MIN_SIDE, MAX_SIDE, defaults.height)),
+    };
+    const fitted = fitToLimit(requested.width, requested.height);
+    return {
+      ...fitted,
+      requested,
+      adjusted: fitted.width !== requested.width || fitted.height !== requested.height,
+    };
   }
 
   function submit(input) {
@@ -318,6 +340,8 @@ export default defineApp(async (sdk) => {
       negativePrompt: String(input?.negativePrompt ?? "").trim(),
       width: box.width,
       height: box.height,
+      // 用户要的尺寸与实际出的尺寸不一致时，留个底，便于事后对照。
+      sizeRequested: box.adjusted ? box.requested : null,
       steps: clamp(input?.steps, MIN_STEPS, 80, Math.max(MIN_STEPS, settings.defaults.steps)),
       cfg: clampFloat(input?.cfg, 0, 20, settings.defaults.cfg),
       seed: Number.isInteger(input?.seed) ? input.seed : Math.floor(Math.random() * 4294967295),
@@ -334,16 +358,14 @@ export default defineApp(async (sdk) => {
     // 引擎的高清修正要的是具体目标尺寸，不是倍数，这里先算好。
     if (record.hiresScale > 0) {
       const round16 = (value) => Math.max(16, Math.round((value * record.hiresScale) / 16) * 16);
-      record.hiresWidth = round16(box.width);
-      record.hiresHeight = round16(box.height);
-      // 引擎的上限：每边 ≤ 4096，总计 ≤ 4.2 百万像素。超了它会在跑完之后
-      // 才报 invalid_params，白等一分钟，所以在这里拦住。
-      const pixels = record.hiresWidth * record.hiresHeight;
-      if (record.hiresWidth > 4096 || record.hiresHeight > 4096 || pixels > 4.2e6) {
-        throw new Error(
-          `高清修正后是 ${record.hiresWidth}×${record.hiresHeight}（${(pixels / 1e6).toFixed(1)} 百万像素），` +
-            `超出引擎上限（每边 ≤ 4096、总计 ≤ 4.2 百万）。把倍率或基础尺寸调小。`,
-        );
+      // 修正目标同样受基础图那条上限，超了按比例收，而不是把任务拒掉。
+      const fitted = fitToLimit(round16(box.width), round16(box.height));
+      if (fitted.width <= record.width && fitted.height <= record.height) {
+        // 收完不比原图大，这一檔修正等于没做，直接关掉。
+        record.hiresScale = 0;
+      } else {
+        record.hiresWidth = fitted.width;
+        record.hiresHeight = fitted.height;
       }
     }
     store.upsertJob(record);
