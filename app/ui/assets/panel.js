@@ -10,9 +10,9 @@ const MAX_MP = 4.2;
 // 引擎的硬边界：单边最小 256（256×256 ≈ 0.066MP）。
 const MIN_MP = 0.06;
 const MAX_SIDE = 4096;
-// 刻度两端按「外端向上、内端向下」取整，中间一格 0.1。
-// 刻度只表示位置，实际像素量还要再夹回 [MIN_MP, MAX_MP]。
-const MP_NOTCH_MIN = Math.floor(MIN_MP * 10) / 10;
+// 刻度两端都取上整：下端 0.1 就是真正能做到的那一格（0.11MP），
+// 下整到 0.0 会多一格拖下去没变化的死格。
+const MP_NOTCH_MIN = Math.ceil(MIN_MP * 10) / 10;
 const MP_NOTCH_MAX = Math.ceil(MAX_MP * 10) / 10;
 const MP_STEPS = Math.max(1, Math.round((MP_NOTCH_MAX - MP_NOTCH_MIN) * 10));
 
