@@ -27,6 +27,7 @@ const nodes = {
   thumbs: el("thumbs"),
   clearJobs: el("clear-jobs"),
   ctxMenu: el("ctx-menu"),
+  lightboxClose: el("lightbox-close"),
   lightbox: el("lightbox"),
   lightboxImage: el("lightbox-image"),
   // 队列
@@ -141,6 +142,10 @@ function showView(view) {
     if (section) section.hidden = name !== view;
   }
   if (view === "download") void loadReleases();
+  // 画廊在隐藏状态下 clientWidth 是 0，首次算出来的列数偏少；显出来后重排一次。
+  if (view === "gallery" && galleryEntries.length) {
+    requestAnimationFrame(() => layoutGallery(galleryEntries));
+  }
 }
 
 // ── 画布 ───────────────────────────────────────────────────────────────
@@ -670,7 +675,11 @@ nodes.removeModel.addEventListener("click", () =>
   ),
 );
 nodes.clearJobs.addEventListener("click", onClearJobs);
-nodes.lightbox.addEventListener("click", () => {
+nodes.lightbox.addEventListener("click", (event) => {
+  // 点背景才关；图按原始大小可能比窗口还大，要看细节时不能一点就没了。
+  if (event.target === nodes.lightbox) nodes.lightbox.hidden = true;
+});
+nodes.lightboxClose.addEventListener("click", () => {
   nodes.lightbox.hidden = true;
 });
 document.addEventListener("click", () => closeMenu());
