@@ -143,6 +143,23 @@ body {
 .manage-row.dim { opacity: 0.6; }
 .manage-row.dim .name { font-weight: 400; }
 
+/* 版本号后面那串小标签：CUDA 版本、包类型、已装、变体数。 */
+.manage-row .badge {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ui-text-3);
+  white-space: nowrap;
+}
+
+.manage-row.on .badge {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+
 /* ── 分栏：左侧类别、右侧内容 ──────────────────────────────── */
 .split {
   display: flex;

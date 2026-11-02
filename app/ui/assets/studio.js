@@ -423,7 +423,7 @@ async function renderGallery(data) {
 }
 
 // ── 行与确认 ───────────────────────────────────────────────────────────
-function manageRow({ name, meta, on, dim, actions = [], remove }) {
+function manageRow({ name, meta, on, dim, badges = [], actions = [], remove }) {
   const row = document.createElement("div");
   row.className = on ? "manage-row on" : dim ? "manage-row dim" : "manage-row";
   const nameNode = document.createElement("span");
@@ -431,6 +431,12 @@ function manageRow({ name, meta, on, dim, actions = [], remove }) {
   nameNode.textContent = name;
   nameNode.title = name;
   row.append(nameNode);
+  for (const badge of badges) {
+    const tag = document.createElement("span");
+    tag.className = "badge";
+    tag.textContent = badge;
+    row.append(tag);
+  }
   if (meta) {
     const metaNode = document.createElement("span");
     metaNode.className = "meta";
@@ -615,7 +621,10 @@ function renderVersions(data) {
     ...(engines.length
       ? engines.map((item) =>
           manageRow({
-            name: `${item.version} · ${item.cuda ?? ""}${item.variant === "system-cuda" ? " · system-cuda" : ""}`,
+            name: `${item.version}`,
+            badges: [item.cuda ?? null, item.variant === "system-cuda" ? "system-cuda" : "bundled", item.current ? "当前" : null].filter(
+              Boolean,
+            ),
             meta: formatSize(item.bytes),
             on: item.current,
             actions: item.current
@@ -641,6 +650,7 @@ function renderVersions(data) {
     ...models.map((item) =>
       manageRow({
         name: `${item.label}${item.active ? " · 当前" : ""}`,
+        badges: [item.installed ? "已装" : null].filter(Boolean),
         meta: item.installed ? formatSize(item.bytes) : `${item.note} · 未安装`,
         on: item.active,
         dim: !item.installed,
@@ -731,6 +741,10 @@ async function loadReleases(force = false) {
       ...items.map((item) =>
         manageRow({
           name: item.version,
+          badges: [
+            item.installed ? "已装" : null,
+            item.windowsAssets ? `${item.windowsAssets} 个变体` : null,
+          ].filter(Boolean),
           meta: [item.publishedAt?.slice(0, 10), item.bundledBytes ? formatSize(item.bundledBytes) : null]
             .filter(Boolean)
             .join(" · "),
