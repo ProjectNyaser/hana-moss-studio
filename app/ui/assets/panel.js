@@ -232,22 +232,22 @@ function placeThumb(container, thumb, pct) {
   return x;
 }
 
-/** 滑块按 0.1 一档走，最后一档贴着上限。
- *  上限 ×1.07 时只有一档，但那一档占满行程，拖到一半就到顶。 */
+/** 滑块的右端取实际上限的上整：上限 ×1.35 时轨道铺到 ×1.4，
+ *  拖到底就停在那里，那个刻度实际只做得到 ×1.35。 */
 function hiresSteps(maxScale) {
-  return Math.max(1, Math.ceil((maxScale - 1) / 0.1 - 1e-9));
+  return Math.max(1, Math.ceil(maxScale * 10 - 1e-9) - 10);
 }
 
 function hiresAt(pct, maxScale) {
   const steps = hiresSteps(maxScale);
   const index = Math.min(steps, Math.max(0, Math.round(pct * steps)));
-  return Number(Math.min(maxScale, 1 + index * 0.1).toFixed(2));
+  return Number((1 + index * 0.1).toFixed(2));
 }
 
 function quantizeHires(value, maxScale) {
   if (maxScale <= 1.001) return 1;
-  const index = Math.round((value - 1) / 0.1);
-  return Number(Math.min(maxScale, Math.max(1, 1 + index * 0.1)).toFixed(2));
+  const index = Math.min(hiresSteps(maxScale), Math.max(0, Math.round((value - 1) / 0.1)));
+  return Number((1 + index * 0.1).toFixed(2));
 }
 
 /** 跟后端同一套收敛规则：单边与总量取更严的缩放系数，比例不变。 */
@@ -293,20 +293,20 @@ function renderSize() {
 
   // 这个位置报的是**最终出图尺寸**：含高清修正收后的结果，而不只是基础图。
   const base = fitToEngine(width, height);
-  // 倍率不在这里收进上限：收一次，拖其他滑块时这一格就会跟着跳。
-  // 拇指位置夹到右端，实际出图由后端按上限收敛。
+  // 满格刻度可能仍超过实际上限：刻度 ×1.4 实际只做得到 ×1.35。
+  // 拇指位置按刻度铺，右侧报实际能做到的值。
   const maxScale = hiresMax();
-  const overLimit = hiresScale > maxScale + 0.001;
-  const hiresPct = maxScale > 1 ? Math.min(1, (hiresScale - 1) / (maxScale - 1)) : 0;
+  const notchMax = maxScale > 1.001 ? Math.ceil(maxScale * 10 - 1e-9) / 10 : 1;
+  const effectiveScale = Math.min(hiresScale, maxScale);
+  const hiresPct = notchMax > 1 ? Math.min(1, (hiresScale - 1) / (notchMax - 1)) : 0;
   const hx = placeThumb(nodes.hiresSlider, nodes.hiresThumb, hiresPct);
   nodes.hiresFill.style.width = `${hx}px`;
-  // 拇指上写步长口径（一位小数），右侧写实际值（两位）。
+  // 拇指上写刻度（一位小数），右侧写实际能做的值。
   nodes.hiresThumb.textContent = `×${hiresScale.toFixed(1)}`;
   nodes.hiresThumb.setAttribute("aria-valuenow", hiresScale.toFixed(2));
-  nodes.hiresThumb.setAttribute("aria-valuemax", maxScale.toFixed(2));
-  const hiresActual = `×${Number(hiresScale.toFixed(2))}`;
+  nodes.hiresThumb.setAttribute("aria-valuemax", notchMax.toFixed(2));
   nodes.hiresNote.textContent = hiresScale > 1.001
-    ? (overLimit ? `${hiresActual} 超上限` : hiresActual)
+    ? `×${Number(effectiveScale.toFixed(2))}`
     : "关闭";
   nodes.hiresThumb.title = maxScale <= 1.001
     ? "这张图已经贴到引擎上限，没法再放大"
@@ -314,9 +314,9 @@ function renderSize() {
 
   let finalW = base.width;
   let finalH = base.height;
-  if (hiresScale > 1.001) {
+  if (effectiveScale > 1.001) {
     const round16 = (value) => Math.max(16, Math.round(value / 16) * 16);
-    const target = fitToEngine(round16(base.width * hiresScale), round16(base.height * hiresScale));
+    const target = fitToEngine(round16(base.width * effectiveScale), round16(base.height * effectiveScale));
     if (target.width > base.width || target.height > base.height) {
       finalW = target.width;
       finalH = target.height;
@@ -325,7 +325,7 @@ function renderSize() {
   const finalMP = (finalW * finalH) / 1e6;
   const differs = finalW !== base.width || finalH !== base.height;
   // 写成 w × h × 倍率 → 最终尺寸，一眼看出倍率起了多大作用。
-  const scaleLabel = hiresScale > 1.001 ? ` ×${Number(hiresScale.toFixed(2))}` : "";
+  const scaleLabel = effectiveScale > 1.001 ? ` ×${Number(effectiveScale.toFixed(2))}` : "";
   nodes.sizeNote.textContent = differs || base.adjusted || scaleLabel
     ? `${width}×${height}${scaleLabel} → ${finalW}×${finalH} · ${finalMP.toFixed(2)}MP`
     : `${width}×${height} · ${finalMP.toFixed(2)}MP`;
@@ -555,8 +555,9 @@ async function onGenerate() {
     steps,
     cfg: Number(nodes.cfg.value),
   };
-  if (hiresScale > 1.001) {
-    payload.hiresScale = Math.round(hiresScale * 100) / 100;
+  const effectiveScale = Math.min(hiresScale, hiresMax());
+  if (effectiveScale > 1.001) {
+    payload.hiresScale = Math.round(effectiveScale * 100) / 100;
     const hiresSteps = Math.round(Number(nodes.hiresSteps.value) || 0);
     if (hiresSteps > 0) payload.hiresSteps = hiresSteps;
   }
