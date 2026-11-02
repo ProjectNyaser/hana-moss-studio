@@ -67,6 +67,8 @@ let elapsedAnchor = null;
 const GALLERY_PAGE = 60;
 let galleryJobs = [];
 let galleryTotal = 0;
+/** 已经拉到的位置。不用 galleryJobs.length：删掉一条后会错位，跳过未加载的那一张。 */
+let galleryOffset = 0;
 let galleryLoading = false;
 let lastActive = false;
 let renderedJobsKey = null;
@@ -353,9 +355,10 @@ async function loadGallery(reset = false) {
   if (galleryLoading) return;
   galleryLoading = true;
   try {
-    const offset = reset ? 0 : galleryJobs.length;
+    const offset = reset ? 0 : galleryOffset;
     const page = await api(`/jobs?offset=${offset}&limit=${GALLERY_PAGE}`);
     galleryJobs = reset ? page.jobs : galleryJobs.concat(page.jobs);
+    galleryOffset = offset + page.jobs.length;
     galleryTotal = page.total ?? galleryJobs.length;
     if (latest) void renderGallery(latest);
   } catch (error) {
@@ -1309,6 +1312,8 @@ async function removeJob(id) {
     // 后端已经删了、界面还在，看着就像没生效。
     const gone = galleryJobs.find((job) => job.id === id);
     galleryJobs = galleryJobs.filter((job) => job.id !== id);
+    // 分页游标跟着退一格，否则下次加载会跳过一条。
+    if (gone) galleryOffset = Math.max(0, galleryOffset - 1);
     if (gone) {
       galleryTotal = Math.max(0, galleryTotal - 1);
       if (gone.output) {
