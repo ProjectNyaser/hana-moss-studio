@@ -58,7 +58,6 @@ const nodes = {
   downloadModels: el("download-models"),
   versionsTabs: el("versions-tabs"),
   downloadCancel: el("download-cancel"),
-  downloadBar: el("download-bar"),
   downloadMessage: el("download-message"),
   downloadFiles: el("download-files"),
   downloadAvailableState: el("download-available-state"),
@@ -741,55 +740,80 @@ function renderVersions(data) {
 }
 
 
-/** 每个文件一行：名字与速度一行，进度条里写百分比，大小单独一行。 */
+/** 每个文件一行；同时只下几个，所以按状态分组，正在下的排前面。 */
 function renderDownloadTasks(tasks) {
   if (!Array.isArray(tasks) || !tasks.length) {
     nodes.downloadFiles.replaceChildren();
     return;
   }
-  nodes.downloadFiles.replaceChildren(
-    ...tasks.map((task) => {
-      const total = Number(task.size) || 0;
-      const got = Number(task.got) || 0;
-      const pct = total ? Math.min(100, Math.floor((got / total) * 100)) : 0;
-      const speed = Number(task.speed) || 0;
-      const done = task.status === "complete";
 
-      const row = document.createElement("div");
-      row.className = done ? "dl-row done" : task.status === "error" ? "dl-row bad" : pct < 12 ? "dl-row low" : "dl-row";
+  const order = { active: 0, waiting: 1, paused: 2, error: 3, complete: 4 };
+  const sorted = [...tasks].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+  const groups = [
+    { status: "active", title: "正在下载" },
+    { status: "waiting", title: "排队中" },
+    { status: "error", title: "失败" },
+    { status: "complete", title: "已完成" },
+  ];
 
-      const line = document.createElement("div");
-      line.className = "dl-line";
-      const name = document.createElement("span");
-      name.className = "dl-name";
-      name.textContent = task.out.split("/").pop();
-      name.title = task.out;
-      const right = document.createElement("span");
-      right.className = "dl-speed";
-      right.textContent = done ? "完成" : speed > 0 ? `${formatSize(speed)}/s` : "等待";
-      line.append(name, right);
+  const out = [];
+  for (const group of groups) {
+    const rows = sorted.filter((task) => task.status === group.status);
+    if (!rows.length) continue;
+    const head = document.createElement("div");
+    head.className = "dl-group";
+    head.textContent = `${group.title} ${rows.length}`;
+    out.push(head, ...rows.map(renderTaskRow));
+  }
+  nodes.downloadFiles.replaceChildren(...out);
+}
 
-      const track = document.createElement("div");
-      track.className = "dl-track";
-      const fill = document.createElement("i");
-      fill.style.width = done ? "100%" : `${Math.max(0.5, pct)}%`;
-      const label = document.createElement("span");
-      label.className = "dl-pct";
-      label.textContent = `${pct}%`;
-      track.append(fill, label);
+function renderTaskRow(task) {
+  const total = Number(task.size) || 0;
+  const got = Number(task.got) || 0;
+  const pct = total ? Math.min(100, Math.floor((got / total) * 100)) : 0;
+  const speed = Number(task.speed) || 0;
+  const done = task.status === "complete";
+  const active = task.status === "active";
 
-      const foot = document.createElement("div");
-      foot.className = "dl-foot";
-      const bits = [`${formatSize(got)} / ${formatSize(total)}`];
-      if (!done && speed > 0 && total > got) {
-        bits.push(`剩 ${formatDuration(((total - got) / speed) * 1000)}`);
-      }
-      foot.textContent = bits.join(" · ");
+  const row = document.createElement("div");
+  row.className = done ? "dl-row done" : task.status === "error" ? "dl-row bad" : pct < 12 ? "dl-row low" : "dl-row";
 
-      row.append(line, track, foot);
-      return row;
-    }),
-  );
+  const line = document.createElement("div");
+  line.className = "dl-line";
+  const dot = document.createElement("span");
+  dot.className = active ? "dl-dot on" : "dl-dot";
+  const name = document.createElement("span");
+  name.className = "dl-name";
+  name.textContent = task.out.split("/").pop();
+  name.title = task.out;
+  const right = document.createElement("span");
+  right.className = "dl-speed";
+  right.textContent = done ? "完成" : active ? (speed > 0 ? `${formatSize(speed)}/s` : "…") : "";
+  line.append(dot, name, right);
+
+  if (!done && task.status !== "waiting") {
+    const track = document.createElement("div");
+    track.className = "dl-track";
+    const fill = document.createElement("i");
+    fill.style.width = `${Math.max(0.5, pct)}%`;
+    const label = document.createElement("span");
+    label.className = "dl-pct";
+    label.textContent = `${pct}%`;
+    track.append(fill, label);
+    row.append(line, track);
+  } else {
+    row.append(line);
+  }
+
+  const foot = document.createElement("div");
+  foot.className = "dl-foot";
+  const bits = [`${formatSize(got)} / ${formatSize(total)}`];
+  if (active && speed > 0 && total > got) bits.push(`剩 ${formatDuration(((total - got) / speed) * 1000)}`);
+  foot.textContent = bits.join(" · ");
+  row.append(foot);
+
+  return row;
 }
 
 // ── 下载 ───────────────────────────────────────────────────────────────
@@ -826,7 +850,6 @@ function renderDownload(data) {
 
   // 快照可能只带 queue（还没开始过任何安装）。
   if (!job?.phase) {
-    nodes.downloadBar.hidden = true;
     nodes.downloadCancel.hidden = true;
     nodes.downloadState.textContent = "";
     nodes.downloadFiles.replaceChildren();
@@ -834,11 +857,8 @@ function renderDownload(data) {
     return;
   }
   renderDownloadTasks(job.tasks);
-  const percent = Math.max(0, Math.min(100, job.percent ?? 0));
-  nodes.downloadBar.hidden = false;
-  nodes.downloadBar.querySelector("i").style.width = `${percent || 4}%`;
   nodes.downloadCancel.hidden = Boolean(job.finishedAt);
-  nodes.downloadState.textContent = job.phase ?? "";
+  nodes.downloadState.textContent = job.finishedAt ? "已结束" : "下载中";
   // 按 aria2 CLI 的口径排：SIZE → 百分比 → 速度 → 剩余 → 连接数。
   const parts = [];
   if (job.totalBytes) {

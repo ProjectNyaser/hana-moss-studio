@@ -370,12 +370,14 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
   }
 
   function enqueue(kind, args) {
+    // 同一种任务只排一份：连点几下不该把权重排三次。
+    const key = kind === "engine" ? `engine:${args?.tag ?? "latest"}` : `weights:${args?.variant === "sft" ? "sft" : "base"}`;
+    const label = kind === "engine" ? `引擎 ${args?.tag ?? "latest"}` : `权重 ${args?.variant === "sft" ? "SFT" : "Base"}`;
     if (job && !job.finishedAt) {
-      pending.push({
-        kind,
-        args,
-        label: kind === "engine" ? `引擎 ${args?.tag ?? "latest"}` : `权重 ${args?.variant === "sft" ? "SFT" : "Base"}`,
-      });
+      if (pending.some((item) => item.key === key)) {
+        return { queued: true, position: pending.findIndex((item) => item.key === key) + 1, duplicate: true };
+      }
+      pending.push({ kind, args, key, label });
       onUpdate?.();
       return { queued: true, position: pending.length };
     }

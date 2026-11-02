@@ -255,9 +255,36 @@ body {
 
 .dl-line {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
 }
+
+.dl-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ui-line);
+}
+
+.dl-dot.on {
+  background: var(--ui-accent);
+  animation: dl-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dl-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.dl-group {
+  margin: 10px 0 2px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ui-text-3);
+}
+
+.dl-group:first-child { margin-top: 0; }
 
 .dl-name {
   flex: 1;
