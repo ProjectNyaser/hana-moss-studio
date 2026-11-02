@@ -463,6 +463,9 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
 
   function patch(update) {
     if (!job) return;
+    // 收尾之后不再接受进度写入：取消那一刻可能还有一帧 onTick 在飞，
+    // 它会把刚标成 removed 的任务改回 active。带 finishedAt 的写入是收尾本身，放行。
+    if (job.finishedAt && !update.finishedAt) return;
     Object.assign(job, update);
     job.updatedAt = new Date().toISOString();
     onUpdate?.();
@@ -1087,7 +1090,11 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
       pending = [];
       cancelled = true;
       child?.kill();
-      patch({ phase: "cancelled", message: "已取消", finishedAt: new Date().toISOString() });
+      // 残留的活跃任务跟着落成终态，否则收尾后那一条还挂着最后一帧速度和进度。
+      const tasks = (job.tasks ?? []).map((task) =>
+        task.status === "active" || task.status === "waiting" ? { ...task, status: "removed", speed: 0 } : task,
+      );
+      patch({ phase: "cancelled", message: "已取消", finishedAt: new Date().toISOString(), tasks });
       return true;
     },
     installEngine,

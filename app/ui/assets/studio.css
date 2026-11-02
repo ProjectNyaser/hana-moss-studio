@@ -452,7 +452,20 @@ body {
 .queue-card .qc-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .queue-card .qc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 
+.queue-card .qc-head { display: flex; align-items: baseline; gap: 8px; }
+
+.queue-card .qc-state {
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-3);
+}
+
+.queue-card.on .qc-state { color: var(--ui-accent); }
+
 .queue-card .qc-title {
+  flex: 1;
+  min-width: 0;
   font-size: 12.5px;
   color: var(--ui-text);
   overflow: hidden;

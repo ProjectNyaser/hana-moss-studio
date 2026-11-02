@@ -1141,11 +1141,13 @@ export default defineApp(async (sdk) => {
       return c.body(data, 200, { "content-type": "image/png", "cache-control": "private, max-age=30" });
     });
 
-    // 采样预览：引擎在采样过程中不断重写同一个文件，这里直接读出来。
+    // 采样预览：引擎在采样过程中不断重写同一个文件。
+    // 体积大的那些引擎会额外给一份 JPEG，界面优先读它。
     app.get(`/${APP_ID}/preview`, (c) => {
-      const file = engine.previewPath;
+      const file = engine.previewFile();
       if (!existsSync(file)) return c.text("not found", 404);
-      return c.body(readFileSync(file), 200, { "content-type": "image/png", "cache-control": "no-store" });
+      const type = file.endsWith(".jpg") ? "image/jpeg" : "image/png";
+      return c.body(readFileSync(file), 200, { "content-type": type, "cache-control": "no-store" });
     });
 
     app.post(`/${APP_ID}/jobs/remove`, async (c) => {

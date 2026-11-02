@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, dirname, delimiter } from "node:path";
+import { pngToJpeg, worthConverting } from "./image.js";
 
 /**
  * moss-server 是一个外部 C++/CUDA 进程，协议为 stdio JSON-lines：
@@ -56,6 +57,10 @@ export class Engine {
     this.cacheDir = cacheDir;
     /** 采样预览图：每次生成覆盖同一张，不堆文件。 */
     this.previewPath = join(cacheDir, "preview.png");
+    /** 预览的 JPEG 版：全尺寸 PNG 一张 10 MB，界面只需要看得清形状。 */
+    this.previewJpegPath = join(cacheDir, "preview.jpg");
+    this.previewIsJpeg = false;
+    this.previewBusy = false;
     this.onEvent = onEvent ?? (() => {});
     this.child = null;
     this.pending = new Map();
@@ -139,6 +144,33 @@ export class Engine {
     }
   }
 
+  /**
+   * 预览先落一份 JPEG 再通知。转码要一两百毫秒，上一帧还没转完就跳过这一帧，
+   * 下一步还会来，不排长队。
+   */
+  async publishPreview(jobId) {
+    if (this.previewBusy) return;
+    this.previewBusy = true;
+    let jpeg = false;
+    try {
+      if (worthConverting(this.previewPath)) {
+        await pngToJpeg(this.previewPath, this.previewJpegPath);
+        jpeg = true;
+      }
+    } catch {
+      jpeg = false;
+    } finally {
+      this.previewBusy = false;
+    }
+    this.previewIsJpeg = jpeg;
+    this.onEvent({ type: "preview", jobId, at: Date.now(), jpeg });
+  }
+
+  /** 界面读哪个文件：转成了 JPEG 就用它，否则退回引擎写的 PNG。 */
+  previewFile() {
+    return this.previewIsJpeg ? this.previewJpegPath : this.previewPath;
+  }
+
   handleEvent(message) {
     const event = message.event;
     const jobId = message.id;
@@ -188,7 +220,8 @@ export class Engine {
         return;
       }
       case "preview":
-        this.onEvent({ type: "preview", jobId, at: Date.now() });
+        // 先转 JPEG 再通知：界面拿到的就是小图，不必每次读 10 MB 的 PNG。
+        void this.publishPreview(jobId);
         return;
       case "done": {
         const status = String(message.status ?? "error");
@@ -349,6 +382,8 @@ export class Engine {
       active.reject = reject;
     });
     this.active = active;
+    // 上一张的预览可能是 JPEG，新任务第一帧之前不能拿它充数。
+    this.previewIsJpeg = false;
     const params = {
       output: job.output,
       prompt: job.prompt,

@@ -38,12 +38,8 @@ const nodes = {
   viewerZoomFit: el("viewer-zoom-fit"),
   viewerZoomActual: el("viewer-zoom-actual"),
   // 队列
-  queueRunningState: el("queue-running-state"),
-  queueRunning: el("queue-running"),
   queueCount: el("queue-count"),
   queueList: el("queue-list"),
-  queueFailedCount: el("queue-failed-count"),
-  queueFailed: el("queue-failed"),
   // 版本
   engineState: el("versions-engine-state"),
   engineToggle: el("versions-engine-toggle"),
@@ -55,18 +51,14 @@ const nodes = {
   host: el("versions-host"),
   // 下载
   toast: el("toast"),
-  downloadState: el("download-state"),
   downloadEngine: el("download-engine"),
   downloadModels: el("download-models"),
   versionsTabs: el("versions-tabs"),
-  downloadCancel: el("download-cancel"),
-  downloadMessage: el("download-message"),
-  downloadFiles: el("download-files"),
   downloadAvailableState: el("download-available-state"),
   downloadAvailable: el("download-available"),
 };
 
-const views = ["canvas", "gallery", "queue", "versions", "download"];
+const views = ["canvas", "gallery", "queue", "versions"];
 const imageCache = new Map();
 let latest = null;
 // 耗时锚点：{ at, ms }，每次后端推送更新，两次之间由定时器补差。
@@ -181,7 +173,7 @@ function showView(view) {
     const section = el(`view-${name}`);
     if (section) section.hidden = name !== view;
   }
-  if (view === "versions" || view === "download") void loadReleases();
+  if (view === "versions") void loadReleases();
   if (view === "gallery" && !galleryJobs.length) void loadGallery(true);
   // 画廊在隐藏状态下 clientWidth 是 0，首次算出来的列数偏少；显出来后重排一次。
   if (view === "gallery" && galleryEntries.length) {
@@ -385,6 +377,7 @@ async function renderGallery(data) {
   for (const job of visible) {
     const tile = document.createElement("div");
     tile.className = "thumb";
+    tile.dataset.jobId = job.id;
     const shown = shownJob(data);
     if (job.status === "done" && job.output) {
       if (shown && shown.id === job.id) tile.classList.add("on");
@@ -583,7 +576,7 @@ const runSafe = async (fn, label) => {
     const next = await fn();
     if (next) render(next);
   } catch (error) {
-    nodes.downloadMessage.textContent = `${label}失败：${error instanceof Error ? error.message : String(error)}`;
+    void toast(`${label}失败：${error instanceof Error ? error.message : String(error)}`);
   }
 };
 
@@ -606,7 +599,7 @@ function bindSplitTabs(container) {
 }
 
 /** 队列里的一张卡：缩略图、标题、元信息、可选进度条与操作按钮。 */
-function queueCard({ title, meta, percent, thumb, on, actions = [] }) {
+function queueCard({ title, meta, percent, thumb, on, stateText, actions = [] }) {
   const card = document.createElement("div");
   card.className = on ? "queue-card on" : "queue-card";
   const box = document.createElement("div");
@@ -621,11 +614,21 @@ function queueCard({ title, meta, percent, thumb, on, actions = [] }) {
   }
   const main = document.createElement("div");
   main.className = "qc-main";
+  const head = document.createElement("div");
+  head.className = "qc-head";
   const titleNode = document.createElement("div");
   titleNode.className = "qc-title";
   titleNode.textContent = title;
   titleNode.title = title;
-  main.appendChild(titleNode);
+  head.appendChild(titleNode);
+  // 状态写在行内右侧，不再靠分块说明自己是哪一类。
+  if (stateText) {
+    const badge = document.createElement("span");
+    badge.className = "qc-state";
+    badge.textContent = stateText;
+    head.appendChild(badge);
+  }
+  main.appendChild(head);
   if (meta) {
     const metaNode = document.createElement("div");
     metaNode.className = "qc-meta";
@@ -656,80 +659,96 @@ function queueCard({ title, meta, percent, thumb, on, actions = [] }) {
 function renderQueue(data) {
   const active = data.engine.active;
   const queue = Array.isArray(data.queue) ? data.queue : [];
-  const failed = data.jobs.filter((job) => job.status === "error");
-  nodes.tabQueue.textContent = active || queue.length ? ` ${queue.length + (active ? 1 : 0)}` : "";
+  const failed = data.jobs.filter((job) => job.status === "error").slice(0, 8);
+  const total = queue.length + (active ? 1 : 0);
+  // 角标等下载行一起算，放到函数末尾。
 
-  nodes.queueRunningState.textContent = active ? "" : "空闲";
-  nodes.queueRunning.replaceChildren(
-    ...(active
-      ? [
-          queueCard({
-            title: active.prompt || "(无提示词)",
-            meta: `${active.phase ?? "生成中"}${active.progress?.total ? ` · ${active.progress.step}/${active.progress.total}` : ""}${active.progress?.etaMs ? ` · 约剩 ${formatDuration(active.progress.etaMs)}` : ""}`,
-            percent: active.progress?.percent,
-            thumb: active.previewAt ? previewUrl(active.previewAt) : null,
-            on: true,
-            actions: [
-              {
-                label: "取消",
-                run: () => runSafe(() => post("/cancel", { id: active.jobId }), "取消"),
-              },
-            ],
-          }),
-        ]
-      : [queueCard({ title: "没有正在跑的任务" })]),
-  );
+  // 一条任务一行，状态写在行内，不再分「正在跑 / 排队 / 失败」三段。
+  const rows = [];
+  if (active) {
+    const percent = active.progress?.percent;
+    rows.push(
+      queueCard({
+        title: active.prompt || "(无提示词)",
+        stateText: typeof percent === "number" ? `${Math.round(percent)}%` : "正在跑",
+        meta: `${active.phase ?? "生成中"}${active.progress?.total ? ` · ${active.progress.step}/${active.progress.total}` : ""}${active.progress?.etaMs ? ` · 约剩 ${formatDuration(active.progress.etaMs)}` : ""}`,
+        percent,
+        thumb: active.previewAt ? previewUrl(active.previewAt) : null,
+        on: true,
+        actions: [
+          {
+            label: "取消",
+            run: () => runSafe(() => post("/cancel", { id: active.jobId }), "取消"),
+          },
+        ],
+      }),
+    );
+  }
+  queue.forEach((job, index) => {
+    rows.push(
+      queueCard({
+        title: job.prompt || "(无提示词)",
+        stateText: `排队 ${index + 1}`,
+        meta: `${job.width}×${job.height} · ${job.steps} 步`,
+        actions: [
+          index > 0
+            ? {
+                label: "↑",
+                title: "提前一位",
+                run: () => runSafe(() => post("/queue/move", { id: job.id, delta: -1 }), "上移"),
+              }
+            : null,
+          index < queue.length - 1
+            ? {
+                label: "↓",
+                title: "后移一位",
+                run: () => runSafe(() => post("/queue/move", { id: job.id, delta: 1 }), "下移"),
+              }
+            : null,
+          {
+            label: "取消",
+            run: () => runSafe(() => post("/cancel", { id: job.id }), "取消"),
+          },
+        ].filter(Boolean),
+      }),
+    );
+  });
+  for (const job of failed) {
+    const card = queueCard({
+      title: job.prompt || "(无提示词)",
+      stateText: "失败",
+      meta: (job.error ?? "失败").slice(0, 60),
+    });
+    const button = document.createElement("button");
+    button.className = "btn ghost small";
+    button.type = "button";
+    button.textContent = "删除";
+    armable(button, "确认", "删除", () => removeJob(job.id));
+    card.appendChild(button);
+    rows.push(card);
+  }
 
-  nodes.queueCount.textContent = queue.length ? `${queue.length} 条` : "";
-  nodes.queueList.replaceChildren(
-    ...(queue.length
-      ? queue.map((job, index) =>
-          queueCard({
-            title: job.prompt || "(无提示词)",
-            meta: `第 ${index + 1} 位 · ${job.width}×${job.height} · ${job.steps} 步`,
-            actions: [
-              index > 0
-                ? {
-                    label: "↑",
-                    title: "提前一位",
-                    run: () => runSafe(() => post("/queue/move", { id: job.id, delta: -1 }), "上移"),
-                  }
-                : null,
-              index < queue.length - 1
-                ? {
-                    label: "↓",
-                    title: "后移一位",
-                    run: () => runSafe(() => post("/queue/move", { id: job.id, delta: 1 }), "下移"),
-                  }
-                : null,
-              {
-                label: "取消",
-                run: () => runSafe(() => post("/cancel", { id: job.id }), "取消"),
-              },
-            ].filter(Boolean),
-          }),
-        )
-      : [queueCard({ title: "队列是空的" })]),
-  );
+  // 下载任务和生图任务同一个列表：在跑的事一页看完。
+  const downloading = downloadRows(data.install);
+  const downloadBusy = data.install && !data.install.finishedAt ? 1 : 0;
 
-  nodes.queueFailedCount.textContent = failed.length ? `${failed.length} 条` : "";
-  nodes.queueFailed.replaceChildren(
-    ...(failed.length
-      ? failed.slice(0, 8).map((job) => {
-          const card = queueCard({
-            title: job.prompt || "(无提示词)",
-            meta: (job.error ?? "失败").slice(0, 60),
-          });
-          const button = document.createElement("button");
-          button.className = "btn ghost small";
-          button.type = "button";
-          button.textContent = "删除";
-          armable(button, "确认", "删除", () => removeJob(job.id));
-          card.appendChild(button);
-          return card;
-        })
-      : [queueCard({ title: "没有失败的记录" })]),
-  );
+  nodes.queueCount.textContent = [
+    active ? "1 正在跑" : null,
+    queue.length ? `${queue.length} 排队` : null,
+    downloading.length ? `${downloading.length} 下载中` : null,
+    failed.length ? `${failed.length} 失败` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  if (!rows.length && !downloading.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-line";
+    empty.textContent = "队列是空的。";
+    rows.push(empty);
+  }
+  nodes.queueList.replaceChildren(...rows, ...downloading);
+  nodes.tabQueue.textContent = total || downloadBusy ? ` ${total + (downloadBusy ? downloading.length : 0)}` : "";
 }
 
 // ── 版本 ───────────────────────────────────────────────────────────────
@@ -833,105 +852,6 @@ function renderVersions(data) {
 }
 
 
-/** 每个文件一行；同时只下几个，所以按状态分组，正在下的排前面。 */
-function renderDownloadTasks(tasks) {
-  if (!Array.isArray(tasks) || !tasks.length) {
-    nodes.downloadFiles.replaceChildren();
-    return;
-  }
-
-  const order = { active: 0, paused: 1, waiting: 2, error: 3, complete: 4 };
-  const sorted = [...tasks].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
-  const groups = [
-    { status: "active", title: "正在下载" },
-    { status: "paused", title: "已暂停" },
-    { status: "waiting", title: "排队中" },
-    { status: "error", title: "失败" },
-    { status: "complete", title: "已完成" },
-  ];
-
-  const out = [];
-  for (const group of groups) {
-    const rows = sorted.filter((task) => task.status === group.status);
-    if (!rows.length) continue;
-    const head = document.createElement("div");
-    head.className = "dl-group";
-    head.textContent = `${group.title} ${rows.length}`;
-    out.push(head, ...rows.map(renderTaskRow));
-  }
-  nodes.downloadFiles.replaceChildren(...out);
-}
-
-function renderTaskRow(task) {
-  const total = Number(task.size) || 0;
-  const got = Number(task.got) || 0;
-  const pct = total ? Math.min(100, Math.floor((got / total) * 100)) : 0;
-  const speed = Number(task.speed) || 0;
-  const done = task.status === "complete";
-  const active = task.status === "active";
-  const paused = task.status === "paused";
-  const waiting = task.status === "waiting";
-
-  const row = document.createElement("div");
-  row.className = done
-    ? "dl-row done"
-    : task.status === "error" || task.status === "removed"
-      ? "dl-row bad"
-      : pct < 12
-        ? "dl-row low"
-        : "dl-row";
-
-  const line = document.createElement("div");
-  line.className = "dl-line";
-  const dot = document.createElement("span");
-  dot.className = active ? "dl-dot on" : "dl-dot";
-  const name = document.createElement("span");
-  name.className = "dl-name";
-  name.textContent = task.out.split("/").pop();
-  name.title = task.out;
-
-  const right = document.createElement("span");
-  right.className = "dl-speed";
-  if (done) right.textContent = "完成";
-  else if (paused) right.textContent = "已暂停";
-  else if (waiting) right.textContent = task.queue ? `排队 ${task.queue}` : "排队";
-  else if (speed > 0) right.textContent = `${formatSize(speed)}/s`;
-  else right.textContent = active ? "…" : "";
-
-  const acts = document.createElement("span");
-  acts.className = "dl-acts";
-  if (active || paused) {
-    acts.append(actionButton(paused ? "继续" : "暂停", () => taskAction(task.out, paused ? "resume" : "pause")));
-  }
-  if (active || paused || waiting) {
-    acts.append(actionButton("移除", () => taskAction(task.out, "remove")));
-  }
-
-  line.append(dot, name, right, acts);
-
-  if (!done && !waiting) {
-    const track = document.createElement("div");
-    track.className = "dl-track";
-    const fill = document.createElement("i");
-    fill.style.width = `${Math.max(0.5, pct)}%`;
-    const label = document.createElement("span");
-    label.className = "dl-pct";
-    label.textContent = `${pct}%`;
-    track.append(fill, label);
-    row.append(line, track);
-  } else {
-    row.append(line);
-  }
-
-  const foot = document.createElement("div");
-  foot.className = "dl-foot";
-  const bits = [`${formatSize(got)} / ${formatSize(total)}`];
-  if (active && speed > 0 && total > got) bits.push(`剩 ${formatDuration(((total - got) / speed) * 1000)}`);
-  foot.textContent = bits.join(" · ");
-  row.append(foot);
-
-  return row;
-}
 
 function actionButton(label, run) {
   const button = document.createElement("button");
@@ -958,7 +878,6 @@ async function taskAction(out, action) {
 function renderDownload(data) {
   const job = data.install;
   const busy = Boolean(job && !job.finishedAt);
-  const waiting = Array.isArray(job?.queue) ? job.queue : [];
   nodes.downloadEngine.disabled = false;
 
   // 模型：每个仓库一行，没装的给下载按钮。
@@ -986,41 +905,62 @@ function renderDownload(data) {
     }),
   );
 
-  // 快照可能只带 queue（还没开始过任何安装）。
-  if (!job?.phase) {
-    nodes.downloadCancel.hidden = true;
-    nodes.downloadState.textContent = "";
-    nodes.downloadFiles.replaceChildren();
-    nodes.downloadMessage.textContent = waiting.length ? `等待中：${waiting.join("、")}` : "没有进行中的下载。去「版本」页选一个。";
-    return;
-  }
-  renderDownloadTasks(job.tasks);
-  nodes.downloadCancel.hidden = Boolean(job.finishedAt);
-  nodes.downloadState.textContent = job.finishedAt ? "已结束" : "下载中";
-  // 按 aria2 CLI 的口径排：SIZE → 百分比 → 速度 → 剩余 → 连接数。
-  const parts = [];
-  if (job.totalBytes) {
-    const pct = Math.min(100, Math.floor(((job.bytes ?? 0) / job.totalBytes) * 100));
-    parts.push(`${formatSize(job.bytes ?? 0)} / ${formatSize(job.totalBytes)}`);
-    parts.push(`${pct}%`);
-  }
-  if (job.speed > 0) parts.push(`${formatSize(job.speed)}/s`);
-  if (job.speed > 0 && job.totalBytes > (job.bytes ?? 0)) {
-    parts.push(`剩 ${formatDuration(((job.totalBytes - (job.bytes ?? 0)) / job.speed) * 1000)}`);
-  }
-  if (job.connections > 0) parts.push(`${job.connections} 连接`);
-  if (Array.isArray(job.files) && job.files[1]) parts.push(`${job.files[0]}/${job.files[1]} 个文件`);
+  // 下载任务已经并进队列页，这里只管版本页的模型下载入口。
+}
 
-  const head = job.label ? `${job.label}：` : "";
-  const base = job.error
-    ? `${job.phase}：${job.error}`
-    : parts.length
-      ? `${head}${parts.join(" · ")}`
-      : (job.message ?? "");
-  const current = job.current && parts.length ? `　当前 ${job.current.split("/").pop()}` : "";
-  nodes.downloadMessage.textContent = waiting.length
-    ? `${base}${current}　等待中：${waiting.join("、")}`
-    : `${base}${current}`;
+/**
+ * 下载任务 → 队列行。和生图任务用同一套卡片，一个页面里就看完全部在跑的事。
+ */
+function downloadRows(job) {
+  if (!job?.tasks?.length) return [];
+  // 已经收尾的任务不再列活跃行，否则取消后还挂着一条跑着的进度。
+  const tasks = job.finishedAt
+    ? job.tasks.filter((task) => task.status !== "active" && task.status !== "waiting")
+    : job.tasks;
+  return tasks.map((task) => {
+    const size = Number(task.size) || 0;
+    const got = Number(task.got) || 0;
+    const speed = Number(task.speed) || 0;
+    const percent = size ? Math.min(100, (got / size) * 100) : 0;
+    const meta = [
+      size ? `${formatSize(got)} / ${formatSize(size)}` : formatSize(got),
+      speed > 0 ? `${formatSize(speed)}/s` : null,
+      speed > 0 && size > got ? `剩 ${formatDuration(((size - got) / speed) * 1000)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const stateText =
+      task.status === "complete"
+        ? "已完成"
+        : task.status === "paused"
+          ? "已暂停"
+          : task.status === "error"
+            ? "失败"
+            : task.status === "removed"
+              ? "已取消"
+              : task.status === "waiting"
+                ? `排队${task.queue ? ` ${task.queue}` : ""}`
+                : `${Math.round(percent)}%`;
+    const act = (action, label) => ({
+      label,
+      run: () => runSafe(() => post("/install/task", { out: task.out, action }), label),
+    });
+    const actions =
+      task.status === "active"
+        ? [act("pause", "暂停"), act("remove", "移除")]
+        : task.status === "paused"
+          ? [act("resume", "继续"), act("remove", "移除")]
+          : task.status === "waiting"
+            ? [act("remove", "移除")]
+            : [];
+    return queueCard({
+      title: task.out,
+      stateText,
+      meta,
+      percent: task.status === "active" || task.status === "paused" ? percent : undefined,
+      actions,
+    });
+  });
 }
 
 async function loadReleases(force = false) {
@@ -1276,7 +1216,20 @@ function render(data) {
     renderedJobsKey = key;
     if (selectedId && !data.jobs.some((job) => job.id === selectedId && job.status === "done")) selectedId = null;
     void renderGallery(data);
+  } else {
+    // 状态没变但采样在出预览：只换那张图，不重建整面墙。
+    updateGalleryPreview(data);
   }
+}
+
+/** 采样中的那张，缩略图跟着引擎的中间结果走。 */
+function updateGalleryPreview(data) {
+  const active = data.engine.active;
+  if (!active?.previewAt) return;
+  const tile = nodes.thumbs.querySelector(`[data-job-id="${active.jobId}"] .preview-thumb`);
+  if (!tile) return;
+  const url = previewUrl(active.previewAt);
+  if (tile.getAttribute("src") !== url) tile.src = url;
 }
 
 async function refresh() {
@@ -1320,7 +1273,6 @@ nodes.engineToggle.addEventListener("click", () => {
 });
 nodes.downloadEngine.addEventListener("click", () => void startInstall("/install/engine", {}, "安装最新引擎"));
 bindSplitTabs(nodes.versionsTabs);
-nodes.downloadCancel.addEventListener("click", () => void runSafe(() => post("/install/cancel"), "取消"));
 nodes.removeModel.addEventListener("click", () =>
   armable(nodes.removeModel, "再点一次删 25 GiB", "卸载", () => {
     const active = latest?.models?.find((item) => item.active);
