@@ -317,6 +317,37 @@ body {
 /* 错误与排队占位没有图，给个正方块保持节奏。 */
 .gallery-grid .thumb.placeholder { aspect-ratio: 1 / 1; }
 
+/* 右键菜单：图上能用的几件事都在这里，失败记录也一样。 */
+.ctx-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--panel-card-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.ctx-menu[hidden] { display: none; }
+
+.ctx-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ctx-item:hover { background: var(--ui-overlay); }
+.ctx-item.danger { color: var(--ui-danger, #d4473c); }
+.ctx-sep { height: 1px; margin: 4px 2px; background: var(--ui-line); }
+
 /* 单条删除：悬停才出现，点一下变红再点才真删。 */
 .thumb-remove {
   position: absolute;

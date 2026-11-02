@@ -452,6 +452,7 @@ export default defineApp(async (sdk) => {
       id: job.id,
       cardId: cardIdOf(job.id),
       prompt: job.prompt,
+      negativePrompt: job.negativePrompt ?? "",
       width: job.width,
       height: job.height,
       steps: job.steps,

@@ -26,6 +26,7 @@ const nodes = {
   galleryCount: el("gallery-count"),
   thumbs: el("thumbs"),
   clearJobs: el("clear-jobs"),
+  ctxMenu: el("ctx-menu"),
   lightbox: el("lightbox"),
   lightboxImage: el("lightbox-image"),
   // 队列
@@ -296,13 +297,6 @@ async function renderGallery(data) {
         meta.className = "thumb-meta";
         meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
         tile.appendChild(meta);
-        const remove = document.createElement("button");
-        remove.className = "thumb-remove";
-        remove.type = "button";
-        remove.title = "删掉这条记录与图片";
-        remove.textContent = "×";
-        armable(remove, "删?", "×", () => removeJob(job.id));
-        tile.appendChild(remove);
       }
     } else if (job.status === "error") {
       tile.classList.add("placeholder", "bad");
@@ -315,6 +309,8 @@ async function renderGallery(data) {
       text.textContent = job.status === "queued" ? "排队中" : "生成中";
       tile.append(spinner, text);
     }
+    // 右键菜单：看大图、用这张的参数、删除。失败的记录也走这里。
+    tile.addEventListener("contextmenu", (event) => openMenu(event, job));
     entries.push({ job, tile });
   }
 
@@ -538,6 +534,74 @@ async function loadReleases(force = false) {
   }
 }
 
+// ── 右键菜单 ───────────────────────────────────────────────────────────
+/** 同一源广播：把“用这张的参数”送回侧栏。 */
+const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
+
+function closeMenu() {
+  nodes.ctxMenu.hidden = true;
+}
+
+function openMenu(event, job) {
+  event.preventDefault();
+  const menu = nodes.ctxMenu;
+  const items = [];
+  if (job.status === "done" && job.output) {
+    items.push({ label: "看大图", run: () => openLightbox(imageCache.get(job.output)) });
+    items.push({ label: "用这张的参数", run: () => reuseParams(job) });
+    items.push({ sep: true });
+  }
+  items.push({
+    label: job.output ? "删除记录与图片" : "删除记录",
+    danger: true,
+    run: () => removeJob(job.id),
+  });
+
+  menu.replaceChildren(
+    ...items.map((item) => {
+      if (item.sep) {
+        const sep = document.createElement("div");
+        sep.className = "ctx-sep";
+        return sep;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = item.danger ? "ctx-item danger" : "ctx-item";
+      button.textContent = item.label;
+      button.addEventListener("click", () => {
+        closeMenu();
+        void item.run();
+      });
+      return button;
+    }),
+  );
+
+  // 先显示再量尺寸，避免贴边时溢出。
+  menu.hidden = false;
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(event.clientX, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+/** 把这张的提示词与参数送回侧栏，在画布页接着改。 */
+function reuseParams(job) {
+  channel?.postMessage({
+    type: "reuse",
+    job: {
+      prompt: job.prompt ?? "",
+      negativePrompt: job.negativePrompt ?? "",
+      width: job.width,
+      height: job.height,
+      steps: job.steps,
+      cfg: job.cfg,
+      seed: job.seed,
+    },
+  });
+  showView("canvas");
+}
+
 // ── 总渲染 ─────────────────────────────────────────────────────────────
 function render(data) {
   latest = data;
@@ -609,8 +673,16 @@ nodes.clearJobs.addEventListener("click", onClearJobs);
 nodes.lightbox.addEventListener("click", () => {
   nodes.lightbox.hidden = true;
 });
+document.addEventListener("click", () => closeMenu());
+document.addEventListener("contextmenu", (event) => {
+  // 图上右键已自己处理；空白处的右键只负责把菜单关掉。
+  if (!event.target.closest(".thumb")) closeMenu();
+});
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !nodes.lightbox.hidden) nodes.lightbox.hidden = true;
+  if (event.key === "Escape") {
+    closeMenu();
+    if (!nodes.lightbox.hidden) nodes.lightbox.hidden = true;
+  }
 });
 // 窗口宽度变了列数跟着变，重排一次。
 window.addEventListener("resize", () => {

@@ -475,6 +475,25 @@ nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
 nodes.save.addEventListener("click", onSaveSettings);
 
+// ── 主区域的“用这张的参数” ─────────────────────────────────────
+const reuseChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
+
+function applyReuse(job) {
+  if (typeof job.prompt === "string") nodes.prompt.value = job.prompt;
+  if (typeof job.negativePrompt === "string") nodes.negative.value = job.negativePrompt;
+  if (job.width && job.height) setSize(job.width, job.height);
+  if (job.steps) nodes.steps.value = String(job.steps);
+  if (job.cfg) nodes.cfg.value = String(job.cfg);
+  nodes.seed.value = job.seed != null && job.seed !== "" ? String(job.seed) : "";
+  say("已载入这张的参数", "ok");
+}
+
+reuseChannel?.addEventListener("message", (event) => {
+  const data = event.data;
+  if (data?.type !== "reuse" || !data.job) return;
+  applyReuse(data.job);
+});
+
 async function boot() {
   syncTheme();
   try {
