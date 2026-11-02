@@ -896,6 +896,9 @@ export default defineApp(async (sdk) => {
       const current = state();
       const active = liveActive();
       const lines = [
+        ...(current.engine.platform?.supported
+          ? []
+          : [`平台：${current.engine.platform?.os} ${current.engine.platform?.arch}，苔室只支持 Windows x64`]),
         `引擎：${current.engine.running ? (current.engine.loaded ? "运行中 · 模型已加载" : "运行中 · 模型未加载") : "未启动"}`,
         `引擎文件：${current.engine.serverFound ? "已定位" : "未配置"}`,
         `模型目录：${current.engine.modelFound ? "已定位" : "未配置"}`,

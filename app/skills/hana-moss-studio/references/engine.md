@@ -4,12 +4,12 @@
 
 ## 进程与接口
 
-- 可执行：`<HANA_HOME>/app-data/hana-moss-studio/engine/mossinfer-<ver>-<os>-<cuda>-x86_64/bin/moss-server`（Windows 带 `.exe`；包名与平台、驱动的对应关系见 `platform.md`）
+- 可执行：`<HANA_HOME>/app-data/hana-moss-studio/engine/mossinfer-<ver>-windows-<cuda>-x86_64/bin/moss-server.exe`（包名怎么拼见 `platform.md`）
 - 通信：本机 stdio 上的 JSON 消息（`load` / `generate` / `cancel` / 进度事件 / 结束报告）
 - `load` 只收一个模型目录路径，没有架构或类型参数：它按 MOSS-Image 的结构读 `transformer / text_encoder / vae / model_index.json`
 - 不吃 LoRA（报告里 `lora: none`），不吃单文件 checkpoint
 
-模型目录可以指向盘上任意位置，但**引擎进程不在 App 的 fs 沙箱里**：App 自己 `existsSync` 检查路径时受宿主 `--allow-fs-read` 限制，只能看见自己的目录与 app-data。把模型放别的盘时，用目录联接（Windows junction / Linux 符号链接）把它接到 app-data 下，具体命令见 `platform.md`。App 看到的是字面合法路径，真正的数据流走引擎。
+模型目录可以指向盘上任意位置，但**引擎进程不在 App 的 fs 沙箱里**：App 自己 `existsSync` 检查路径时受宿主 `--allow-fs-read` 限制，只能看见自己的目录与 app-data。把模型放别的盘时，用 directory junction 把它接到 app-data 下，具体命令见 `platform.md`。App 看到的是字面合法路径，真正的数据流走引擎。
 
 ## arena 与两种显存策略
 

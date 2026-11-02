@@ -101,14 +101,14 @@ dist-extensions/app-<id>-<version>.entry.json   市场投稿条目
 
 ## 引擎
 
-引擎包来自 `xycld/owoinfer` 的 GitHub Release，命名形如 `mossinfer-<version>-<os>-<cuda>-<arch>[-sm75][-system-cuda]`。
+引擎包来自 `mossimage-cpp/mossimage.cpp` 的 GitHub Release（原 `xycld/owoinfer`），命名形如 `mossinfer-<version>-<os>-<cuda>-<arch>[-sm75][-system-cuda]`。苔室只取 `windows` 包。
 
 两种包的分界在 cuBLASLt：
 
 - `-system-cuda` 包只有二十几 MB，要求系统里已有 CUDA 13 的 `cublasLt64_13.dll`（≥ 13.6.0）。只有 CUDA 11.8 的机器会启动失败，`hello` 的 `probe.cublaslt.error` 会说明缺哪个文件。
 - 不带后缀的完整包自带 CUDA 库，体积大但开箱能跑。
 
-解压后指向 `bin/moss-server`（Windows 上是 `bin\moss-server.exe`）。
+解压后指向 `bin\moss-server.exe`。
 
 引擎接受 `vram_reserve_bytes`（CLI 上是 `--vram-reserve MiB`），但苔室目前不传，用引擎自己的默认规划。
 
@@ -140,6 +140,7 @@ node scripts/smoke-generate.mjs --engine <moss-server 路径> --model <diffusers
 
 ## 已知边界
 
+- **只支持 Windows x64**。引擎上游也有 Linux x64 资产，但苔室只在这个平台验证过；macOS 没有任何引擎构建。非 Windows 平台上启动引擎会直接报平台不支持。
 - 单张上限 4.2 百万像素、单边 4096。4K 出不了，要更大的图只能走 `hiresScale`，而修正目标同样受这条限制。
 - 只吃 MOSS-Image 那套目录结构，不吃单文件 checkpoint，不吃 LoRA。
 - 一次只跑一个任务。单卡小显存下并发只会互相拖慢。

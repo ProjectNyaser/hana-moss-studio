@@ -60,7 +60,7 @@ function errorHint(text) {
     return "模型目录没配好：到苔室「运行信息」里指向 diffusers 根目录（含 model_index.json）。";
   }
   if (/moss-server|可执行|spawn|ENOENT/i.test(text)) {
-    return "引擎没起来：确认 moss-server 路径指向包内的 bin/moss-server（Windows 上是 moss-server.exe）。";
+    return "引擎没起来：确认 moss-server 路径指向包内的 bin\\moss-server.exe。";
   }
   if (/cuBLASLt|cublaslt/i.test(text)) {
     return "缺 cuBLASLt：换自带 CUDA 的引擎包，或把 cublasLt64_13.dll 放进引擎 bin 目录。";

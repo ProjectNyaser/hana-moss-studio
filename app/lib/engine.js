@@ -42,6 +42,12 @@ export function resolveServerPath(settingPath) {
   return null;
 }
 
+/**
+ * 支持面：只承诺 Windows x64。引擎上游也有 Linux 资产，但苔室只在这个平台验证过，
+ * 其余平台在启动引擎前就明确失败，不要让它带着一份"未启动"的假象。
+ */
+export const PLATFORM_SUPPORTED = process.platform === "win32" && process.arch === "x64";
+
 export class Engine {
   constructor({ getSettings, outputsDir, cacheDir, onEvent }) {
     this.getSettings = getSettings;
@@ -63,6 +69,7 @@ export class Engine {
   snapshot() {
     return {
       running: Boolean(this.child),
+      platform: { supported: PLATFORM_SUPPORTED, os: process.platform, arch: process.arch },
       hello: this.hello,
       startedAt: this.startedAt,
       busy: Boolean(this.active),
@@ -205,9 +212,14 @@ export class Engine {
 
   async start() {
     if (this.child) return this.snapshot();
+    if (!PLATFORM_SUPPORTED) {
+      throw new Error(
+        `苔室只支持 Windows x64，当前是 ${process.platform} ${process.arch}：这个平台没有验证过的引擎部署路径`,
+      );
+    }
     const exe = this.serverPath();
     if (!exe) {
-      throw new Error("没有找到 moss-server 可执行文件，请先在「引擎」里指向包内的 bin/moss-server（Windows 上是 bin\\moss-server.exe）");
+      throw new Error("没有找到 moss-server 可执行文件，请先在「引擎」里指向包内的 bin\\moss-server.exe");
     }
     this.lastError = null;
     const binDir = dirname(exe);

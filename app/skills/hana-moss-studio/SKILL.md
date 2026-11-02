@@ -22,11 +22,12 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 
 ## 环境部署
 
-苔室不打包引擎，装哪个包完全由这台机器决定（平台 × 驱动 × 算力）。先判定再动手。
+苔室只支持 **Windows x64**。其他平台直接说不可用，不要试变通：引擎上游虽然也有 Linux 资产，苔室没验证过，不承诺。
 
-- **macOS 没有引擎构建**，直接停，不要试翻译或交叉编译。
-- 驱动主版本 < 580 只能装 `cu12`；算力 7.5 只有 Windows + cu13 的 `sm75` 包。
-- 选包、下载、校验、解压、设权限、补库都在一条命令里，平台差异只有三处：归档后缀、可执行文件名、补库目录。**照拄 `references/platform.md` 的命令，不要自己拼**——Linux 漏了执行位就是 `EACCES`。
+装哪个包由驱动与算力决定：
+
+- 驱动主版本 < 580 只能装 `cu12`；compute_cap 7.5 只能装 `-sm75` 且必须 cu13。
+- 选包、下载、校验、解压、补库都在一条 PowerShell 命令里。**照拄 `references/platform.md`，不要自己拼包名**。
 - 优先 `bundled` 包；`system-cuda` 要自己补 cuBLASLt。
 - 权重约 27 GB，放 NVMe，用 `scripts/fetch-weights.mjs`。
 
