@@ -201,6 +201,26 @@
     .pn-adv[open] > summary::after { transform: rotate(90deg); }
     .pn-adv .fold-body { padding-top: 6px; }
 
+    /* 可选版本列表：一行一个版本，右侧一个装/已装 */
+    .pn-rel-list { margin: 2px 0 6px; }
+    .pn-rel {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+      border-top: 1px dashed var(--ui-line);
+      font-size: 11px;
+      color: var(--ui-text-2);
+    }
+    .pn-rel > span:first-child {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .pn-rel .tag { color: var(--ui-text-3); margin-left: 6px; }
+
     @media (max-width: 280px) {
       .pn { padding: 8px 10px 12px; }
       .pn-grid { grid-template-columns: minmax(0, 1fr); }
@@ -337,6 +357,14 @@
           <span class="label">引擎版本</span>
           <select id="pn-engine-select"></select>
         </label>
+        <div class="pn-row" id="pn-engine-actions">
+          <button class="btn ghost small" id="pn-engine-remove" type="button" hidden>卸载当前版本</button>
+          <button class="btn ghost small" id="pn-engine-more" type="button">装其他版本</button>
+        </div>
+        <div class="pn-rel-list" id="pn-engine-list" hidden></div>
+        <div class="pn-row" id="pn-model-actions" hidden>
+          <button class="btn ghost small" id="pn-model-remove" type="button">卸载模型</button>
+        </div>
         <details class="pn-adv" id="pn-fold-adv">
           <summary>自定义</summary>
           <div class="fold-body">

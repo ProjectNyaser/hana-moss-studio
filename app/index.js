@@ -44,8 +44,8 @@ export default defineApp(async (sdk) => {
   /** 改设置的后置动作：路径变了就停引擎，模型下次生成重新 load。装完与切换版本都走这里。 */
   const applySettings = (patch) => {
     store.saveSettings(patch);
-    // 路径变了：引擎在跑就停掉，旧的那份不能再往上跑；模型下次生成重新 load。
-    if (patch.serverPath && engine.snapshot().running) engine.stop();
+    // 只要动了 serverPath（包括清空）就把引擎停掉，旧的那份不能再往上跑。
+    if (Object.prototype.hasOwnProperty.call(patch, "serverPath") && engine.snapshot().running) engine.stop();
     engine.loadedKey = null;
   };
   const installer = createInstaller({
@@ -785,7 +785,7 @@ export default defineApp(async (sdk) => {
       if (installer.busy()) return c.json({ ...state(), error: "已有安装在进行" }, 409);
       const body = await c.req.json().catch(() => ({}));
       installer
-        .installEngine({ zipPath: body?.zipPath, preferCuda: body?.preferCuda })
+        .installEngine({ zipPath: body?.zipPath, preferCuda: body?.preferCuda, tag: body?.tag })
         .catch((error) => sdk.logger.warn(`引擎安装失败：${message(error)}`));
       return c.json(state());
     });
@@ -800,6 +800,38 @@ export default defineApp(async (sdk) => {
       installer.cancel();
       schedulePush(0);
       return c.json(state());
+    });
+
+    app.get(`/${APP_ID}/engines/available`, async (c) => {
+      try {
+        return c.json({ items: await installer.listReleases() });
+      } catch (error) {
+        return c.json({ items: [], error: message(error) }, 502);
+      }
+    });
+
+    app.post(`/${APP_ID}/engines/remove`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      try {
+        installer.removeEngine(String(body?.name ?? ""));
+        schedulePush(0);
+        return c.json(state());
+      } catch (error) {
+        return c.json({ ...state(), error: message(error) }, 400);
+      }
+    });
+
+    app.post(`/${APP_ID}/models/remove`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      // 25 GiB 不能误点就没了，调用方要显式带 confirm。
+      if (body?.confirm !== true) return c.json({ ...state(), error: "需要确认后才删模型" }, 400);
+      try {
+        installer.removeWeights();
+        schedulePush(0);
+        return c.json(state());
+      } catch (error) {
+        return c.json({ ...state(), error: message(error) }, 400);
+      }
     });
 
     app.post(`/${APP_ID}/engine/use`, async (c) => {

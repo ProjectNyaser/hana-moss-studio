@@ -285,8 +285,7 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
    * 已装引擎清单。旧版本装完不删，回滚就是在这里切回去。
    * 只列真带 bin/moss-server.exe 的目录，半途而废的解压残留不会冒充可用版本。
    */
-  function listEngines() {
-    if (!existsSync(engineDir)) return [];
+  function listEngines() {    if (!existsSync(engineDir)) return [];
     const current = String(getSettings().serverPath ?? "");
     return readdirSync(engineDir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -303,6 +302,48 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
       })
       .filter(Boolean)
       .sort((a, b) => compareEngineVersion(b.version, a.version));
+  }
+
+  /** 可装的引擎版本：Release 列表，标出哪些已经装了。缓存十分钟，不必每次开面板都拉一遍。 */
+  let releaseCache = null;
+  async function listReleases() {
+    if (!releaseCache || Date.now() - releaseCache.at > 10 * 60_000) {
+      const raw = JSON.parse(await curlText(`${ENGINE_API.replace(/\/latest$/, "")}?per_page=20`));
+      const items = (Array.isArray(raw) ? raw : []).map((rel) => ({
+        tag: rel.tag_name ?? "",
+        version: String(rel.tag_name ?? "").replace(/^v/, ""),
+        publishedAt: rel.published_at ?? null,
+        prerelease: Boolean(rel.prerelease),
+        windowsAssets: (rel.assets ?? []).filter((asset) => /windows.*x86_64.*\.zip$/i.test(asset.name ?? "")).length,
+        bundledBytes: Math.max(
+          0,
+          ...(rel.assets ?? [])
+            .filter((asset) => /windows.*x86_64.*\.zip$/i.test(asset.name ?? "") && !/system-cuda/i.test(asset.name ?? ""))
+            .map((asset) => asset.size ?? 0),
+        ),
+      }));
+      releaseCache = { at: Date.now(), items };
+    }
+    const installed = new Set(listEngines().map((entry) => entry.version));
+    return releaseCache.items.map((item) => ({ ...item, installed: installed.has(item.version) }));
+  }
+
+  /** 删掉一个已装版本。正在用的那个先清路径（会顺带停引擎），再删目录。 */
+  function removeEngine(name) {
+    const target = listEngines().find((entry) => entry.name === name);
+    if (!target) throw new Error(`没有已装版本 ${name}`);
+    if (target.current) saveSettings({ serverPath: "" });
+    rmSync(join(engineDir, name), { recursive: true, force: true });
+    return listEngines();
+  }
+
+  /** 删掉已装模型。25 GiB，调用方必须先确认。 */
+  function removeWeights() {
+    const dir = getSettings().modelPath;
+    if (!dir || !existsSync(dir)) throw new Error("没有已装模型");
+    rmSync(dir, { recursive: true, force: true });
+    saveSettings({ modelPath: "" });
+    return true;
   }
 
   function patch(update) {
@@ -589,7 +630,12 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
 
     let verified = false;
     try {
-      const release = JSON.parse(await curlText(ENGINE_API));
+      // 本地包可能是旧版本，校验文件得去对应 tag 找，而不是最新那个。
+      const version = parseEngineName(baseName).version;
+      const tag = version ? `v${version}` : null;
+      const release = tag
+        ? JSON.parse(await curlText(`https://api.github.com/repos/${ENGINE_REPO}/releases/tags/${encodeURIComponent(tag)}`))
+        : JSON.parse(await curlText(ENGINE_API));
       const sums = await curlText(`https://github.com/${ENGINE_REPO}/releases/download/${release.tag_name}/SHA256SUMS`);
       const want = sums
         .split(/\r?\n/)
@@ -658,7 +704,12 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
         detail: gpu,
       });
 
-      const release = JSON.parse(await curlText(ENGINE_API));
+      // 指定 tag 就装那个版本，不指定装最新。
+      const tag = typeof options.tag === "string" && options.tag.trim() ? options.tag.trim() : null;
+      const releaseUrl = tag
+        ? `https://api.github.com/repos/${ENGINE_REPO}/releases/tags/${encodeURIComponent(tag)}`
+        : ENGINE_API;
+      const release = JSON.parse(await curlText(releaseUrl));
       const version = String(release.tag_name ?? "").replace(/^v/, "");
       if (!version) throw new Error("Release 没有可用的 tag");
       const assets = Array.isArray(release.assets) ? release.assets : [];
@@ -825,6 +876,9 @@ export function createInstaller({ dataDir, getSettings, saveSettings, onUpdate, 
     installEngine,
     installWeights,
     listEngines,
+    listReleases,
+    removeEngine,
+    removeWeights,
     getSettings,
   };
 }

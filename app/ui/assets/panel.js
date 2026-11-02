@@ -71,6 +71,11 @@ const nodes = {
   engine: el("pn-engine"),
   enginePick: el("pn-engine-pick"),
   engineSelect: el("pn-engine-select"),
+  engineRemove: el("pn-engine-remove"),
+  engineMore: el("pn-engine-more"),
+  engineList: el("pn-engine-list"),
+  modelActions: el("pn-model-actions"),
+  modelRemove: el("pn-model-remove"),
   cuda: el("pn-engine-cuda"),
   adv: el("pn-fold-adv"),
   save: el("pn-save"),
@@ -403,6 +408,8 @@ function renderEngine(data) {
   // 装过多个版本时给一个切换入口；只有一个就藏起来，不添噪声。
   const engines = Array.isArray(data.engines) ? data.engines : [];
   nodes.enginePick.hidden = engines.length < 2;
+  nodes.engineRemove.hidden = engines.length === 0;
+  nodes.modelActions.hidden = !engine.modelFound;
   if (engines.length >= 2) {
     const wanted = engines.map((item) => item.name).join("|");
     if (nodes.engineSelect.dataset.list !== wanted) {
@@ -705,7 +712,125 @@ async function onCancelInstall() {
   }
 }
 
+/** 两段式确认：再点一次才真删，四秒不复位就恢复原样。 */
+function armable(button, armedLabel, idleLabel, run) {
+  if (button.dataset.armed === "1") {
+    delete button.dataset.armed;
+    button.textContent = idleLabel;
+    void run();
+    return;
+  }
+  button.dataset.armed = "1";
+  button.textContent = armedLabel;
+  setTimeout(() => {
+    if (button.dataset.armed !== "1") return;
+    delete button.dataset.armed;
+    button.textContent = idleLabel;
+  }, 4000);
+}
+
+async function onListReleases() {
+  if (nodes.engineList.dataset.open === "1") {
+    nodes.engineList.hidden = true;
+    delete nodes.engineList.dataset.open;
+    nodes.engineMore.textContent = "装其他版本";
+    return;
+  }
+  nodes.engineMore.textContent = "收起";
+  nodes.engineList.dataset.open = "1";
+  nodes.engineList.hidden = false;
+  nodes.engineList.replaceChildren(buildLine("读取版本列表…"));
+  try {
+    const data = await api("/engines/available");
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) {
+      nodes.engineList.replaceChildren(buildLine(data?.error ?? "没有可装的版本"));
+      return;
+    }
+    nodes.engineList.replaceChildren(
+      ...items.map((item) => {
+        const line = document.createElement("div");
+        line.className = "pn-rel";
+        const name = document.createElement("span");
+        name.textContent = item.version;
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = [
+          item.publishedAt?.slice(0, 10),
+          item.bundledBytes ? formatSize(item.bundledBytes) : null,
+          item.windowsAssets ? `${item.windowsAssets} 个变体` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        name.append(tag);
+        line.append(name);
+        if (item.installed) {
+          const done = document.createElement("span");
+          done.className = "tag";
+          done.textContent = "已装";
+          line.append(done);
+        } else {
+          const install = document.createElement("button");
+          install.className = "btn ghost small";
+          install.type = "button";
+          install.textContent = "装";
+          install.addEventListener("click", () => void onInstallTag(item.tag, install));
+          line.append(install);
+        }
+        return line;
+      }),
+    );
+  } catch (error) {
+    nodes.engineList.replaceChildren(buildLine(error instanceof Error ? error.message : String(error)));
+  }
+}
+
+function buildLine(text) {
+  const line = document.createElement("div");
+  line.className = "pn-rel";
+  const span = document.createElement("span");
+  span.textContent = text;
+  line.append(span);
+  return line;
+}
+
+async function onInstallTag(tag, button) {
+  button.disabled = true;
+  button.textContent = "开始…";
+  try {
+    render(await post("/install/engine", { tag, preferCuda: nodes.cuda.value }));
+    say(`开始装 ${tag}`, "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+    button.disabled = false;
+    button.textContent = "装";
+  }
+}
+
 nodes.installEngine.addEventListener("click", () => void onInstall("engine"));
+nodes.engineMore.addEventListener("click", () => void onListReleases());
+nodes.engineRemove.addEventListener("click", () =>
+  armable(nodes.engineRemove, "再点一次确认卸载", "卸载当前版本", async () => {
+    const current = (latest?.engines ?? []).find((item) => item.current);
+    if (!current) return say("没有当前版本", "bad");
+    try {
+      render(await post("/engines/remove", { name: current.name }));
+      say(`已卸载 ${current.version}`, "ok");
+    } catch (error) {
+      say(error instanceof Error ? error.message : String(error), "bad");
+    }
+  }),
+);
+nodes.modelRemove.addEventListener("click", () =>
+  armable(nodes.modelRemove, "再点一次删 25 GiB", "卸载模型", async () => {
+    try {
+      render(await post("/models/remove", { confirm: true }));
+      say("模型已删除", "ok");
+    } catch (error) {
+      say(error instanceof Error ? error.message : String(error), "bad");
+    }
+  }),
+);
 nodes.engineSelect.addEventListener("change", async () => {
   const name = nodes.engineSelect.value;
   if (!name) return;
