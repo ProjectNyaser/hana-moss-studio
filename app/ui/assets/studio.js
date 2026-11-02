@@ -1211,7 +1211,9 @@ function render(data) {
   }
   bootstrapped = true;
   void renderCanvas(data);
-  const key = data.jobs.map((job) => `${job.id}:${job.status}`).join("|");
+  // key 带上「有没有预览」：从没有到有的时候要重画那格，之后同状态内只换图。
+  const previewing = data.engine.active?.previewAt ? "p" : "";
+  const key = `${data.jobs.map((job) => `${job.id}:${job.status}`).join("|")}#${previewing}`;
   if (key !== renderedJobsKey) {
     renderedJobsKey = key;
     if (selectedId && !data.jobs.some((job) => job.id === selectedId && job.status === "done")) selectedId = null;
