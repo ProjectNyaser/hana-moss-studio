@@ -9,6 +9,9 @@ import { join, dirname, delimiter } from "node:path";
  * 本文件只做一件事：把它的生命周期和消息格式包成 Promise 与事件。
  */
 
+/** 设置里存的是 DiT 精度名（bf16/fp8/int4），协议要的是 reference/high/turbo。 */
+const PROTOCOL_TIER = { bf16: "reference", fp8: "high", int4: "turbo" };
+
 const PHASE_LABEL = {
   text_encoder: "文本编码",
   dit_load: "加载模型",
@@ -317,7 +320,7 @@ export class Engine {
       model: settings.modelPath,
       mode: settings.memoryMode,
       device: job.device ?? 0,
-      tier: settings.tier,
+      tier: PROTOCOL_TIER[settings.tier] ?? PROTOCOL_TIER.bf16,
       cache_dir: this.cacheDir,
     }, 900_000);
     this.loadedKey = key;
