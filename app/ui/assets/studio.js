@@ -69,6 +69,12 @@ const imageCache = new Map();
 let latest = null;
 // 耗时锚点：{ at, ms }，每次后端推送更新，两次之间由定时器补差。
 let elapsedAnchor = null;
+// 画廊单独分页：state 只带最近 24 条，剩下的从 /jobs 拉。
+const GALLERY_PAGE = 60;
+let galleryJobs = [];
+let galleryTotal = 0;
+let galleryLoading = false;
+let lastActive = false;
 let renderedJobsKey = null;
 let selectedId = null;
 let newestJobId = null;
@@ -153,6 +159,7 @@ function showView(view) {
     if (section) section.hidden = name !== view;
   }
   if (view === "download") void loadReleases();
+  if (view === "gallery" && !galleryJobs.length) void loadGallery(true);
   // 画廊在隐藏状态下 clientWidth 是 0，首次算出来的列数偏少；显出来后重排一次。
   if (view === "gallery" && galleryEntries.length) {
     requestAnimationFrame(() => layoutGallery(galleryEntries));
@@ -171,11 +178,21 @@ function renderStage(data) {
     label = "引擎未启动";
   } else if (engine.active) {
     dotClass = "dot busy";
-    const progress = engine.active.progress ?? {};
-    const head = `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step}/${progress.total}` : ""}`;
-    // 已跑与约剩同时给：只剩一个的时候，会让人以为耗时不见了。
+    const active = engine.active;
+    const progress = active.progress ?? {};
+    // 高清修正的第二阶段也是 denoise，单看阶段名分不清。
+    // 这里把两段的步数分开算：先去噪采样 0/16，再高清修正 1/8。
+    const passTwo = active.hiresScale > 1.001 && progress.total > active.steps;
+    let head;
+    if (passTwo && progress.step >= active.steps) {
+      head = `高清修正 ${progress.step - active.steps}/${progress.total - active.steps}`;
+    } else if (passTwo) {
+      head = `${progress.phase ?? "生成中"} ${progress.step}/${active.steps}`;
+    } else {
+      head = `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step}/${progress.total}` : ""}`;
+    }
     const bits = [];
-    const ran = liveElapsed(engine.active);
+    const ran = liveElapsed(active);
     if (typeof ran === "number") bits.push(`已跑 ${formatDuration(ran)}`);
     if (progress.etaMs) bits.push(`约剩 ${formatDuration(progress.etaMs)}`);
     label = bits.length ? `${head} · ${bits.join(" · ")}` : head;
@@ -184,7 +201,6 @@ function renderStage(data) {
     label = engine.loaded ? "就绪 · 模型已加载" : "就绪 · 模型未加载";
   }
 /** 高清修正开着时，引擎的总步数会多出第二阶段：设 16 步会看到 24。 */
-  if (engine.active && engine.active.hiresScale > 1.001) label += " · 含高清修正";
   nodes.stageDot.className = dotClass;
   nodes.stageText.textContent = label;
   // 进度条：有百分比就走百分比，算不出来时来回扫。
@@ -305,11 +321,34 @@ function layoutGallery(entries) {
   grid.replaceChildren(...cols);
 }
 
+/** 画廊分页：一次 60 条，滚到底再拉。 */
+async function loadGallery(reset = false) {
+  if (galleryLoading) return;
+  galleryLoading = true;
+  try {
+    const offset = reset ? 0 : galleryJobs.length;
+    const page = await api(`/jobs?offset=${offset}&limit=${GALLERY_PAGE}`);
+    galleryJobs = reset ? page.jobs : galleryJobs.concat(page.jobs);
+    galleryTotal = page.total ?? galleryJobs.length;
+    if (latest) void renderGallery(latest);
+  } catch (error) {
+    nodes.galleryCount.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    galleryLoading = false;
+  }
+}
+
 async function renderGallery(data) {
-  const visible = data.jobs.filter((job) => job.status !== "cancelled");
+  // 记录数比 state 里带的多：画布/队列只关心最近的，画廊单独分页拉。
+  const live = data.jobs.filter((job) => job.status === "queued" || job.status === "running");
+  const liveIds = new Set(live.map((job) => job.id));
+  const visible = live.concat(
+    galleryJobs.filter((job) => !liveIds.has(job.id) && job.status !== "cancelled"),
+  );
   await Promise.all(visible.filter((job) => job.status === "done" && job.output).map((job) => loadImage(job.output)));
-  nodes.galleryCount.textContent = visible.length ? `${visible.length} 张` : "";
-  nodes.tabCount.textContent = visible.length ? ` ${visible.length}` : "";
+  const shownCount = galleryTotal || visible.length;
+  nodes.galleryCount.textContent = shownCount ? `${visible.length} / ${shownCount} 张` : "";
+  nodes.tabCount.textContent = shownCount ? ` ${shownCount}` : "";
   if (!visible.length) {
     galleryEntries = [];
     const empty = document.createElement("p");
@@ -758,6 +797,9 @@ function loadJob(job) {
 // ── 总渲染 ─────────────────────────────────────────────────────────────
 function render(data) {
   latest = data;
+  // 刚跑完一个：画廊要重新拉首页，新图在最前面。
+  if (lastActive && !data.engine.active) void loadGallery(true);
+  lastActive = Boolean(data.engine.active);
   // 锚点只在这里对表：定时器重调 renderStage 时不能再改它，否则秒数会被拉回去。
   const liveProgress = data.engine.active?.progress ?? null;
   if (liveProgress) {
@@ -855,6 +897,13 @@ nodes.viewerStage.addEventListener(
   },
   { passive: false },
 );
+// 画廊滚到底再拉一页。
+nodes.thumbs.addEventListener("scroll", () => {
+  if (galleryLoading || galleryJobs.length >= galleryTotal) return;
+  const { scrollTop, scrollHeight, clientHeight } = nodes.thumbs;
+  if (scrollHeight - scrollTop - clientHeight < 480) void loadGallery();
+});
+
 document.addEventListener("click", () => closeMenu());
 // 引擎回帧间隔可能好几秒，这里每秒把「已用」自己走一格。
 setInterval(() => {

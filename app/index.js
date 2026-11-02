@@ -736,6 +736,18 @@ export default defineApp(async (sdk) => {
 
     app.get(`/${APP_ID}/state`, (c) => c.json(state()));
 
+  // 画廊分页：state 只带最近 24 条，剩下的从这里拉。
+  app.get(`/${APP_ID}/jobs`, (c) => {
+    const all = store.listJobs();
+    const offset = Math.max(0, Number(c.req.query("offset")) || 0);
+    const limit = Math.min(200, Math.max(1, Number(c.req.query("limit")) || 60));
+    return c.json({
+      total: all.length,
+      offset,
+      jobs: all.slice(offset, offset + limit).map(slimJob),
+    });
+  });
+
     app.get(`/${APP_ID}/events`, (c) => {
       const src = String(c.req.query("src") ?? "?");
       const encoder = new TextEncoder();
