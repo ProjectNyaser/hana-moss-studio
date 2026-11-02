@@ -45,6 +45,9 @@
     .pn > * { min-width: 0; }
     .pn-block + .pn-block { padding-top: 10px; border-top: 1px solid var(--ui-line); }
 
+    /* 尺寸与像素量放在标题行右侧，不再单独占一行。 */
+    #pn-size-note { font-size: 11px; white-space: nowrap; }
+
     .pn-head {
       display: flex;
       align-items: center;
@@ -297,7 +300,10 @@
     </div>
 
     <div class="pn-block">
-      <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-sliders"/></svg>生成参数</span></div>
+      <div class="pn-head">
+        <span class="pn-head-title"><svg class="ic"><use href="#i-sliders"/></svg>生成参数</span>
+        <span class="hint" id="pn-size-note"></span>
+      </div>
       <div class="pn-slider" id="pn-ratio-slider">
         <div class="pn-slider-rail"><i class="pn-slider-fill" id="pn-ratio-fill"></i></div>
         <span class="pn-slider-thumb" id="pn-ratio-thumb" role="slider" tabindex="0"
@@ -314,7 +320,6 @@
         <label class="field"><span class="label">步数</span><input id="pn-steps" type="number" min="1" max="80" value="8"></label>
         <label class="field"><span class="label">CFG</span><input id="pn-cfg" type="number" min="0" max="20" step="0.5" value="3"></label>
       </div>
-      <p class="hint" id="pn-size-note"></p>
       <div class="field">
         <span class="label">种子</span>
         <div class="pn-row">
