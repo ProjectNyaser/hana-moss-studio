@@ -2,7 +2,7 @@
 // hello → load → generate → done。用来验证引擎、模型目录与显存档位是否真的能出图。
 //
 // 用法：
-//   node scripts/smoke-generate.mjs --engine <moss-server.exe> --model <diffusers 目录> --out <out.png>
+//   node scripts/smoke-generate.mjs --engine <moss-server 路径> --model <diffusers 目录> --out <out.png>
 // 可选：--width --height --steps --cfg --seed --tier --mode --prompt
 
 import { spawn } from "node:child_process";

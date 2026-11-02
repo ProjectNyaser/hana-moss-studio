@@ -207,7 +207,7 @@ export class Engine {
     if (this.child) return this.snapshot();
     const exe = this.serverPath();
     if (!exe) {
-      throw new Error("没有找到 moss-server 可执行文件，请先在「引擎」里指向解压后的 moss-server.exe");
+      throw new Error("没有找到 moss-server 可执行文件，请先在「引擎」里指向包内的 bin/moss-server（Windows 上是 bin\\moss-server.exe）");
     }
     this.lastError = null;
     const binDir = dirname(exe);

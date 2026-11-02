@@ -26,7 +26,7 @@ scripts/
   sync-upstream.mjs     从 submodule 抽取上游契约
   package.mjs           产出 build/<appId>/
   pack.mjs              出安装包与市场投稿条目
-  fetch-weights.ps1     按清单续传拉权重
+  fetch-weights.mjs     按清单续传拉权重（三平台同一份）
   smoke-generate.mjs    绕开 UI 直跑引擎
 vendor/MossStudio       git submodule，上游源仓
 vendor/hana-app-sdk     App SDK 快照（tgz + source-manifest.json），见该目录的 README
@@ -108,7 +108,7 @@ dist-extensions/app-<id>-<version>.entry.json   市场投稿条目
 - `-system-cuda` 包只有二十几 MB，要求系统里已有 CUDA 13 的 `cublasLt64_13.dll`（≥ 13.6.0）。只有 CUDA 11.8 的机器会启动失败，`hello` 的 `probe.cublaslt.error` 会说明缺哪个文件。
 - 不带后缀的完整包自带 CUDA 库，体积大但开箱能跑。
 
-解压后指向 `bin/moss-server.exe`。
+解压后指向 `bin/moss-server`（Windows 上是 `bin\moss-server.exe`）。
 
 引擎接受 `vram_reserve_bytes`（CLI 上是 `--vram-reserve MiB`），但苔室目前不传，用引擎自己的默认规划。
 
@@ -116,9 +116,11 @@ dist-extensions/app-<id>-<version>.entry.json   市场投稿条目
 
 跑起来需要四个组件：DiT、文本编码器、VAE、pipeline，合计约 27 GB。
 
-```powershell
-pwsh -File scripts/fetch-weights.ps1 -Root H:\.hanako\app-data\hana-moss-studio\models\moss-image-sft
+```bash
+node scripts/fetch-weights.mjs
 ```
+
+默认落到 `<HANA_HOME>/app-data/hana-moss-studio/models/moss-image-sft`，`--root` 改目录，`--endpoint` 换镜像。断点续传按字节范围做，中断重跑接着下，已完整的文件跳过。
 
 不走 `huggingface_hub` 是因为它在部分网络下会走 Xet 的 CAS 通道，连接建起来但读不动，反复 `The read operation timed out`。同一个镜像用 curl 单连接能到 8–11 MB/s。脚本按大小校验完整性，中断重跑会接着下。
 
@@ -131,7 +133,7 @@ pwsh -File scripts/fetch-weights.ps1 -Root H:\.hanako\app-data\hana-moss-studio\
 绕开 App 与 UI，直接对引擎跑完整链路：
 
 ```powershell
-node scripts/smoke-generate.mjs --engine <moss-server.exe> --model <diffusers 目录> --out out.png
+node scripts/smoke-generate.mjs --engine <moss-server 路径> --model <diffusers 目录> --out out.png
 ```
 
 它打印 hello 里的设备与 cuBLASLt 状态、load 耗时、逐阶段进度、`timings_s` 与最终文件位置。UI 出问题时先用它分辨「引擎坏了」还是「界面坏了」。

@@ -22,15 +22,15 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 
 ## 环境部署
 
-苔室不打包引擎，装哪个包完全由这台机器决定（平台 × 驱动 × 算力）。先判定再动手，不要把 Windows 的经验往别的平台上套。
+苔室不打包引擎，装哪个包完全由这台机器决定（平台 × 驱动 × 算力）。先判定再动手。
 
 - **macOS 没有引擎构建**，直接停，不要试翻译或交叉编译。
 - 驱动主版本 < 580 只能装 `cu12`；算力 7.5 只有 Windows + cu13 的 `sm75` 包。
-- Linux 解压后**必须** `chmod 755`，否则 spawn 直接 `EACCES`。
+- 选包、下载、校验、解压、设权限、补库都在一条命令里，平台差异只有三处：归档后缀、可执行文件名、补库目录。**照拄 `references/platform.md` 的命令，不要自己拼**——Linux 漏了执行位就是 `EACCES`。
 - 优先 `bundled` 包；`system-cuda` 要自己补 cuBLASLt。
-- 权重约 27 GB，放 NVMe。
+- 权重约 27 GB，放 NVMe，用 `scripts/fetch-weights.mjs`。
 
-完整判定树、每步命令、失败对照都在 `references/platform.md`。部署完写回 `settings.json` 并重载 App，用 `moss_status()` 验收，不要拿 1024² 试。
+完整判定树与失败对照在 `references/platform.md`。部署完写回 `settings.json` 并重载 App，用 `moss_status()` 验收，不要拿 1024² 试。
 
 ## 工具面
 
