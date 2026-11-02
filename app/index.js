@@ -36,37 +36,76 @@ const STATUS_TEXT = {
 };
 
 /**
- * 早期的缓存与 aria2 日志写在 dataDir 顶层，现在统一住 .runtime-tmp。
- * 引擎的文本编码器缓存（.miemb）搬过去还能接着用，日志直接删。
+ * 早期的缓存与 aria2 日志写在 dataDir 顶层，后来挤在 .runtime-tmp/cache，现在按种类分开。
+ * 引擎的文本编码器缓存搬过去还能接着用，日志与旧预览直接删。
  */
-function migrateRuntimeDirs(dataDir, cacheDir) {
-  for (const name of ["cache", "logs"]) {
+function migrateRuntimeDirs(dataDir, { engineCacheDir, previewDir, thumbsDir, runtimeDir }) {
+  const legacyTop = ["cache", "logs"];
+  for (const name of legacyTop) {
     const from = join(dataDir, name);
     if (!existsSync(from)) continue;
-    if (name === "cache") {
-      for (const entry of readdirSync(from)) {
-        const to = join(cacheDir, entry);
-        if (existsSync(to)) continue;
-        try {
-          renameSync(join(from, entry), to);
-        } catch {
-          // 搬不动的跟旧目录一起删；缓存丢了能重算。
-        }
-      }
-    }
     rmSync(from, { recursive: true, force: true });
   }
+
+  const flat = join(runtimeDir, "cache");
+  if (!existsSync(flat)) return;
+  for (const entry of readdirSync(flat, { withFileTypes: true })) {
+    const from = join(flat, entry.name);
+    // .miemb 与硬件探测结果属于引擎缓存。
+    if (entry.name.endsWith(".miemb") || entry.name === "hardware_profile.json") {
+      try {
+        renameSync(from, join(engineCacheDir, entry.name));
+      } catch {
+        /* 搬不动就留着，下次启动再试 */
+      }
+      continue;
+    }
+    if (entry.name.startsWith("preview")) {
+      try {
+        renameSync(from, join(previewDir, entry.name));
+      } catch {
+        /* 同上 */
+      }
+      continue;
+    }
+    if (entry.name === "thumbs") {
+      for (const thumb of readdirSync(from)) {
+        try {
+          renameSync(join(from, thumb), join(thumbsDir, thumb));
+        } catch {
+          /* 同上 */
+        }
+      }
+      continue;
+    }
+    // releases.json 等小件直接搬到 .runtime-tmp 根上。
+    try {
+      renameSync(from, join(runtimeDir, entry.name));
+    } catch {
+      /* 同上 */
+    }
+  }
+  rmSync(flat, { recursive: true, force: true });
 }
 
 export default defineApp(async (sdk) => {
   const dataDir = sdk.dataDir;
   const outputsDir = join(dataDir, "generated");
-  // 运行时产物（缓存、日志）统一放 .runtime-tmp，顶层只留持久数据：
-  // engine / models / generated / settings.json。
+  // 运行时产物按种类分开放，都在 .runtime-tmp 下。查问题时一眼能看出哪一堆是什么，
+  // 清理也能按堆清：miemb 删了只是重算，thumbs 删了只是重缩。
   const runtimeDir = join(dataDir, ".runtime-tmp");
-  const cacheDir = join(runtimeDir, "cache");
-  for (const dir of [outputsDir, cacheDir]) mkdirSync(dir, { recursive: true });
-  migrateRuntimeDirs(dataDir, cacheDir);
+  /** 引擎自己的缓存：文本编码器嵌入（.miemb）与硬件探测结果。 */
+  const engineCacheDir = join(runtimeDir, "miemb");
+  /** 采样预览：引擎每次重写同一对文件。 */
+  const previewDir = join(runtimeDir, "preview");
+  /** 画廊缩略图。 */
+  const thumbsDir = join(runtimeDir, "thumbs");
+  /** 下载器的日志与控制文件。 */
+  const downloadsDir = join(runtimeDir, "downloads");
+  for (const dir of [outputsDir, engineCacheDir, previewDir, thumbsDir, downloadsDir]) {
+    mkdirSync(dir, { recursive: true });
+  }
+  migrateRuntimeDirs(dataDir, { engineCacheDir, previewDir, thumbsDir, runtimeDir });
 
   const store = createStore(dataDir, outputsDir);
   /** 改设置的后置动作：路径变了就停引擎，模型下次生成重新 load。装完与切换版本都走这里。 */
@@ -82,7 +121,7 @@ export default defineApp(async (sdk) => {
   };
   const installer = createInstaller({
     dataDir,
-    cacheDir,
+    runtimeDir,
     getSettings: () => store.getSettings(),
     saveSettings: applySettings,
     // 下载每秒会跳好几次，推全量 state 太浪费；只把安装那一段当成小帧送出去。
@@ -281,7 +320,8 @@ export default defineApp(async (sdk) => {
   const engine = new Engine({
     getSettings: () => store.getSettings(),
     outputsDir,
-    cacheDir,
+    cacheDir: engineCacheDir,
+    previewDir,
     onEvent: (event) => {
       if (event.type === "engine-log" || event.type === "log") {
         if (event.type === "log") sdk.logger.info(`[引擎] ${event.message}`);
@@ -612,7 +652,7 @@ export default defineApp(async (sdk) => {
 
   /** 缩略图缓存路径。画廊与预览都按这个规则落盘。 */
 function thumbPath(file, size) {
-  return join(cacheDir, "thumbs", `${basename(file).replace(/\.png$/i, "")}-${size}.webp`);
+  return join(thumbsDir, `${basename(file).replace(/\.png$/i, "")}-${size}.webp`);
 }
 
 /** 确保缩略图存在。已存在就直接返回，不重复转。 */

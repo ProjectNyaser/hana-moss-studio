@@ -51,14 +51,14 @@ export function resolveServerPath(settingPath) {
 export const PLATFORM_SUPPORTED = process.platform === "win32" && process.arch === "x64";
 
 export class Engine {
-  constructor({ getSettings, outputsDir, cacheDir, onEvent }) {
+  constructor({ getSettings, outputsDir, cacheDir, previewDir, onEvent }) {
     this.getSettings = getSettings;
     this.outputsDir = outputsDir;
     this.cacheDir = cacheDir;
-    /** 采样预览图：每次生成覆盖同一张，不堆文件。 */
-    this.previewPath = join(cacheDir, "preview.png");
+    /** 采样预览图：每次生成覆盖同一对，不堆文件。 */
+    this.previewPath = join(previewDir ?? cacheDir, "preview.png");
     /** 预览的缩小版：全尺寸 PNG 一张十兆，界面只需要看清形状。 */
-    this.previewSmallPath = join(cacheDir, "preview-small.webp");
+    this.previewSmallPath = join(previewDir ?? cacheDir, "preview-small.webp");
     this.previewIsSmall = false;
     this.previewBusy = false;
     this.onEvent = onEvent ?? (() => {});

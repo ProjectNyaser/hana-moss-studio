@@ -18,6 +18,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { PNG } from "pngjs";
+import { initEmscriptenModule } from "@jsquash/webp/utils.js";
+import webpEncoder from "@jsquash/webp/codec/enc/webp_enc_simd.js";
+import { defaultOptions } from "@jsquash/webp/meta.js";
 
 /** 小于这个体积的图片不值得处理：小图本来就不大。 */
 const WORTH_RESIZING = 300 * 1024;
@@ -31,17 +34,12 @@ let encoder = null;
  */
 async function getEncoder() {
   if (encoder) return encoder;
-  const [{ initEmscriptenModule }, { default: factory }, { defaultOptions }] = await Promise.all([
-    import("@jsquash/webp/utils.js"),
-    import("@jsquash/webp/codec/enc/webp_enc_simd.js"),
-    import("@jsquash/webp/meta.js"),
-  ]);
   const wasmUrl = new URL(
     "../node_modules/@jsquash/webp/codec/enc/webp_enc_simd.wasm",
     import.meta.url,
   );
   const wasm = await WebAssembly.compile(readFileSync(wasmUrl));
-  const module = await initEmscriptenModule(factory, wasm);
+  const module = await initEmscriptenModule(webpEncoder, wasm);
   encoder = { module, defaultOptions };
   return encoder;
 }

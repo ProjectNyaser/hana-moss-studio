@@ -34,6 +34,7 @@ import path, { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { MOSSIMAGE } from "./mossimage.js";
+import { unzipTo } from "./unzip.js";
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ARIA2 = join(APP_ROOT, "vendor-bin", "aria2c.exe");
@@ -295,7 +296,7 @@ export function compareEngineVersion(a, b) {
   return 0;
 }
 
-export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, onUpdate, onInstalled, network }) {
+export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings, onUpdate, onInstalled, network }) {
   /** 当前安装任务；null 表示空闲。 */
   let job = null;
   let child = null;
@@ -385,7 +386,7 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
   }
 
   async function listReleases() {
-    const cacheFile = join(cacheDir, "releases.json");
+    const cacheFile = join(runtimeDir, "releases.json");
     if (!releaseCache || Date.now() - releaseCache.at > 10 * 60_000) {
       try {
         const items = await listReleasesViaAtom();
@@ -547,8 +548,9 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
       // aria2c 的 stderr 落一份盘，起不来的时候才有东西可看。
       let logFd = null;
       try {
-        mkdirSync(cacheDir, { recursive: true });
-        logFd = openSync(join(cacheDir, "aria2.log"), "a");
+        const logDir = join(runtimeDir, "downloads");
+        mkdirSync(logDir, { recursive: true });
+        logFd = openSync(join(logDir, "aria2.log"), "a");
       } catch {
         /* 写不了日志不影响干活 */
       }
@@ -820,10 +822,9 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
 
     patch({ phase: "extracting", message: verified ? "校验通过，解压" : "解压（未校验）" });
     try {
-      await runFile("tar", ["-xf", zip, "-C", engineDir], { timeout: 300_000, windowsHide: true });
+      await unzipTo(zip, engineDir);
     } catch (error) {
-      const detail = String(error?.stderr ?? error?.message ?? error).trim().slice(0, 200);
-      throw new Error(`解压失败：${detail}`);
+      throw new Error(`解压失败：${String(error?.message ?? error).trim().slice(0, 200)}`);
     }
 
     const serverPath = join(target, "bin", "moss-server.exe");
@@ -920,10 +921,9 @@ export function createInstaller({ dataDir, cacheDir, getSettings, saveSettings, 
 
       patch({ phase: "extracting", message: "解压" });
       try {
-        await runFile("tar", ["-xf", zip, "-C", engineDir], { timeout: 300_000, windowsHide: true });
+        await unzipTo(zip, engineDir);
       } catch (error) {
-        const detail = String(error?.stderr ?? error?.message ?? error).trim().slice(0, 200);
-        throw new Error(`解压失败：${detail}`);
+        throw new Error(`解压失败：${String(error?.message ?? error).trim().slice(0, 200)}`);
       }
       rmSync(zip, { force: true });
 

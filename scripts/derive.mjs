@@ -147,6 +147,8 @@ const RUNTIME_DEPS = [
     // 只要编码器：解码用不上，simd 版盖了所有能跑这个 App 的 CPU。
     keep: (name) => /^(utils|meta)\.js$/.test(name) || name.startsWith("codec/enc/webp_enc_simd"),
   },
+  { pkg: "yauzl", keep: () => true },
+  { pkg: "pend", keep: (name) => name === "index.js" },
 ];
 
 function mirrorDeps(changes) {

@@ -24,6 +24,8 @@
   },
   "dependencies": {
     "@jsquash/webp": "^1.5.0",
-    "pngjs": "^7.0.0"
+    "pend": "^1.2.0",
+    "pngjs": "^7.0.0",
+    "yauzl": "^3.4.0"
   }
 }
