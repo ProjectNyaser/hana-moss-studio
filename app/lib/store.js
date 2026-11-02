@@ -51,7 +51,7 @@ export function createStore(dataDir, outputsDir) {
     }
   }
 
-  /** 磁盘扫描加一秒缓存：state 每 180ms 推一次，没必要每次都 stat 整个目录。 */
+  /** 磁盘扫描加一秒缓存：生成中 state 推得频，没必要每次都 stat 整个目录。 */
   function scan() {
     const now = Date.now();
     if (now - scanCache.at < SCAN_TTL_MS) return scanCache.list;

@@ -63,7 +63,7 @@ const imageCache = new Map();
 let latest = null;
 // 耗时锚点：{ at, ms }，每次后端推送更新，两次之间由定时器补差。
 let elapsedAnchor = null;
-// 画廊单独分页：state 只带最近 24 条，剩下的从 /jobs 拉。
+// 画廊单独分页：state 只带未收尾的与最近两张完成的，剩下从 /jobs 拉。
 const GALLERY_PAGE = 60;
 let galleryJobs = [];
 let galleryTotal = 0;
@@ -1034,7 +1034,7 @@ let viewerZoom = 1;
 let viewerNeedsFit = true;
 
 function openViewer(id) {
-  // state 只带最近 24 条，画廊是分页拉的。两处合起来才是真列表，
+  // state 只带未收尾的与最近两张完成的，画廊是分页拉的。两处合起来才是真列表，
   // 否则靠后的图点了没反应（findIndex 返回 -1 就直接退出了）。
   const merged = new Map();
   for (const job of galleryJobs) merged.set(job.id, job);

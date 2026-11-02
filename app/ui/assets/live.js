@@ -1,14 +1,15 @@
 // 苔室实时通道。
 //
-// 首选 SSE：一条长连接，服务端推。
-// 现实是宿主那层代理不支持流式——实测 src=studio 的流正好 15 秒被截断，panel 的
-// 有的连首帧都没拿到就结束。连接池只有六个位子，硬撑的结果是连接边开边漏、
-// 同时还在轮询同一份数据。所以退化不是异常，是常态，退化之后要好好干活：
+// 首选 SSE：一条长连接，服务端推。实测这条能稳住（Network 里那条 src 一直在，
+// 末尾标「尚未完成请求」），之前看着断得勤是面板抢跑：自己先开一条流，等广播来
+// 了才关，两条一起占连接池。现在侧栏不再开流，只吃主界面的同源广播。
 //
-//   有任务在跑（生成 / 排队 / 下载）    1.5 秒一次，进度跟得上
-//   空闲                              10 秒一次，基本不耗
+// 退化仍然保留，但不是常态，是兜底：
 //
-// 每条流都只留一条，任何时刻不多开。活不过 30 秒的连接连续三次就判定这条路不通，
+//   有任务在跑（生成 / 排队 / 下载）    1.5 秒一次
+//   空闲                              10 秒一次
+//
+// 每条流只留一条，任何时刻不多开。活不过 30 秒的连接连续三次就判定这条路不通，
 // 重试窗口按 45s / 90s / 180s / 360s 退避。
 
 const API = "/hana-moss-studio";
@@ -38,7 +39,7 @@ export function outputUrl(name) {
 }
 
 /**
- * 缩略图地址。画廊一屏几十张，原图一张几 MB，这里走服务端缩出来的 JPEG。
+ * 缩略图地址。画廊一屏几十张，原图一张几 MB，这里走服务端缩好的 WebP。
  * @param {string} name 输出文件名
  * @param {number} [size] 宽度像素
  */
@@ -51,7 +52,8 @@ export function thumbUrl(name, size = 320) {
   return url.toString();
 }
 
-export function previewUrl(at) {  const url = new URL(`${ROUTE_BASE}${API}/preview`, location.origin);
+export function previewUrl(at) {
+  const url = new URL(`${ROUTE_BASE}${API}/preview`, location.origin);
   if (at) url.searchParams.set("t", String(at));
   const session = new URLSearchParams(location.search).get("appSurfaceSession");
   if (session) url.searchParams.set("appSurfaceSession", session);
@@ -93,8 +95,8 @@ export function startLive({ hana, onState, onEvent, fetchState, onError }) {
   }
 
   function poll() {
-    if (disposed || !fetchState) return;
-    void fetchState()
+    if (disposed || !fetchState) return Promise.resolve();
+    return fetchState()
       .then((state) => {
         if (disposed || !state) return;
         lastState = state;
@@ -108,8 +110,11 @@ export function startLive({ hana, onState, onEvent, fetchState, onError }) {
     if (disposed || !degraded) return;
     pollTimer = setTimeout(() => {
       if (disposed) return;
-      if (!document.hidden) poll();
-      schedulePoll();
+      // 上一轮结束再排下一轮。宿主慢的时候请求会超过间隔，不串行就会叠着跑。
+      const round = document.hidden ? Promise.resolve() : poll();
+      void round.then(() => {
+        if (!disposed) schedulePoll();
+      });
     }, busy() ? POLL_ACTIVE_MS : POLL_IDLE_MS);
   }
 

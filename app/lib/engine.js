@@ -217,7 +217,8 @@ export class Engine {
         return;
       }
       case "preview":
-        // 先转 JPEG 再通知：界面拿到的就是小图，不必每次读 10 MB 的 PNG。
+        // 先缩成 WebP 再通知：大图的 preview.png 能到十兆，界面不必每次读它。
+        // 原图本来就小于目标宽度时 shrinkToWebp 返回 null，读原图即可。
         void this.publishPreview(jobId);
         return;
       case "done": {

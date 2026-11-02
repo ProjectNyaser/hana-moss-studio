@@ -1238,8 +1238,8 @@ function state() {
       return c.body(readFileSync(dst), 200, { "content-type": "image/webp", "cache-control": "private, max-age=86400" });
     });
 
-    // 采样预览：引擎在采样过程中不断重写同一个文件。
-    // 体积大的那些引擎会额外给一份 JPEG，界面优先读它。
+    // 采样预览：引擎在采样过程中不断重写同一个文件。拿到的是缩好的 WebP，
+    // 原图本来就小于 640 宽时直接给 preview.png。
     app.get(`/${APP_ID}/preview`, (c) => {
       const file = engine.previewFile();
       if (!existsSync(file)) return c.text("not found", 404);
