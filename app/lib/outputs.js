@@ -1,15 +1,59 @@
-import { readdirSync, statSync, openSync, readSync, closeSync } from "node:fs";
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Nyaser
+
+/**
+ * app/lib/outputs.js — 从 PNG 里读出生成记录。
+ *
+ * 出图文件就是记录的真相源：引擎在 iTXt 块里写了完整参数，删掉文件记录随之消失。
+ * 所以这里不做数据库，只把目录扫成记录列表。
+ *
+ * 按块头逐条跳读，只把文本块读进内存。整张 10 MB 的图从头读到尾没有必要，
+ * 而且固定读前 N KB 会在文本块跨越边界时把它截断。
+ */
+
+import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { join } from "node:path";
 
-/** 出图文件是记录的真相源：PNG 自带生成参数，删除文件即删除记录。
- *
- *  引擎把元数据写在两张 iTXt 块里：
- *    generation  完整 JSON（prompt / steps / cfg / seed / 尺寸 / tier …）
- *    parameters  给 ComfyUI 那一套看的纯文本
- *  这里只读文件头，不把整个 PNG 载入内存。 */
+/** 单个文本块的上限。坏文件里 length 字段可能是任意值，按它分配内存会炸。 */
+const MAX_TEXT_CHUNK = 4 * 1024 * 1024;
+const PNG_SIGNATURE = "89504e470d0a1a0a";
 
-const HEADER_BYTES = 128 * 1024;
 const cache = new Map();
+
+/**
+ * 解析 iTXt：keyword\0 flag method language\0 translated\0 text。
+ * 返回 null 表示这个块不合法。
+ */
+function parseITxt(body) {
+  const keywordEnd = body.indexOf(0);
+  if (keywordEnd < 0 || keywordEnd + 3 > body.length) return null;
+  const keyword = body.toString("utf8", 0, keywordEnd);
+  const compressed = body[keywordEnd + 1] === 1;
+  const method = body[keywordEnd + 2];
+  let cursor = keywordEnd + 3;
+  const languageEnd = body.indexOf(0, cursor);
+  if (languageEnd < 0) return null;
+  cursor = languageEnd + 1;
+  const translatedEnd = body.indexOf(0, cursor);
+  if (translatedEnd < 0) return null;
+  cursor = translatedEnd + 1;
+  const payload = body.subarray(cursor);
+  if (!compressed) return { keyword, text: payload.toString("utf8") };
+  if (method !== 0) return null;
+  try {
+    return { keyword, text: inflateSync(payload).toString("utf8") };
+  } catch {
+    return null;
+  }
+}
+
+/** tEXt 是 keyword\0 text，没有压缩。 */
+function parseTxt(body) {
+  const keywordEnd = body.indexOf(0);
+  if (keywordEnd < 0) return null;
+  return { keyword: body.toString("utf8", 0, keywordEnd), text: body.toString("utf8", keywordEnd + 1) };
+}
 
 /** 从一个 PNG 里取出文本块，返回 { generation, parameters }，读不到就是 null。 */
 export function readPngText(file) {
@@ -23,35 +67,38 @@ export function readPngText(file) {
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.text;
 
   let handle;
-  let text = null;
+  const text = {};
   try {
     handle = openSync(file, "r");
-    const length = Math.min(stat.size, HEADER_BYTES);
-    const buffer = Buffer.alloc(length);
-    readSync(handle, buffer, 0, length, 0);
-    if (buffer.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") return null;
-    text = {};
+    const signature = Buffer.alloc(8);
+    if (readSync(handle, signature, 0, 8, 0) < 8) return null;
+    if (signature.toString("hex") !== PNG_SIGNATURE) return null;
+
     let offset = 8;
-    while (offset + 8 <= length) {
-      const size = buffer.readUInt32BE(offset);
-      const type = buffer.toString("ascii", offset + 4, offset + 8);
+    const head = Buffer.alloc(8);
+    for (;;) {
+      if (readSync(handle, head, 0, 8, offset) < 8) break;
+      const size = head.readUInt32BE(0);
+      const type = head.toString("ascii", 4, 8);
       if (type === "IEND") break;
-      if (type === "iTXt" || type === "tEXt" || type === "zTXt") {
-        const body = buffer.subarray(offset + 8, offset + 8 + Math.min(size, length - offset - 8));
-        const keyword = body.toString("utf8", 0, Math.min(body.length, 32)).split("\u0000")[0];
-        const raw = body.toString("utf8");
-        if (keyword === "generation") {
-          const json = raw.slice(raw.indexOf("{"));
-          try {
-            text.generation = JSON.parse(json.replace(/\u0000+$/, ""));
-          } catch {
-            /* 元数据坏了就当没有 */
+      if ((type === "iTXt" || type === "tEXt") && size > 0 && size <= MAX_TEXT_CHUNK) {
+        const body = Buffer.alloc(size);
+        if (readSync(handle, body, 0, size, offset + 8) === size) {
+          const chunk = type === "iTXt" ? parseITxt(body) : parseTxt(body);
+          if (chunk?.keyword === "generation") {
+            try {
+              text.generation = JSON.parse(chunk.text);
+            } catch {
+              // 元数据坏了就当没有，不影响这张图本身。
+            }
+          } else if (chunk?.keyword === "parameters") {
+            text.parameters = chunk.text;
           }
-        } else if (keyword === "parameters") {
-          text.parameters = raw.slice(keyword.length).replace(/^[\u0000\s]+/, "");
         }
       }
+      // 块 = 4 size + 4 type + size 数据 + 4 CRC
       offset += 12 + size;
+      if (offset <= 8 || offset > stat.size) break;
     }
   } catch {
     return null;
