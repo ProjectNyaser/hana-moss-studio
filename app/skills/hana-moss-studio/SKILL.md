@@ -1,6 +1,6 @@
 ---
 name: hana-moss-studio
-description: 苔室（Hana-Moss-Studio，v2 App）——MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、提示词面板与画廊，工具出图在对话里挂实时进度卡。触发场景：用苔室出图、用 MOSS-Image 生图、查看苔室引擎状态、取回生成的图片、启停引擎、图生图、高清修正、放大图片、显存不足、arena overflow、模型未加载、引擎路径没配、工作区打不开、面板读不出数据、苔室进度卡不刷新。不触发：用 ComfyUI 出图（那是 comfyui-hana）、用云端模型生图（那是 media_generate-image）、只要一张图且不关心本机模型（同样走 media_generate-image）。
+description: 苔室（Hana-Moss-Studio，v2 App）——MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、提示词面板与画廊，工具出图在对话里挂实时进度卡。触发场景：用苔室出图、用 MOSS-Image 生图、查看苔室引擎状态、取回生成的图片、启停引擎、图生图、高清修正、放大图片、显存不足、arena overflow、模型未加载、引擎路径没配、工作区打不开、面板读不出数据、苔室进度卡不刷新、给这台机器部署苔室引擎、装 moss-server、下载 mossinfer 包、Linux 上装引擎、chmod 执行位、缺 libcublasLt、cuBLASLt 找不到、驱动版本不够装不了、换显卡重新部署、拉 MOSS-Image 权重。不触发：用 ComfyUI 出图（那是 comfyui-hana）、用云端模型生图（那是 media_generate-image）、只要一张图且不关心本机模型（同样走 media_generate-image）。
 ---
 
 # 苔室（Hana-Moss-Studio）
@@ -18,7 +18,19 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 
 `moss_generate` **提交即返回**，不阻塞到出图。回合纪律：提交完不要原地等，下面的进度卡会自己刷新，出图后宿主把结果投递回会话。需要当场拿到文件时才轮询。
 
-首次使用若引擎或模型路径未配，`moss_status` 会写明「未配置」。这种情况下告诉用户去工作区填路径，不要猜路径。
+首次使用若引擎或模型路径未配，`moss_status` 会写明「未配置」。这时先照 `references/platform.md` 把这台机器的引擎与权重装好、把两个路径写回设置；用户已经有引擎时只问路径，不要猜。
+
+## 环境部署
+
+苔室不打包引擎，装哪个包完全由这台机器决定（平台 × 驱动 × 算力）。先判定再动手，不要把 Windows 的经验往别的平台上套。
+
+- **macOS 没有引擎构建**，直接停，不要试翻译或交叉编译。
+- 驱动主版本 < 580 只能装 `cu12`；算力 7.5 只有 Windows + cu13 的 `sm75` 包。
+- Linux 解压后**必须** `chmod 755`，否则 spawn 直接 `EACCES`。
+- 优先 `bundled` 包；`system-cuda` 要自己补 cuBLASLt。
+- 权重约 27 GB，放 NVMe。
+
+完整判定树、每步命令、失败对照都在 `references/platform.md`。部署完写回 `settings.json` 并重载 App，用 `moss_status()` 验收，不要拿 1024² 试。
 
 ## 工具面
 
@@ -98,7 +110,10 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 | 每次都要等三十多秒才动 | 文本编码器在从盘上重读（`te_weight_load`）。模型放 NVMe 会快五倍 |
 | `invalid_params: the size must be at most 4096 / 4.2 megapixels` | 撞硬限。降像素或改走 `hiresScale` |
 | 引擎未启动 / 模型未加载 | 在苔室工作区或左侧面板点「启动引擎」；路径未配就去填 |
+| 引擎起不来，报 `EACCES` | Linux 上解压丢了执行位 | `chmod 755 <serverPath>`，部署全流程见 `references/platform.md` |
+| 报找不到 `libcublasLt.so.N` / `cublasLt64_*.dll` | 装的是 `system-cuda` 包，库不在包里 | 补库或换 `bundled` 包，见 `references/platform.md` |
+| 换了台机器或换了显卡就起不来 | 包与平台的组合不对（驱动版本、算力） | 按 `references/platform.md` 重新选包 |
 | 进度卡停在「正在读取任务状态」 | 本机回环偶发 `ENOBUFS`，卡片会保留已画内容并重试。持续不恢复就刷新页面 |
 | 面板数据不更新 | 事件流 `/events` 断开会退化成轮询，刷新页面重连 |
 
-更细的引擎与显存实测数字见 `references/engine.md`。
+更细的引擎与显存实测数字见 `references/engine.md`，按平台部署见 `references/platform.md`。

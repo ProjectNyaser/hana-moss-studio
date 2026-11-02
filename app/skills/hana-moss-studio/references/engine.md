@@ -4,12 +4,12 @@
 
 ## 进程与接口
 
-- 可执行：`<HANA_HOME>/app-data/hana-moss-studio/engine/mossinfer-<ver>-windows-cu13-x86_64/bin/moss-server.exe`
+- 可执行：`<HANA_HOME>/app-data/hana-moss-studio/engine/mossinfer-<ver>-<os>-<cuda>-x86_64/bin/moss-server`（Windows 带 `.exe`；包名与平台、驱动的对应关系见 `platform.md`）
 - 通信：本机 stdio 上的 JSON 消息（`load` / `generate` / `cancel` / 进度事件 / 结束报告）
 - `load` 只收一个模型目录路径，没有架构或类型参数：它按 MOSS-Image 的结构读 `transformer / text_encoder / vae / model_index.json`
 - 不吃 LoRA（报告里 `lora: none`），不吃单文件 checkpoint
 
-模型目录可以指向盘上任意位置，但**引擎进程不在 App 的 fs 沙箱里**：App 自己 `existsSync` 检查路径时受宿主 `--allow-fs-read` 限制，只能看见自己的目录与 app-data。把模型放别的盘时，用目录联接（junction）把它接到 app-data 下，App 看到的是字面合法路径，真正的数据流走引擎。
+模型目录可以指向盘上任意位置，但**引擎进程不在 App 的 fs 沙箱里**：App 自己 `existsSync` 检查路径时受宿主 `--allow-fs-read` 限制，只能看见自己的目录与 app-data。把模型放别的盘时，用目录联接（Windows junction / Linux 符号链接）把它接到 app-data 下，具体命令见 `platform.md`。App 看到的是字面合法路径，真正的数据流走引擎。
 
 ## arena 与两种显存策略
 
@@ -65,4 +65,4 @@ total 256.7 s
 
 同一提示词连续出图时，引擎会命中嵌入缓存，`te_weight_load` 与 `te_compute` 都会接近 0，编码只花几毫秒。这种「全热运行」的数字不能拿来和冷启动比。要测真实代价，必须换一个从没出现过的提示词，或者重启引擎。
 
-同理，Windows 文件缓存能让刚读过的权重几秒内读完。真冷启动（重启过机器）的数字会比这更差。
+同理，操作系统的文件缓存能让刚读过的权重几秒内读完。真冷启动（重启过机器）的数字会比这更差。
