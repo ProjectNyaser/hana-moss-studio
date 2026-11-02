@@ -116,7 +116,9 @@ function toRgba(source) {
 export async function shrinkToWebp(src, dst, maxWidth, { force = false } = {}) {
   if (!existsSync(src)) return null;
   const input = readFileSync(src);
-  if (input.length < WORTH_RESIZING) return null;
+  // 小图默认不处理（本来就不大），但 force 时还是要转：缩略图路由需要这个文件
+  // 存在，不然每次请求都要重新解一遍 PNG。
+  if (!force && input.length < WORTH_RESIZING) return null;
   let image;
   try {
     image = decodePng(input);
