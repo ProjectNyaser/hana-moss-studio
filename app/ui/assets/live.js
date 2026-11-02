@@ -3,9 +3,11 @@
 
 const API = "/hana-moss-studio";
 const ROUTE_BASE = "/api/apps/hana-moss-studio/routes";
-const FIRST_FRAME_TIMEOUT_MS = 5000;
+const FIRST_FRAME_TIMEOUT_MS = 10000;
 const RECONNECT_DELAY_MS = 2500;
-const FALLBACK_POLL_MS = 3000;
+const FALLBACK_POLL_MS = 5000;
+/** 退化到轮询后隔多久再试一次真流式。 */
+const SSE_RETRY_MS = 45_000;
 
 /**
  * @param {object} options
@@ -60,6 +62,16 @@ export function startLive({ hana, onState, onEvent, fetchState, onError, source 
     pollTimer = setInterval(() => {
       if (!document.hidden) poll();
     }, FALLBACK_POLL_MS);
+    // 轮询只是兜底。一次开流失败就永久轮询的话，请求数会一直堆着；
+    // 过一阵再试一次真流式，能连上就回到推的模式。
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      if (disposed) return;
+      clearInterval(pollTimer);
+      pollTimer = null;
+      degraded = false;
+      void connect();
+    }, SSE_RETRY_MS);
   }
 
   async function connect() {

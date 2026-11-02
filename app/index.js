@@ -282,7 +282,8 @@ export default defineApp(async (sdk) => {
       }
       const entry = event.jobId ? live.get(event.jobId) : null;
       if (!entry) return;
-      schedulePush(180);
+      // 合并同一瞬间的多次进度：引擎一秒能回好几帧，没必要每帧都推一整份 state。
+      schedulePush(320);
       if (event.type === "stage") {
         entry.phase = event.phase ?? entry.phase;
         if (entry.phase && !entry.phasesSeen.includes(entry.phase)) entry.phasesSeen.push(entry.phase);
@@ -627,10 +628,16 @@ export default defineApp(async (sdk) => {
       },
       queue: queue.map((job) => ({ id: job.id, prompt: job.prompt, width: job.width, height: job.height, steps: job.steps })),
       running,
-      jobs: store.listJobs().slice(0, 24).map(slimJob),
-      // 全量记录数：state 只带最近 24 条，界面上的总数不能跟着它算。
+      // 只带一屏：画廊靠自己分页拉（/jobs），这里给画布、队列与首屏兜底就够。
+      jobs: store.listJobs().slice(0, 12).map(slimJob),
+      // 全量记录数：state 只带前面那些，界面上的总数不能跟着它算。
       jobTotal: store.listJobs().length,
-      progress: Object.fromEntries([...live.values()].map((entry) => [entry.id, taskProgress(entry)])),
+      // 只算还没收尾的：结束的任务进度已经没意义，四十条堆在每帧里白占体积。
+      progress: Object.fromEntries(
+        [...live.values()]
+          .filter((entry) => entry.status === "running" || entry.status === "queued")
+          .map((entry) => [entry.id, taskProgress(entry)]),
+      ),
       mossimage: {
         repo: MOSSIMAGE.repo,
         version: MOSSIMAGE.version,
