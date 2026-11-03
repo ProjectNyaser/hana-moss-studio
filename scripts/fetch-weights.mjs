@@ -184,7 +184,6 @@ async function runAria2(binary, files) {
         "-k1M",
         "-j4",
         "-c",
-        "--file-allocation=none",
         "--max-tries=5",
         "--retry-wait=5",
         "--lowest-speed-limit=10K",

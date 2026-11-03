@@ -667,7 +667,10 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       "-s16",
       "-k1M",
       `-j${concurrency}`,
-      "--file-allocation=none",
+      // 不写 --file-allocation：预分配是 aria2 的本事。它会把 25 GiB 一次占好，
+      // 磁盘不够当场报错，而不是下到一半才发现；写完也不会摊成一地碎片。
+      // 关掉它的理由曾经是「文件大小要能反映进度」，而进度现在走 aria2 自报的
+      // completedLength，这个理由不在了。
       "--max-tries=5",
       "--retry-wait=3",
       "--timeout=30",
