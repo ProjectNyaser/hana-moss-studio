@@ -128,8 +128,9 @@ export default defineApp(async (sdk) => {
     // 收尾时（成功、失败、取消）例外：版本与模型列表跟着变了，要整帧刷新。
     onUpdate: () => {
       const snap = installer.snapshot();
-      if (snap?.finishedAt) schedulePush(0);
-      else pushEvent("transfer", { install: snap });
+      // 任一任务收尾就整帧刷新：版本与模型列表跟着变了。
+      if (snap.some((item) => item.finishedAt)) schedulePush(0);
+      else pushEvent("transfer", { installs: snap });
     },
     network: sdk.network,
     // 装完直接拉起来，省用户一次点击；失败不影响安装结果。
@@ -724,7 +725,7 @@ function state() {
       modelBytes: MODEL_BYTES,
     },
     plan: modelPlan(),
-    install: installer.snapshot(),
+    installs: installer.snapshot(),
     engines: installer.listEngines(),
     models: installer.listModels(),
     gpu: gpuCache,
@@ -763,7 +764,7 @@ function state() {
         version: MOSSIMAGE.version,
         protocolVersion: MOSSIMAGE.protocolVersion,
       },
-      install: installer.snapshot(),
+      installs: installer.snapshot(),
     };
   }
 
@@ -1054,22 +1055,27 @@ function state() {
       return c.json({ ...state(), queued: Boolean(result.queued), queuePosition: result.position ?? null, duplicate: Boolean(result.duplicate) });
     });
 
-    app.post(`/${APP_ID}/install/cancel`, (c) => {
-      installer.cancel();
+    app.post(`/${APP_ID}/install/cancel`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      // 不传 id 就把所有还在跑的都停掉；传了就只停那一个。
+      const id = typeof body?.id === "string" ? body.id : null;
+      if (id) installer.cancel(id);
+      else for (const item of installer.snapshot()) installer.cancel(item.id);
       schedulePush(0);
       return c.json(state());
     });
 
-    // 单任务：暂停、继续、移除。out 是相对路径，面板上点哪一行传哪个。
+    // 单文件：暂停、继续、移除。taskId 定位是哪个任务，path 是落盘绝对路径。
     app.post(`/${APP_ID}/install/task`, async (c) => {
       const body = await c.req.json().catch(() => ({}));
-      const out = String(body?.out ?? "");
+      const taskId = String(body?.taskId ?? "");
+      const path = String(body?.path ?? "");
       const action = body?.action;
-      if (!out) return c.json({ ...state(), error: "缺少 out" }, 400);
+      if (!taskId || !path) return c.json({ ...state(), error: "缺少 taskId 或 path" }, 400);
       if (!["pause", "resume", "remove"].includes(action)) {
         return c.json({ ...state(), error: `未知动作 ${String(action)}` }, 400);
       }
-      const result = await installer.taskAction(out, action);
+      const result = await installer.taskAction(taskId, path, action);
       schedulePush(0);
       if (!result.ok) return c.json({ ...state(), error: result.error }, 400);
       return c.json(state());

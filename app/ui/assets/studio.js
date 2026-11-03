@@ -778,15 +778,13 @@ function renderQueue(data) {
   }
 
   // 下载任务和生图任务同一个列表：在跑的事一页看完。
-  const { rows: downloading, queued: downloadQueued } = downloadRows(data.install);
-  // install 没任务时是 null；有了但已收尾也不算忙。
-  const downloadBusy = Boolean(data.install && !data.install.finishedAt);
+  const downloading = downloadRows(data.installs ?? []);
+  const downloadBusy = (data.installs ?? []).some((item) => !item.finishedAt);
 
   nodes.queueCount.textContent = [
     active ? "1 正在跑" : null,
     queue.length ? `${queue.length} 排队` : null,
-    downloading.length ? `${downloading.length} ${data.install?.phase === "verify" ? "校验中" : "下载中"}` : null,
-    downloadQueued ? `${downloadQueued} 排队` : null,
+    downloading.length ? `${downloading.length} 下载中` : null,
     failed.length ? `${failed.length} 失败` : null,
   ]
     .filter(Boolean)
@@ -804,20 +802,12 @@ function renderQueue(data) {
 }
 
 // ── 版本 ───────────────────────────────────────────────────────────────
-/** 发起一次下载。忙的时候直接排队，排上了就一定会跑。 */
+/** 发起一次下载。文件全部交给 aria2，多个仓库同时下就是各自跑各自的。 */
 async function startInstall(path, body, label) {
   try {
     const result = await post(path, body);
     if (result?.error) {
       void toast(`${label}没开始：${result.error}`);
-      return;
-    }
-    if (result?.duplicate) {
-      void toast(`${label}已在队列第 ${result.queuePosition} 位`);
-      return;
-    }
-    if (result?.queued) {
-      void toast(`已排队：${label}（第 ${result.queuePosition} 位）`);
       return;
     }
     void toast(`开始${label}`);
@@ -928,11 +918,11 @@ function actionButton(label, run) {
   return button;
 }
 
-async function taskAction(out, action) {
+async function taskAction(taskId, path, action) {
   const verb = action === "pause" ? "暂停" : action === "resume" ? "继续" : "移除";
   try {
-    await post("/install/task", { out, action });
-    void toast(`已${verb} ${out.split("/").pop()}`);
+    await post("/install/task", { taskId, path, action });
+    void toast(`已${verb} ${path.split("/").pop()}`);
   } catch (error) {
     void toast(`${verb}失败：${error.message ?? error}`);
   }
@@ -980,112 +970,82 @@ function renderDownload(data) {
 /**
  * 下载任务 → 队列行。和生图任务用同一套卡片，一个页面里就看完全部在跑的事。
  */
-function downloadRows(job) {
-  // 排队的任务：不进 job.tasks，它们在 pending 里等前一条收尾。
-  const waiting = (job?.queue ?? []).map((label) =>
-    queueCard({ title: label, glyph: "↓", stateText: "排队", meta: "上一条完成后开始" }),
-  );
-  const done = (rows) => ({ rows, queued: waiting.length });
-  if (!job?.tasks?.length) return done(waiting);
-  // 收尾之后就不再占队列：跑完了去版本页看，取消了就当没发生过，只有失败留一行说明。
-  // 之前这里把二十条「已完成」全列出来，队列页永远是满的。
-  if (job.finishedAt) {
-    if (job.phase !== "error") return done(waiting);
-    return done([
-      queueCard({
-        title: job.label ?? "下载",
-        glyph: "↓",
-        stateText: "失败",
-        meta: (job.error ?? "").slice(0, 80),
-      }),
-      ...waiting,
-    ]);
-  }
-  // 校验阶段不经过 aria2，tasks 里全是 complete。列二十条「已完成」占满整页，
-  // 真正在干的事（读盘算 sha256，二十多个文件要半分钟）反而看不到。
-  // 判据不写死 phase：只要没有活着的行，就折叠成一条汇总。
-  const alive = job.tasks.filter(
-    (task) => task.status === "active" || task.status === "waiting" || task.status === "paused",
-  );
-  if (!alive.length && !job.finishedAt) {
-    return done([
-      queueCard({
-        title: job.label ?? "下载",
-        glyph: "↓",
-        stateText: job.message || job.phase || "进行中",
-        // 校验阶段说「已就位」会让人以为已经完事了。它要跑十几到几十秒，
-        // 这期间告诉用户实际在干什么。
-        meta: job.phase === "verify" ? `${job.tasks.length} 个文件校验中` : `${job.tasks.length} 个文件已就位`,
-      }),
-      ...waiting,
-    ]);
-  }
-  // 已经收尾的任务不再列活跃行，否则取消后还挂着一条跑着的进度。
-  const tasks = job.finishedAt
-    ? job.tasks.filter((task) => task.status !== "active" && task.status !== "waiting")
-    : job.tasks;
-  return done([
-    ...tasks.map((task) => {
-    const size = Number(task.size) || 0;
-    const got = Number(task.got) || 0;
-    const speed = Number(task.speed) || 0;
-    const percent = size ? Math.min(100, (got / size) * 100) : 0;
-    // 校验时 completedLength 已经是满的，但任务还没结束。不单独标出来就会看着像卡住。
-    // aria2 只在 --check-integrity 模式下报 verifiedLength，--checksum 模式下没有，
-    // 所以这里只写「校验中」，不编一个永远停在 0% 的进度。
-    const verifying = Boolean(task.verifying);
-    // completedLength 已经等于目标大小，要么在算 sha256，要么刚刚算完。
-    // 这两种情况都不该显示一个「100%」——那是在说「已经好了」，但实际上还没确认。
-    const draining = verifying || (size > 0 && got >= size);
-    // 徽标已经写了「校验」，meta 不再重复一次，只报体积。
-    const meta = draining
-      ? formatSize(size)
-      : [
-          size ? `${formatSize(got)} / ${formatSize(size)}` : formatSize(got),
-          speed > 0 ? `${formatSize(speed)}/s` : null,
-          speed > 0 && size > got ? `剩 ${formatDuration(((size - got) / speed) * 1000)}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-    const stateText =
-      task.status === "complete"
-        ? "已完成"
-        : task.status === "paused"
-          ? "已暂停"
-          : task.status === "error"
-            ? "失败"
-            : task.status === "removed"
-              ? "已取消"
-              : task.status === "waiting"
-                ? `排队${task.queue ? ` ${task.queue}` : ""}`
-                : draining
-                  ? "校验"
-                  : null;
-    const act = (action, label) => ({
-      label,
-      run: () => runSafe(() => post("/install/task", { out: task.out, action }), label),
-    });
-    const actions =
-      task.status === "active"
-        ? [act("pause", "暂停"), act("remove", "移除")]
-        : task.status === "paused"
-          ? [act("resume", "继续"), act("remove", "移除")]
-          : task.status === "waiting"
-            ? [act("remove", "移除")]
+function downloadRows(installs) {
+  const rows = [];
+  for (const job of installs) {
+    // 收尾后不再占队列：跑完了去版本页看，取消了就当没发生过，只有失败留一行说明。
+    if (job.finishedAt && job.phase !== "error") continue;
+    if (job.finishedAt) {
+      rows.push(
+        queueCard({
+          title: job.label ?? "下载",
+          glyph: "↓",
+          stateText: "失败",
+          meta: (job.error ?? "").slice(0, 80),
+        }),
+      );
+      continue;
+    }
+    // 校验阶段不经过 aria2，tasks 里全是 complete。列二十条「已完成」占满整页，
+    // 真正在干的事（读盘算 sha256）反而看不到。判据不写死 phase：没有活着的行就折叠。
+    const alive = (job.tasks ?? []).filter(
+      (task) => task.status === "active" || task.status === "waiting" || task.status === "paused",
+    );
+    if (!alive.length) {
+      rows.push(
+        queueCard({
+          title: job.label ?? "下载",
+          glyph: "↓",
+          stateText: job.message || job.phase || "进行中",
+          meta:
+            job.phase === "verify" ? `${job.tasks.length} 个文件校验中` : `${job.tasks.length} 个文件已就位`,
+        }),
+      );
+      continue;
+    }
+    for (const file of alive) {
+      const size = Number(file.size) || 0;
+      const got = Number(file.got) || 0;
+      const speed = Number(file.speed) || 0;
+      const percent = size ? Math.min(100, (got / size) * 100) : 0;
+      // completedLength 已经等于目标大小，要么在算 sha256，要么刚刚算完。
+      // 这两种情况都不该显示一个「100%」——那是在说「已经好了」，但实际还没确认。
+      const draining = Boolean(file.verifying) || (size > 0 && got >= size);
+      const meta = draining
+        ? formatSize(size)
+        : [
+            size ? `${formatSize(got)} / ${formatSize(size)}` : formatSize(got),
+            speed > 0 ? `${formatSize(speed)}/s` : null,
+            speed > 0 && size > got ? `剩 ${formatDuration(((size - got) / speed) * 1000)}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+      const stateText = file.status === "paused" ? "已暂停" : draining ? "校验" : null;
+      // 每行自带 taskId：两个仓库的目录结构一样、文件名逐个对得上，
+      // 只靠相对路径分不出该控制哪一条。
+      const act = (action, label) => ({
+        label,
+        run: () => runSafe(() => post("/install/task", { taskId: job.id, path: file.path, action }), label),
+      });
+      const actions =
+        file.status === "active"
+          ? [act("pause", "暂停"), act("remove", "移除")]
+          : file.status === "paused"
+            ? [act("resume", "继续"), act("remove", "移除")]
             : [];
-    return queueCard({
-      // 显示相对 app-data 的落盘位置：两个仓库的目录结构一样、文件名逐个对得上，
-      // 只写相对路径分不出是哪个仓库的。卡片上会截断，悬停看完整。
-      title: task.path ?? task.out,
-      glyph: "↓",
-      stateText,
-      meta,
-      percent: task.status === "active" || task.status === "paused" ? (draining ? undefined : percent) : undefined,
-      actions,
-    });
-    }),
-    ...waiting,
-  ]);
+      rows.push(
+        queueCard({
+          title: file.path ?? file.out,
+          glyph: "↓",
+          stateText,
+          meta,
+          percent: draining ? undefined : percent,
+          actions,
+        }),
+      );
+    }
+  }
+  return rows;
 }
 
 async function loadReleases(force = false) {
@@ -1624,7 +1584,7 @@ async function boot() {
         return;
       }
       if (name === "transfer") {
-        latest.install = payload.install ?? latest.install;
+        latest.installs = payload.installs ?? latest.installs;
         renderQueue(latest);
         broadcastState(latest);
         return;

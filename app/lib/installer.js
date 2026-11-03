@@ -353,15 +353,11 @@ export function compareEngineVersion(a, b) {
 }
 
 export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings, onUpdate, onInstalled, network }) {
-  /** 当前安装任务；null 表示空闲。 */
-  let job = null;
-  let child = null;
-  let cancelled = false;
   /**
-   * 当前 aria2 会话的控制面。下载跑着的时候才有，用来按文件名找 gid，
-   * 做单任务的暂停 / 继续 / 移除。
+   * 每个安装任务一份自己的状态，可以同时跑。
+   * 任务之间不排队：文件全都丢给 aria2，并发由它的 -j4 管；这里只负责各自的进度。
    */
-  let control = null;
+  const tasks = new Map();
 
   const engineDir = join(dataDir, "engine");
 
@@ -500,79 +496,59 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
    * -x16 -s16 管单文件连接）。这里只做一件事——把任务转交给它，忙的时候
    * 如实说一句「正在跑哪个」，不替用户排。
    */
-  /** 等前一个收尾再起下一个。排队的是任务，文件级的并发交给 aria2 的 -j4。 */
-  let pending = [];
-
-  function startNext() {
-    if (job && !job.finishedAt) return;
-    const next = pending.shift();
-    if (!next) return;
+  /**
+   * 开一份任务状态。每个任务独立：自己的 job、取消标记、aria2 子进程和控制面。
+   * 两个仓库同时下就是两个任务并行，不互相等。
+   */
+  function makeTask(target, label) {
+    const task = {
+      job: {
+        id: `inst-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        target,
+        label,
+        phase: "starting",
+        message: "",
+        percent: 0,
+        bytes: 0,
+        totalBytes: 0,
+        startedAt: new Date().toISOString(),
+        finishedAt: null,
+        error: null,
+        detail: null,
+      },
+      cancelled: false,
+      child: null,
+      /** aria2 会话的控制面：port、secret、gids（按落盘绝对路径索引）。 */
+      control: null,
+      patch(update) {
+        // 收尾之后不再接受进度写入：取消那一刻可能还有一帧 onTick 在飞。
+        if (task.job.finishedAt && !update.finishedAt) return;
+        Object.assign(task.job, update);
+        task.job.updatedAt = new Date().toISOString();
+        onUpdate?.();
+      },
+      finish(update) {
+        invalidateSizes();
+        task.patch({ ...update, percent: 100, finishedAt: new Date().toISOString() });
+      },
+      fail(error) {
+        task.patch({
+          phase: task.cancelled ? "cancelled" : "error",
+          error: task.cancelled ? null : error instanceof Error ? error.message : String(error),
+          finishedAt: new Date().toISOString(),
+        });
+      },
+    };
+    tasks.set(task.job.id, task);
     onUpdate?.();
-    const run = next.kind === "engine" ? installEngine(next.args) : installWeights(next.args?.variant);
-    run.catch(() => {});
+    return task;
   }
 
   function enqueue(kind, args) {
-    const key = kind === "engine" ? `engine:${args?.tag ?? "latest"}` : `weights:${args?.variant === "sft" ? "sft" : "base"}`;
-    const label = kind === "engine" ? `引擎 ${args?.tag ?? "latest"}` : `权重 ${args?.variant === "sft" ? "SFT" : "Base"}`;
-    // 已经在跑的就直接开始；否则排队，排上就去做，不丢。
-    if (job && !job.finishedAt) {
-      const same = pending.findIndex((item) => item.key === key);
-      if (same >= 0) return { queued: true, position: same + 1, duplicate: true };
-      pending.push({ kind, args, key, label });
-      onUpdate?.();
-      return { queued: true, position: pending.length };
-    }
     // installWeights 收的是 variant 字符串，installEngine 收的是参数对象。
     const run = kind === "engine" ? installEngine(args) : installWeights(args?.variant);
     run.catch(() => {});
     return { queued: false };
-  }
-
-  function patch(update) {
-    if (!job) return;
-    // 收尾之后不再接受进度写入：取消那一刻可能还有一帧 onTick 在飞，
-    // 它会把刚标成 removed 的任务改回 active。带 finishedAt 的写入是收尾本身，放行。
-    if (job.finishedAt && !update.finishedAt) return;
-    Object.assign(job, update);
-    job.updatedAt = new Date().toISOString();
-    onUpdate?.();
-  }
-
-  function begin(target, label) {
-    job = {
-      id: `inst-${Date.now().toString(36)}`,
-      target,
-      label,
-      phase: "starting",
-      message: "",
-      percent: 0,
-      bytes: 0,
-      totalBytes: 0,
-      startedAt: new Date().toISOString(),
-      finishedAt: null,
-      error: null,
-      detail: null,
-    };
-    cancelled = false;
-    onUpdate?.();
-  }
-
-  function finish(update) {
-    invalidateSizes();
-    patch({ ...update, percent: 100, finishedAt: new Date().toISOString() });
-    // 不管这一条怎么收尾，队都要往前走。之前 fail 在 cancelled 时直接 return，
-    // 排进 pending 的项就永远等不到执行。
-    setTimeout(startNext, 0);
-  }
-
-  function fail(error) {
-    patch({
-      phase: cancelled ? "cancelled" : "error",
-      error: cancelled ? null : error instanceof Error ? error.message : String(error),
-      finishedAt: new Date().toISOString(),
-    });
-    setTimeout(startNext, 0);
   }
 
   /**
@@ -607,10 +583,10 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   }
 
   /** 起一个只当 RPC 服务端的 aria2c，端口冲突就换一个再试。 */
-  async function startAria2Rpc(globalOptions) {
+  async function startAria2Rpc(task, globalOptions) {
     let lastError = new Error("aria2 RPC 没有就绪");
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (cancelled) throw new Error("已取消");
+      if (task.cancelled) throw new Error("已取消");
       const port = 6800 + Math.floor(Math.random() * 200);
       const secret = crypto.randomBytes(8).toString("hex");
       // aria2c 的 stderr 落一份盘，起不来的时候才有东西可看。
@@ -641,7 +617,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       proc.on("error", () => {
         exited = true;
       });
-      child = proc;
+      task.child = proc;
 
       // 上一次 RPC 失败的原因要留住，否则只能看到「起不来」这种无用的结论。
       let detail = null;
@@ -666,13 +642,13 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       }
       if (ready) return ready;
       proc.kill();
-      child = null;
+      task.child = null;
       lastError = new Error(`aria2c 起不来或端口被占：${brief(detail ?? "进程没有起来")}`);
     }
     throw lastError;
   }
 
-  async function stopAria2Rpc(session) {
+  async function stopAria2Rpc(task, session) {
     // 先请求它优雅退出，不退再杀；退不退都不影响已下好的文件。
     try {
       await aria2Call(session.port, session.secret, "aria2.shutdown", [], 2000);
@@ -682,7 +658,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     const deadline = Date.now() + 3000;
     while (!session.exited() && Date.now() < deadline) await sleep(100);
     if (!session.exited()) session.proc.kill();
-    child = null;
+    if (task.child === session.proc) task.child = null;
   }
 
   /**
@@ -691,8 +667,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
    * 返回值不带业务信息，进度走 onTick：字节数是引擎自报的，不用再给目标目录做快照差。
    * 失败直接抛，带上是哪个文件与 aria2 的错误码。
    */
-  async function downloadViaRpc(entries, { dir, concurrency = 1, totalBytes = 0, onTick } = {}) {
-    const session = await startAria2Rpc([
+  async function downloadViaRpc(task, entries, { dir, concurrency = 1, totalBytes = 0, onTick } = {}) {
+    const session = await startAria2Rpc(task, [
       "-x16",
       "-s16",
       "-k1M",
@@ -710,7 +686,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     try {
       const items = [];
       for (const entry of entries) {
-        if (cancelled) throw new Error("已取消");
+        if (task.cancelled) throw new Error("已取消");
         // 调用方给 urls（多个镜像）或单个 url（引擎包只有 GitHub 一个源）。
         const urls = entry.urls ?? (entry.url ? [entry.url] : []);
         const options = {
@@ -726,7 +702,11 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         items.push({ gid, out: entry.out, size: entry.size ?? 0, urls });
       }
       const total = totalBytes || items.reduce((sum, item) => sum + item.size, 0);
-      control = { port: session.port, secret: session.secret, gids: new Map(items.map((item) => [item.out, item.gid])) };
+      task.control = {
+        port: session.port,
+        secret: session.secret,
+        gids: new Map(items.map((item) => [join(dir, ...item.out.split("/")), item.gid])),
+      };
       let stall = 0;
       let rpcFailures = 0;
       let lastBytes = -1;
@@ -740,7 +720,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       const known = new Map();
 
       for (;;) {
-        if (cancelled) {
+        if (task.cancelled) {
           await Promise.all(
             items.map((item) =>
               aria2Call(session.port, session.secret, "aria2.forceRemove", [item.gid], 3000).catch(() => {}),
@@ -845,7 +825,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
           const gs = await aria2Call(session.port, session.secret, "aria2.getGlobalStat", [], 4000).catch(() => null);
           speed = Number(gs?.downloadSpeed ?? 0);
         }
-        onTick?.({ bytes, totalBytes: total, done, total: items.length, speed, connections, tasks, current: pendingItem?.out ?? null, failed: failed.length });
+        onTick?.({ bytes, totalBytes: total, done, total: items.length, speed, connections, files: tasks, current: pendingItem?.out ?? null, failed: failed.length });
 
         // 字节和完成数都不再变超过三分钟，就当这条链路已经停了；不能无限等下去。
         // 有任务被用户暂停时不算停滞——那是用户主动让字节不动。
@@ -862,8 +842,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         if (done + failedIds.size + paused.size === items.length) return { failed, completed };
       }
     } finally {
-      control = null;
-      await stopAria2Rpc(session);
+      task.control = null;
+      await stopAria2Rpc(task, session);
     }
   }
 
@@ -871,14 +851,15 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
    * 单任务操作：pause / unpause / remove。
    * 按相对路径（task.out）定位，面板上点的是哪一行就传哪个。
    */
-  async function taskAction(out, action) {
-    if (!control) return { ok: false, error: "当前没有下载" };
-    const gid = control.gids.get(out);
+  async function taskAction(taskId, filePath, action) {
+    const task = tasks.get(taskId);
+    if (!task?.control) return { ok: false, error: "这个任务不在下载中" };
+    const gid = task.control.gids.get(filePath);
     if (!gid) return { ok: false, error: "找不到这个文件" };
     const method =
       action === "pause" ? "aria2.pause" : action === "resume" ? "aria2.unpause" : "aria2.forceRemove";
     try {
-      await aria2Call(control.port, control.secret, method, [gid], 5000);
+      await aria2Call(task.control.port, task.control.secret, method, [gid], 5000);
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -886,10 +867,10 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   }
 
   /** 用本机已有的 zip 装：拿得到官方 SHA256SUMS 就校验，拿不到就照装并在结果里注明。 */
-  async function installFromLocalZip(zip) {
+  async function installFromLocalZip(task, zip) {
     const baseName = zip.split(/[\\/]/).pop().replace(/\.zip$/i, "");
     const target = join(engineDir, baseName);
-    patch({ phase: "verify", message: `用本地包 ${baseName}.zip` });
+    task.patch({ phase: "verify", message: `用本地包 ${baseName}.zip` });
 
     let verified = false;
     try {
@@ -914,10 +895,10 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       // 校验真不符就必须停下；拉不到校验值才允许跳过比对。
       if (error instanceof ChecksumMismatch) throw error;
       const text = String(error?.message ?? error);
-      patch({ message: `拿不到官方校验值（${text.slice(0, 60)}），跳过比对` });
+      task.patch({ message: `拿不到官方校验值（${text.slice(0, 60)}），跳过比对` });
     }
 
-    patch({ phase: "extracting", message: verified ? "校验通过，解压" : "解压（未校验）" });
+    task.patch({ phase: "extracting", message: verified ? "校验通过，解压" : "解压（未校验）" });
     try {
       await unzipTo(zip, engineDir);
     } catch (error) {
@@ -927,7 +908,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     const serverPath = join(target, "bin", "moss-server.exe");
     if (!existsSync(serverPath)) throw new Error(`包里没有 ${serverPath}`);
     saveSettings({ serverPath });
-    finish({
+    task.finish({
       phase: "done",
       message: `引擎就绪：${baseName}${verified ? "" : "（未校验 sha256）"}`,
       detail: { serverPath, verified },
@@ -936,8 +917,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   }
 
   async function installEngine(options = {}) {
-    if (job && !job.finishedAt) throw new Error("已有安装在进行");
-    begin("engine", "引擎");
+    const task = makeTask("engine", "引擎");
     try {
       // 预先下好的包：跳过探测与下载，只做校验与解压。网络不行时的出路。
       // App 只能读自己的目录与 app-data，所以包只能从 app-data 里拿；
@@ -952,14 +932,14 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         }
         if (!existsSync(zip)) throw new Error(`找不到安装包：${zip}`);
         if (!/\.zip$/i.test(zip)) throw new Error("安装包必须是 .zip");
-        await installFromLocalZip(zip);
+        await installFromLocalZip(task, zip);
         return;
       }
 
-      patch({ phase: "probing", message: "读显卡与驱动" });
+      task.patch({ phase: "probing", message: "读显卡与驱动" });
       const preferCuda = options.preferCuda === "cu12" || options.preferCuda === "cu13" ? options.preferCuda : "auto";
       const gpu = await probeGpu();
-      patch({
+      task.patch({
         phase: "release",
         message: gpu
           ? `${gpu.name} · 驱动 ${gpu.driver}${gpu.computeCapability ? ` · 算力 ${gpu.computeCapability}` : ""}`
@@ -977,30 +957,30 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       if (!version) throw new Error("Release 没有可用的 tag");
       const assets = Array.isArray(release.assets) ? release.assets : [];
       const { asset, cuda, sm75, variant } = pickEngineAsset(assets, version, gpu, preferCuda);
-      patch({ message: `选中 ${asset.name}（${variant}）`, detail: { ...gpu, cuda, sm75, variant, version, tag: release.tag_name } });
+      task.patch({ message: `选中 ${asset.name}（${variant}）`, detail: { ...gpu, cuda, sm75, variant, version, tag: release.tag_name } });
 
       mkdirSync(engineDir, { recursive: true });
       const base = asset.name.replace(/\.zip$/, "");
       const target = join(engineDir, base);
       const zip = join(engineDir, `${base}.zip`);
 
-      patch({ phase: "download", message: `下载 ${asset.name}（${mb(asset.size ?? 0)} MB）`, totalBytes: asset.size ?? 0 });
-      await downloadViaRpc([{ url: asset.browser_download_url, out: `${base}.zip`, size: asset.size ?? 0 }], {
+      task.patch({ phase: "download", message: `下载 ${asset.name}（${mb(asset.size ?? 0)} MB）`, totalBytes: asset.size ?? 0 });
+      await downloadViaRpc(task, [{ url: asset.browser_download_url, out: `${base}.zip`, size: asset.size ?? 0 }], {
         dir: engineDir,
         concurrency: 1,
         totalBytes: asset.size ?? 0,
-        onTick: ({ bytes, totalBytes, speed, connections, tasks }) =>
-          patch({
+        onTick: ({ bytes, totalBytes, speed, connections, files }) =>
+          task.patch({
             bytes,
             totalBytes,
             percent: totalBytes ? Math.min(99, Math.floor((bytes / totalBytes) * 100)) : 0,
             speed,
             connections,
-            tasks: tasks.map((task) => ({ ...task, ...where(engineDir, task.out) })),
+            tasks: files.map((file) => ({ ...file, ...where(engineDir, file.out) })),
           }),
       });
 
-      patch({ phase: "verify", message: "校验 sha256" });
+      task.patch({ phase: "verify", message: "校验 sha256" });
       const sumsUrl = asset.browser_download_url.replace(/[^/]+$/, "SHA256SUMS");
       let sums = "";
       let sumsError = null;
@@ -1026,7 +1006,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         throw new ChecksumMismatch(`期望 ${want}，实际 ${got}`);
       }
 
-      patch({ phase: "extracting", message: "解压" });
+      task.patch({ phase: "extracting", message: "解压" });
       try {
         await unzipTo(zip, engineDir);
       } catch (error) {
@@ -1040,10 +1020,10 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       // 只有 Release 里没发 bundled 才会落到 system-cuda，那时得提醒一句。
       const variantNote = variant === "system-cuda" ? "；这个包不自带 CUDA 库，系统缺 cuBLASLt 会出不了图" : "";
       const drift = MOSSIMAGE.version === version ? "" : `；app/lib/mossimage.js 里还写着 ${MOSSIMAGE.version}`;
-      finish({ phase: "done", message: `引擎就绪：${base}${drift}${variantNote}`, detail: { serverPath, version } });
+      task.finish({ phase: "done", message: `引擎就绪：${base}${drift}${variantNote}`, detail: { serverPath, version } });
       onInstalled?.("engine", { serverPath });
     } catch (error) {
-      fail(error);
+      task.fail(error);
     }
   }
 
@@ -1057,7 +1037,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
    * 四路并行能吃满 NVMe 的读带宽，二十个文件二十多秒跑完。没有 lfs.oid 的小文件
    * （普通 git blob）跳过——它们是配置与分词器，大小对了就够了。
    */
-  async function verifyWeights(list, dir) {
+  async function verifyWeights(task, list, dir) {
     // 每个文件都有可比的值：LFS 文件给 sha256（lfs.oid），其余给 git blob 的 sha1（oid）。
     // 只有两者都缺的（不该出现）才退回大小判断。
     const targets = list
@@ -1073,18 +1053,18 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     let checked = 0;
     const worker = async () => {
       for (;;) {
-        if (cancelled) return;
-        const task = queue.shift();
-        if (!task) return;
+        if (task.cancelled) return;
+        const item = queue.shift();
+        if (!item) return;
         checked += 1;
-        patch({ phase: "verify", message: `校验 ${checked}/${targets.length}` });
+        task.patch({ phase: "verify", message: `校验 ${checked}/${targets.length}` });
         let got = "";
         try {
-          got = task.algo === "git" ? await gitBlobSha1(task.file, task.entry.size ?? 0) : await sha256File(task.file);
+          got = item.algo === "git" ? await gitBlobSha1(item.file, item.entry.size ?? 0) : await sha256File(item.file);
         } catch {
           got = "";
         }
-        if (got !== task.want) bad.push(task.entry);
+        if (got !== item.want) bad.push(item.entry);
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
@@ -1105,13 +1085,12 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   }
 
   async function installWeights(variant = "base") {
-    if (job && !job.finishedAt) throw new Error("已有安装在进行");
     const key = MODELS[variant] ? variant : "base";
     const repo = MODELS[key].repo;
     const weightsDir = weightsTarget(key);
-    begin("weights", `权重 · ${MODELS[key].label}`);
+    const task = makeTask("weights", `权重 · ${MODELS[key].label}`);
     try {
-      patch({ phase: "listing", message: "读取文件清单" });
+      task.patch({ phase: "listing", message: "读取文件清单" });
       const tree = JSON.parse(await fetchText(network, `${MODEL_ENDPOINT}/api/models/${repo}/tree/main?recursive=true`));
       const wanted = (tree ?? []).filter((entry) => {
         if (entry.type !== "file") return false;
@@ -1127,7 +1106,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       // 「缺哪些」是把同一件事做第二遍，还会和 aria2 的判断打架——
       // 预分配或最后一段先落盘时，文件大小已经是目标值，控制文件却还在。
       const totalBytes = wanted.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
-      patch({
+      task.patch({
         phase: "download",
         message: `${wanted.length} 个文件，共 ${gib(totalBytes)} GiB`,
         totalBytes,
@@ -1143,12 +1122,12 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         for (const entry of entries) mkdirSync(dirname(join(weightsDir, ...entry.out.split("/"))), { recursive: true });
         // aria2 先上（多源、多连接）。它完全起不来或个别文件反复失败，
         // 都不回退 curl——单连接不可能更快，进度也问不到。
-        const outcome = await downloadViaRpc(entries, {
+        const outcome = await downloadViaRpc(task, entries, {
           dir: weightsDir,
           concurrency: 4,
           totalBytes,
-          onTick: ({ bytes, totalBytes: total, done, total: count, speed, connections, tasks, failed: failedCount }) =>
-            patch({
+          onTick: ({ bytes, totalBytes: total, done, total: count, speed, connections, files, failed: failedCount }) =>
+            task.patch({
               bytes,
               totalBytes: total,
               percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
@@ -1156,14 +1135,14 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
               connections,
               // 两个仓库的文件名一模一样（transformer/... 那套目录结构相同），
               // 队列里只靠相对路径分不出是哪个仓库的。带上 variant 与落盘路径。
-              tasks: tasks.map((task) => ({ ...task, variant: key, ...where(weightsDir, task.out) })),
+              tasks: files.map((file) => ({ ...file, variant: key, ...where(weightsDir, file.out) })),
               files: [done, count],
               // 文件数、字节、速度都在结构化字段里，message 只说异常。
               message: failedCount ? `${failedCount} 个文件失败` : "",
             }),
         });
         const dead = outcome?.failed ?? [];
-        if (dead.length && !cancelled) {
+        if (dead.length && !task.cancelled) {
           const names = dead.slice(0, 3).map((entry) => `${entry.item.out}（aria2 ${entry.state.errorCode}）`);
           throw new Error(`${dead.length} 个文件下载失败：${names.join("、")}。重试会从断点续传。`);
         }
@@ -1171,12 +1150,12 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
 
       // 下载完了不代表内容对：预分配、断点续传、磁盘写入都可能留下一个大小对、内容坏的文件。
       // 按 lfs.oid 过一遍 sha256，不对的删了重下一遍。
-      let bad = await verifyWeights(wanted, weightsDir);
+      let bad = await verifyWeights(task, wanted, weightsDir);
       if (bad.length) {
-        if (cancelled) throw new Error("已取消");
-        patch({ phase: "download", message: `${bad.length} 个文件校验不过，重新下` });
+        if (task.cancelled) throw new Error("已取消");
+        task.patch({ phase: "download", message: `${bad.length} 个文件校验不过，重新下` });
         for (const entry of bad) rmSync(join(weightsDir, ...entry.path.split("/")), { force: true });
-        await downloadViaRpc(
+        await downloadViaRpc(task, 
           bad.map((entry) => ({
             urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
             out: entry.path,
@@ -1186,16 +1165,16 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
             dir: weightsDir,
             concurrency: 4,
             totalBytes: bad.reduce((sum, entry) => sum + (entry.size ?? 0), 0),
-            onTick: ({ bytes, totalBytes: total, tasks }) =>
-              patch({
+            onTick: ({ bytes, totalBytes: total, files }) =>
+              task.patch({
                 bytes,
                 totalBytes: total,
                 percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
-                tasks: tasks.map((task) => ({ ...task, variant: key, ...where(weightsDir, task.out) })),
+                tasks: files.map((file) => ({ ...file, variant: key, ...where(weightsDir, file.out) })),
               }),
           },
         );
-        bad = await verifyWeights(bad, weightsDir);
+        bad = await verifyWeights(task, bad, weightsDir);
         if (bad.length) {
           throw new Error(`重下后仍有 ${bad.length} 个文件校验不过：${bad.slice(0, 3).map((e) => e.path).join("、")}`);
         }
@@ -1203,10 +1182,10 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
 
       const paths = { ...(getSettings().modelPaths ?? {}), [key]: weightsDir };
       saveSettings({ modelPaths: paths, modelPath: weightsDir });
-      finish({ phase: "done", message: `权重就绪：${wanted.length} 个文件`, detail: { modelPath: weightsDir, variant: key } });
+      task.finish({ phase: "done", message: `权重就绪：${wanted.length} 个文件`, detail: { modelPath: weightsDir, variant: key } });
       onInstalled?.("weights", { modelPath: weightsDir, variant: key });
     } catch (error) {
-      fail(error);
+      task.fail(error);
     }
   }
 
@@ -1251,37 +1230,52 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
 
   /** 自检：真的把 aria2 拉起来并问一句版本，出错时带回真实原因。 */
   async function diagRpc() {
-    const session = await startAria2Rpc(["--console-log-level=warn", "--summary-interval=0"]);
+    const session = await startAria2Rpc(task, ["--console-log-level=warn", "--summary-interval=0"]);
     try {
       const version = await aria2Call(session.port, session.secret, "aria2.getVersion", [], 3000);
       return { ok: true, port: session.port, version: version?.version ?? null, exe: ARIA2 };
     } finally {
-      await stopAria2Rpc(session);
+      await stopAria2Rpc(task, session);
     }
   }
 
   return {
-    /** 给 state() 用：没有安装任务时给最近一次的结果。 */
+    /**
+     * 给 state() 用：所有还在跑的任务，加上一分钟内刚收尾的（让界面能看到结果）。
+     * 没有任务时返回空数组，不返回一个字段残缺的空壳。
+     */
     snapshot() {
-      if (!job) return pending.length ? { queue: pending.map((item) => item.label) } : null;
-      return { ...job, queue: pending.map((item) => item.label) };
+      const now = Date.now();
+      const live = [];
+      for (const task of tasks.values()) {
+        const job = task.job;
+        if (job.finishedAt) {
+          const age = now - Date.parse(job.finishedAt);
+          if (Number.isFinite(age) && age > 60_000) {
+            tasks.delete(job.id);
+            continue;
+          }
+        }
+        live.push({ ...job });
+      }
+      return live.sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
     },
     enqueue,
     diagRpc,
     busy() {
-      return Boolean(job && !job.finishedAt);
+      for (const task of tasks.values()) if (!task.job.finishedAt) return true;
+      return false;
     },
-    cancel() {
-      if (!job || job.finishedAt) return false;
-      cancelled = true;
-      child?.kill();
+    cancel(id) {
+      const task = tasks.get(id);
+      if (!task || task.job.finishedAt) return false;
+      task.cancelled = true;
+      task.child?.kill();
       // 残留的活跃任务跟着落成终态，否则收尾后那一条还挂着最后一帧速度和进度。
-      const tasks = (job.tasks ?? []).map((task) =>
-        task.status === "active" || task.status === "waiting" ? { ...task, status: "removed", speed: 0 } : task,
+      const files = (task.job.tasks ?? []).map((file) =>
+        file.status === "active" || file.status === "waiting" ? { ...file, status: "removed", speed: 0 } : file,
       );
-      patch({ phase: "cancelled", message: "已取消", finishedAt: new Date().toISOString(), tasks });
-      // 取消的是当前这条，排队里的接着跑。
-      setTimeout(startNext, 0);
+      task.patch({ phase: "cancelled", message: "已取消", finishedAt: new Date().toISOString(), tasks: files });
       return true;
     },
     installEngine,

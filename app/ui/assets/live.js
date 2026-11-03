@@ -91,7 +91,7 @@ export function startLive({ hana, onState, onEvent, fetchState, onError }) {
     if (!lastState) return false;
     if (lastState.engine?.active) return true;
     if (Array.isArray(lastState.queue) && lastState.queue.length) return true;
-    return Boolean(lastState.install && !lastState.install.finishedAt);
+    return Array.isArray(lastState.installs) && lastState.installs.some((item) => !item.finishedAt);
   }
 
   function poll() {
