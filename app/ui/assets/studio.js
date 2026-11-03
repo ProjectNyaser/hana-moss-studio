@@ -503,9 +503,9 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
       const text = document.createElement("span");
       text.textContent = remove.question ?? `${remove.label}？`;
       const yes = document.createElement("button");
-      yes.className = "btn small";
+      yes.className = "btn small danger";
       yes.type = "button";
-      yes.textContent = "确认";
+      yes.textContent = "确认卸载";
       yes.addEventListener("click", () => void remove.run());
       const no = document.createElement("button");
       no.className = "btn ghost small";
@@ -517,6 +517,8 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
       });
       bar.append(text, yes, no);
       row.replaceChildren(bar);
+      // 确认条是临时插进来的，抢一下焦点：整行刚被换掉，鼠标可能在原地。
+      yes.focus({ preventScroll: true });
     });
     row.append(button);
   }

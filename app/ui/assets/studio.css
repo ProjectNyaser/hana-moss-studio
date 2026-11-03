@@ -390,9 +390,26 @@ body {
   gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: 2px 0;
+  /* 待确认是个开关式状态，不能看着跟普通行一样：淡危险色底 + 同色描边。 */
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--ui-danger, #c0503c) 45%, transparent);
+  border-radius: 6px;
   font-size: 12px;
-  color: var(--ui-text-2);
+  color: var(--ui-danger, #c0503c);
+  background: color-mix(in srgb, var(--ui-danger, #c0503c) 8%, transparent);
+}
+
+/* 确认按钮也走危险色，不然它长得跟旁边那个「取消」一样。 */
+.confirm-bar .btn.danger {
+  border-color: var(--ui-danger, #c0503c);
+  background: var(--ui-danger, #c0503c);
+  color: #fff;
+}
+
+.confirm-bar .btn.danger:hover {
+  border-color: var(--ui-danger, #c0503c);
+  color: #fff;
+  filter: brightness(1.08);
 }
 
 .confirm-bar > span {
