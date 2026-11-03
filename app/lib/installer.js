@@ -65,10 +65,16 @@ const MODEL_INCLUDES = [
 /** CUDA 13 需要驱动 R580+；算力 7.5 只有 Windows cu13 的 sm75 包。 */
 const CUDA13_MIN_DRIVER = 580;
 
+/**
+ * 文件的 sha256。
+ *
+ * 块开到 4 MB：默认的 64 KB 在 NVMe 上读不满带宽，同一块盘上 4.6 GiB
+ * 用 64 KB 块比用 4 MB 块慢一倍以上。
+ */
 const sha256File = (file) =>
   new Promise((done, fail) => {
     const hash = crypto.createHash("sha256");
-    createReadStream(file)
+    createReadStream(file, { highWaterMark: 4 * 1024 * 1024 })
       .on("data", (chunk) => hash.update(chunk))
       .on("end", () => done(hash.digest("hex")))
       .on("error", fail);
@@ -683,10 +689,9 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         if (cancelled) throw new Error("已取消");
         // 调用方给 urls（多个镜像）或单个 url（引擎包只有 GitHub 一个源）。
         const urls = entry.urls ?? (entry.url ? [entry.url] : []);
-        const gid = await aria2Call(session.port, session.secret, "aria2.addUri", [
-          urls,
-          { dir, out: entry.out, continue: "true" },
-        ]);
+        const options = { dir, out: entry.out, continue: "true" };
+        if (entry.checksum) options.checksum = entry.checksum;
+        const gid = await aria2Call(session.port, session.secret, "aria2.addUri", [urls, options]);
         items.push({ gid, out: entry.out, size: entry.size ?? 0, urls });
       }
       const total = totalBytes || items.reduce((sum, item) => sum + item.size, 0);
@@ -727,6 +732,10 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
             "errorMessage",
             "connections",
             "downloadSpeed",
+            // 传了 checksum 的文件下完要先把内容读一遍比对，这段时间 completedLength
+            // 已经是满的但任务还没结束。不显示就会看着像卡住。
+            "verifiedLength",
+            "verifyIntegrityPending",
           ];
           const [active, waiting, stopped] = await Promise.all([
             aria2Call(session.port, session.secret, "aria2.tellActive", [keys], 6000),
@@ -784,12 +793,15 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
           const state = snapshot.get(item.gid) ?? {};
           const prev = known.get(item.gid) ?? {};
           const status = state.status ?? prev.status ?? "waiting";
+          const verifying = state.verifyIntegrityPending === "true";
           const task = {
             out: item.out,
             size: Number(state.totalLength ?? 0) || prev.size || item.size || 0,
             got: Number(state.completedLength ?? 0) || prev.got || 0,
             speed: Number(state.downloadSpeed ?? 0),
             status,
+            verifying,
+            verified: Number(state.verifiedLength ?? 0),
             queue: status === "waiting" ? waitingGids.indexOf(item.gid) + 1 : null,
           };
           if (status !== "waiting") known.set(item.gid, task);
@@ -1004,6 +1016,36 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     }
   }
 
+  /**
+   * 拿 HF 的 lfs.oid 逐个比 sha256，返回校验不过的条目。
+   *
+   * 四路并行：单个 4.6 GiB 约六秒，四路能吃掉 NVMe 的读带宽，二十个文件二十多秒完工。
+   * 没有 lfs.oid 的小文件跳过（普通 git blob，按大小判已经够）。
+   */
+  async function verifyWeights(list, dir) {
+    const queue = list.filter((entry) => entry.lfs?.oid);
+    const bad = [];
+    let checked = 0;
+    const worker = async () => {
+      for (;;) {
+        if (cancelled) return;
+        const entry = queue.shift();
+        if (!entry) return;
+        checked += 1;
+        patch({ phase: "verify", message: `校验 ${checked}/${list.length}` });
+        let got = "";
+        try {
+          got = await sha256File(join(dir, ...entry.path.split("/")));
+        } catch {
+          got = "";
+        }
+        if (got !== String(entry.lfs.oid).toLowerCase()) bad.push(entry);
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    return bad;
+  }
+
   async function installWeights(variant = "base") {
     if (job && !job.finishedAt) throw new Error("已有安装在进行");
     const key = MODELS[variant] ? variant : "base";
@@ -1077,6 +1119,37 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         return statSync(target).size !== entry.size;
       });
       if (broken.length) throw new Error(`${broken.length} 个文件不完整：${broken.slice(0, 3).map((e) => e.path).join("、")}`);
+
+      // 大小对了不代表内容对。拿 HF 的 lfs.oid 逐个比 sha256，不匹配的重新下。
+      // 哈希用 Node 算，不用 aria2 的 checksum 选项：同一块盘上 aria2 自带的 sha256
+      // 是朴素实现，4.6 GiB 要三十秒，Node 走 OpenSSL 的 SHA-NI 只要六秒；
+      // 二十个文件差出十几分钟。分工：aria2 管下载与续传，哈希归 Node。
+      let bad = await verifyWeights(wanted, weightsDir);
+      if (bad.length) {
+        patch({ phase: "download", message: `${bad.length} 个文件校验不过，重新下` });
+        for (const entry of bad) rmSync(join(weightsDir, ...entry.path.split("/")), { force: true });
+        const retry = bad.map((entry) => ({
+          urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
+          out: entry.path,
+          size: entry.size ?? 0,
+        }));
+        await downloadViaRpc(retry, {
+          dir: weightsDir,
+          concurrency: 4,
+          totalBytes: bad.reduce((sum, entry) => sum + (entry.size ?? 0), 0),
+          onTick: ({ bytes, totalBytes: total, tasks }) =>
+            patch({
+              bytes,
+              totalBytes: total,
+              percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
+              tasks,
+            }),
+        });
+        bad = await verifyWeights(bad, weightsDir);
+        if (bad.length) {
+          throw new Error(`重下后仍有 ${bad.length} 个文件校验不过：${bad.slice(0, 3).map((e) => e.path).join("、")}`);
+        }
+      }
 
       const paths = { ...(getSettings().modelPaths ?? {}), [key]: weightsDir };
       saveSettings({ modelPaths: paths, modelPath: weightsDir });

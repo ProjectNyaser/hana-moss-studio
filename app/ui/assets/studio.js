@@ -946,13 +946,19 @@ function downloadRows(job) {
     const got = Number(task.got) || 0;
     const speed = Number(task.speed) || 0;
     const percent = size ? Math.min(100, (got / size) * 100) : 0;
-    const meta = [
-      size ? `${formatSize(got)} / ${formatSize(size)}` : formatSize(got),
-      speed > 0 ? `${formatSize(speed)}/s` : null,
-      speed > 0 && size > got ? `剩 ${formatDuration(((size - got) / speed) * 1000)}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    // 校验时 completedLength 已经是满的，但任务还没结束。不单独标出来就会看着像卡住。
+    // aria2 只在 --check-integrity 模式下报 verifiedLength，--checksum 模式下没有，
+    // 所以这里只写「校验中」，不编一个永远停在 0% 的进度。
+    const verifying = Boolean(task.verifying);
+    const meta = verifying
+      ? `${formatSize(size)} · 校验中`
+      : [
+          size ? `${formatSize(got)} / ${formatSize(size)}` : formatSize(got),
+          speed > 0 ? `${formatSize(speed)}/s` : null,
+          speed > 0 && size > got ? `剩 ${formatDuration(((size - got) / speed) * 1000)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
     const stateText =
       task.status === "complete"
         ? "已完成"
@@ -964,7 +970,9 @@ function downloadRows(job) {
               ? "已取消"
               : task.status === "waiting"
                 ? `排队${task.queue ? ` ${task.queue}` : ""}`
-                : `${Math.round(percent)}%`;
+                : verifying
+                  ? "校验"
+                  : `${Math.round(percent)}%`;
     const act = (action, label) => ({
       label,
       run: () => runSafe(() => post("/install/task", { out: task.out, action }), label),
@@ -981,7 +989,7 @@ function downloadRows(job) {
       title: task.out,
       stateText,
       meta,
-      percent: task.status === "active" || task.status === "paused" ? percent : undefined,
+      percent: task.status === "active" || task.status === "paused" ? (verifying ? undefined : percent) : undefined,
       actions,
     });
   });
