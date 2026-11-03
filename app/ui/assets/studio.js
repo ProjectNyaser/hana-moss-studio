@@ -851,7 +851,8 @@ function renderVersions(data) {
     ...(installedModels.length
       ? installedModels.map((item) =>
           manageRow({
-            name: `${item.label}${item.active ? " · 当前" : ""}`,
+            name: item.label,
+            badges: [item.active ? "当前" : null].filter(Boolean),
             meta: formatSize(item.bytes),
             detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
             on: item.active,
@@ -859,7 +860,7 @@ function renderVersions(data) {
               ? []
               : [
                   {
-                    label: "用这个",
+                    label: "切换",
                     run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
                   },
                 ],
@@ -923,6 +924,18 @@ function renderDownload(data) {
         button.textContent = busy ? "排队" : "下载";
         button.addEventListener("click", () =>
           void startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
+        );
+        row.appendChild(button);
+      } else {
+        // 已装的不代表文件是好的。再跑一遍就是 aria2 确认 + 全量 sha256，
+        // 坏的那个自动重下。比留个干看的「已装」有用。
+        const button = document.createElement("button");
+        button.className = "btn ghost small";
+        button.type = "button";
+        button.textContent = busy ? "排队" : "校验";
+        button.title = "重新比对每个文件的 sha256，不一致的会重下";
+        button.addEventListener("click", () =>
+          void startInstall("/install/weights", { variant: item.variant }, `校验 ${item.label}`),
         );
         row.appendChild(button);
       }
