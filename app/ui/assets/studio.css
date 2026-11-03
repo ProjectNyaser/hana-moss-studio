@@ -137,7 +137,8 @@ body {
   color: var(--ui-text);
 }
 .manage-row .meta { font-size: 11px; color: var(--ui-text-3); flex: none; }
-.manage-row.on .name { font-weight: 600; }
+/* 当前生效那一条靠 [当前] badge 和它的强调色表达，名字不再另外加粗：
+   加粗加上去之后，上下两块看上去像两种不同级别的东西。 */
 
 /* 未安装的条目压暗：列表里混着两种状态时能一眼分开。 */
 .manage-row.dim { opacity: 0.6; }
