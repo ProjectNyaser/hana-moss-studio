@@ -674,7 +674,14 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         if (cancelled) throw new Error("已取消");
         // 调用方给 urls（多个镜像）或单个 url（引擎包只有 GitHub 一个源）。
         const urls = entry.urls ?? (entry.url ? [entry.url] : []);
-        const options = { dir, out: entry.out, continue: "true" };
+        const options = {
+          dir,
+          out: entry.out,
+          continue: "true",
+          // 默认开启时，目标文件已存在就会另存为 xxx.1.safetensors。
+          // 那样“校验不过重下”会变成悄悄多下一份 4.6 GiB，原文件还坏着。
+          "auto-file-renaming": "false",
+        };
         if (entry.checksum) options.checksum = entry.checksum;
         const gid = await aria2Call(session.port, session.secret, "aria2.addUri", [urls, options]);
         items.push({ gid, out: entry.out, size: entry.size ?? 0, urls });

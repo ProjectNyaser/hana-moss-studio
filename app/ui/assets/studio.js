@@ -1008,8 +1008,9 @@ function downloadRows(job) {
     // completedLength 已经等于目标大小，要么在算 sha256，要么刚刚算完。
     // 这两种情况都不该显示一个「100%」——那是在说「已经好了」，但实际上还没确认。
     const draining = verifying || (size > 0 && got >= size);
+    // 徽标已经写了「校验」，meta 不再重复一次，只报体积。
     const meta = draining
-      ? `${formatSize(size)} · 校验中`
+      ? formatSize(size)
       : [
           size ? `${formatSize(got)} / ${formatSize(size)}` : formatSize(got),
           speed > 0 ? `${formatSize(speed)}/s` : null,
