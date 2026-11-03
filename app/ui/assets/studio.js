@@ -997,7 +997,10 @@ function downloadRows(job) {
     // aria2 只在 --check-integrity 模式下报 verifiedLength，--checksum 模式下没有，
     // 所以这里只写「校验中」，不编一个永远停在 0% 的进度。
     const verifying = Boolean(task.verifying);
-    const meta = verifying
+    // completedLength 已经等于目标大小，要么在算 sha256，要么刚刚算完。
+    // 这两种情况都不该显示一个「100%」——那是在说「已经好了」，但实际上还没确认。
+    const draining = verifying || (size > 0 && got >= size);
+    const meta = draining
       ? `${formatSize(size)} · 校验中`
       : [
           size ? `${formatSize(got)} / ${formatSize(size)}` : formatSize(got),
@@ -1017,7 +1020,7 @@ function downloadRows(job) {
               ? "已取消"
               : task.status === "waiting"
                 ? `排队${task.queue ? ` ${task.queue}` : ""}`
-                : verifying
+                : draining
                   ? "校验"
                   : `${Math.round(percent)}%`;
     const act = (action, label) => ({
@@ -1039,7 +1042,7 @@ function downloadRows(job) {
       glyph: "↓",
       stateText,
       meta,
-      percent: task.status === "active" || task.status === "paused" ? (verifying ? undefined : percent) : undefined,
+      percent: task.status === "active" || task.status === "paused" ? (draining ? undefined : percent) : undefined,
       actions,
     });
   });
