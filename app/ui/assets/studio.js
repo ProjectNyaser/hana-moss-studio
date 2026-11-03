@@ -778,7 +778,7 @@ function renderQueue(data) {
   }
 
   // 下载任务和生图任务同一个列表：在跑的事一页看完。
-  const downloading = downloadRows(data.install);
+  const { rows: downloading, queued: downloadQueued } = downloadRows(data.install);
   // install 没任务时是 null；有了但已收尾也不算忙。
   const downloadBusy = Boolean(data.install && !data.install.finishedAt);
 
@@ -786,6 +786,7 @@ function renderQueue(data) {
     active ? "1 正在跑" : null,
     queue.length ? `${queue.length} 排队` : null,
     downloading.length ? `${downloading.length} ${data.install?.phase === "verify" ? "校验中" : "下载中"}` : null,
+    downloadQueued ? `${downloadQueued} 排队` : null,
     failed.length ? `${failed.length} 失败` : null,
   ]
     .filter(Boolean)
@@ -798,11 +799,12 @@ function renderQueue(data) {
     rows.push(empty);
   }
   nodes.queueList.replaceChildren(...rows, ...downloading);
-  nodes.tabQueue.textContent = total || downloadBusy ? ` ${total + (downloadBusy ? downloading.length : 0)}` : "";
+  const badge = total + downloading.length;
+  nodes.tabQueue.textContent = badge ? ` ${badge}` : "";
 }
 
 // ── 版本 ───────────────────────────────────────────────────────────────
-/** 发起一次下载。忙的时候如实说一句在跑什么，不替用户排。 */
+/** 发起一次下载。忙的时候直接排队，排上了就一定会跑。 */
 async function startInstall(path, body, label) {
   try {
     const result = await post(path, body);
@@ -810,8 +812,12 @@ async function startInstall(path, body, label) {
       void toast(`${label}没开始：${result.error}`);
       return;
     }
-    if (result?.busy) {
-      void toast(`正在${result.busyLabel ?? "执行另一个安装"}，完成后再点`);
+    if (result?.duplicate) {
+      void toast(`${label}已在队列第 ${result.queuePosition} 位`);
+      return;
+    }
+    if (result?.queued) {
+      void toast(`已排队：${label}（第 ${result.queuePosition} 位）`);
       return;
     }
     void toast(`开始${label}`);
@@ -975,19 +981,25 @@ function renderDownload(data) {
  * 下载任务 → 队列行。和生图任务用同一套卡片，一个页面里就看完全部在跑的事。
  */
 function downloadRows(job) {
-  if (!job?.tasks?.length) return [];
+  // 排队的任务：不进 job.tasks，它们在 pending 里等前一条收尾。
+  const waiting = (job?.queue ?? []).map((label) =>
+    queueCard({ title: label, glyph: "↓", stateText: "排队", meta: "上一条完成后开始" }),
+  );
+  const done = (rows) => ({ rows, queued: waiting.length });
+  if (!job?.tasks?.length) return done(waiting);
   // 收尾之后就不再占队列：跑完了去版本页看，取消了就当没发生过，只有失败留一行说明。
   // 之前这里把二十条「已完成」全列出来，队列页永远是满的。
   if (job.finishedAt) {
-    if (job.phase !== "error") return [];
-    return [
+    if (job.phase !== "error") return done(waiting);
+    return done([
       queueCard({
         title: job.label ?? "下载",
         glyph: "↓",
         stateText: "失败",
         meta: (job.error ?? "").slice(0, 80),
       }),
-    ];
+      ...waiting,
+    ]);
   }
   // 校验阶段不经过 aria2，tasks 里全是 complete。列二十条「已完成」占满整页，
   // 真正在干的事（读盘算 sha256，二十多个文件要半分钟）反而看不到。
@@ -996,7 +1008,7 @@ function downloadRows(job) {
     (task) => task.status === "active" || task.status === "waiting" || task.status === "paused",
   );
   if (!alive.length && !job.finishedAt) {
-    return [
+    return done([
       queueCard({
         title: job.label ?? "下载",
         glyph: "↓",
@@ -1005,13 +1017,15 @@ function downloadRows(job) {
         // 这期间告诉用户实际在干什么。
         meta: job.phase === "verify" ? `${job.tasks.length} 个文件校验中` : `${job.tasks.length} 个文件已就位`,
       }),
-    ];
+      ...waiting,
+    ]);
   }
   // 已经收尾的任务不再列活跃行，否则取消后还挂着一条跑着的进度。
   const tasks = job.finishedAt
     ? job.tasks.filter((task) => task.status !== "active" && task.status !== "waiting")
     : job.tasks;
-  return tasks.map((task) => {
+  return done([
+    ...tasks.map((task) => {
     const size = Number(task.size) || 0;
     const got = Number(task.got) || 0;
     const speed = Number(task.speed) || 0;
@@ -1069,7 +1083,9 @@ function downloadRows(job) {
       percent: task.status === "active" || task.status === "paused" ? (draining ? undefined : percent) : undefined,
       actions,
     });
-  });
+    }),
+    ...waiting,
+  ]);
 }
 
 async function loadReleases(force = false) {

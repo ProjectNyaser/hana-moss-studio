@@ -500,8 +500,29 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
    * -x16 -s16 管单文件连接）。这里只做一件事——把任务转交给它，忙的时候
    * 如实说一句「正在跑哪个」，不替用户排。
    */
+  /** 等前一个收尾再起下一个。排队的是任务，文件级的并发交给 aria2 的 -j4。 */
+  let pending = [];
+
+  function startNext() {
+    if (job && !job.finishedAt) return;
+    const next = pending.shift();
+    if (!next) return;
+    onUpdate?.();
+    const run = next.kind === "engine" ? installEngine(next.args) : installWeights(next.args?.variant);
+    run.catch(() => {});
+  }
+
   function enqueue(kind, args) {
-    if (job && !job.finishedAt) return { busy: true, label: job.label };
+    const key = kind === "engine" ? `engine:${args?.tag ?? "latest"}` : `weights:${args?.variant === "sft" ? "sft" : "base"}`;
+    const label = kind === "engine" ? `引擎 ${args?.tag ?? "latest"}` : `权重 ${args?.variant === "sft" ? "SFT" : "Base"}`;
+    // 已经在跑的就直接开始；否则排队，排上就去做，不丢。
+    if (job && !job.finishedAt) {
+      const same = pending.findIndex((item) => item.key === key);
+      if (same >= 0) return { queued: true, position: same + 1, duplicate: true };
+      pending.push({ kind, args, key, label });
+      onUpdate?.();
+      return { queued: true, position: pending.length };
+    }
     // installWeights 收的是 variant 字符串，installEngine 收的是参数对象。
     const run = kind === "engine" ? installEngine(args) : installWeights(args?.variant);
     run.catch(() => {});
@@ -540,16 +561,18 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   function finish(update) {
     invalidateSizes();
     patch({ ...update, percent: 100, finishedAt: new Date().toISOString() });
+    // 不管这一条怎么收尾，队都要往前走。之前 fail 在 cancelled 时直接 return，
+    // 排进 pending 的项就永远等不到执行。
+    setTimeout(startNext, 0);
   }
 
   function fail(error) {
-    // 取消已经写过终态，不让它再被改回收尾的 error。
-    if (cancelled) return;
     patch({
-      phase: "error",
-      error: error instanceof Error ? error.message : String(error),
+      phase: cancelled ? "cancelled" : "error",
+      error: cancelled ? null : error instanceof Error ? error.message : String(error),
       finishedAt: new Date().toISOString(),
     });
+    setTimeout(startNext, 0);
   }
 
   /**
@@ -1240,9 +1263,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   return {
     /** 给 state() 用：没有安装任务时给最近一次的结果。 */
     snapshot() {
-      // 没有任务时返回 null。
-      if (!job) return null;
-      return { ...job };
+      if (!job) return pending.length ? { queue: pending.map((item) => item.label) } : null;
+      return { ...job, queue: pending.map((item) => item.label) };
     },
     enqueue,
     diagRpc,
@@ -1258,6 +1280,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         task.status === "active" || task.status === "waiting" ? { ...task, status: "removed", speed: 0 } : task,
       );
       patch({ phase: "cancelled", message: "已取消", finishedAt: new Date().toISOString(), tasks });
+      // 取消的是当前这条，排队里的接着跑。
+      setTimeout(startNext, 0);
       return true;
     },
     installEngine,

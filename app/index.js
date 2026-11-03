@@ -1041,7 +1041,7 @@ function state() {
         tag: body?.tag,
       });
       schedulePush(0);
-      return c.json({ ...state(), busy: Boolean(result.busy), busyLabel: result.label ?? null });
+      return c.json({ ...state(), queued: Boolean(result.queued), queuePosition: result.position ?? null, duplicate: Boolean(result.duplicate) });
     });
 
     app.post(`/${APP_ID}/install/weights`, async (c) => {
@@ -1051,7 +1051,7 @@ function state() {
       if (!variant) return c.json({ ...state(), error: `未知模型 ${String(body?.variant)}` }, 400);
       const result = installer.enqueue("weights", { variant });
       schedulePush(0);
-      return c.json({ ...state(), busy: Boolean(result.busy), busyLabel: result.label ?? null });
+      return c.json({ ...state(), queued: Boolean(result.queued), queuePosition: result.position ?? null, duplicate: Boolean(result.duplicate) });
     });
 
     app.post(`/${APP_ID}/install/cancel`, (c) => {
