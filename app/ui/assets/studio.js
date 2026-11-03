@@ -904,29 +904,28 @@ function renderDownload(data) {
   const busy = Boolean(job && !job.finishedAt);
   nodes.downloadEngine.disabled = false;
 
-  // 模型：每个仓库一行，没装的给下载按钮。
+  // 模型：只列还没装的。已经装在上面那块管，这里再列一遍就是同一件事说两次。
   const models = Array.isArray(data.models) ? data.models : [];
+  const pendingModels = models.filter((item) => !item.installed);
+  const perRepo = data.plan?.totalBytes ? `约 ${formatSize(data.plan.totalBytes)}` : "约 27 GB";
   nodes.downloadModels.replaceChildren(
-    ...models.map((item) => {
-      const row = manageRow({
-        name: item.label,
-        meta: item.installed
-          ? `已装 ${formatSize(item.bytes)}${item.active ? " · 当前" : ""}`
-          : `约 27 GB · ${item.note}`,
-        on: item.active,
-      });
-      if (!item.installed) {
-        const button = document.createElement("button");
-        button.className = "btn ghost small";
-        button.type = "button";
-        button.textContent = busy ? "排队" : "下载";
-        button.addEventListener("click", () =>
-          void startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
-        );
-        row.appendChild(button);
-      }
-      return row;
-    }),
+    ...(pendingModels.length
+      ? pendingModels.map((item) => {
+          const row = manageRow({
+            name: item.label,
+            meta: `${perRepo} · ${item.note}`,
+          });
+          const button = document.createElement("button");
+          button.className = "btn ghost small";
+          button.type = "button";
+          button.textContent = busy ? "排队" : "下载";
+          button.addEventListener("click", () =>
+            void startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
+          );
+          row.appendChild(button);
+          return row;
+        })
+      : [manageRow({ name: "两个仓库都已装", meta: "要重装先在上面卸载" })]),
   );
 
   // 下载任务已经并进队列页，这里只管版本页的模型下载入口。
@@ -1008,7 +1007,7 @@ async function loadReleases(force = false) {
       return;
     }
     releasesLoaded = true;
-    nodes.downloadAvailableState.textContent = `${items.length} 个`;
+    nodes.downloadAvailableState.textContent = `${items.length} 个版本`;
     nodes.downloadAvailable.replaceChildren(
       ...items.map((item) =>
         manageRow({
@@ -1347,7 +1346,7 @@ nodes.engineToggle.addEventListener("click", () => {
 nodes.downloadEngine.addEventListener("click", () => void startInstall("/install/engine", {}, "安装最新引擎"));
 bindSplitTabs(nodes.versionsTabs);
 nodes.removeModel.addEventListener("click", () =>
-  armable(nodes.removeModel, "再点一次删 25 GiB", "卸载", () => {
+  armable(nodes.removeModel, "再点一次删 25 GiB", "卸载当前模型", () => {
     const active = latest?.models?.find((item) => item.active);
     return runSafe(() => post("/models/remove", { confirm: true, variant: active?.variant ?? "sft" }), "删除模型");
   }),
