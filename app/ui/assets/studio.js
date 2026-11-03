@@ -914,8 +914,8 @@ function renderDownload(data) {
         name: item.label,
         // 不标「已装」：按钮本身已经说了——「校验」就是已装，「下载」就是没装，
         // 上面那块标题又写了一遍「N 个已装」。
+        // 也不传 on：当前生效的强调只留在上面那张已装清单里。
         meta: item.installed ? formatSize(item.bytes) : `${perRepo} · ${item.note}`,
-        on: item.active,
       });
       const button = document.createElement("button");
       button.className = "btn ghost small";
@@ -1027,7 +1027,7 @@ async function loadReleases(force = false) {
           meta: [item.publishedAt?.slice(0, 10), item.bundledBytes ? formatSize(item.bundledBytes) : null]
             .filter(Boolean)
             .join(" · "),
-          on: item.installed,
+          // 不传 on：已装用 badge 标就够了，这里不是「当前生效」那张清单。
           actions: item.installed
             ? []
             : [{ label: "安装", run: () => startInstall("/install/engine", { tag: item.tag }, `安装引擎 ${item.version}`) }],
