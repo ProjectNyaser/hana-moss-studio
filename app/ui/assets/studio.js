@@ -754,7 +754,7 @@ function renderQueue(data) {
 
   // 下载任务和生图任务同一个列表：在跑的事一页看完。
   const downloading = downloadRows(data.install);
-  const downloadBusy = data.install && !data.install.finishedAt ? 1 : 0;
+  const downloadBusy = data.install?.phase && !data.install.finishedAt ? 1 : 0;
 
   nodes.queueCount.textContent = [
     active ? "1 正在跑" : null,
@@ -902,7 +902,9 @@ async function taskAction(out, action) {
 // ── 下载 ───────────────────────────────────────────────────────────────
 function renderDownload(data) {
   const job = data.install;
-  const busy = Boolean(job && !job.finishedAt);
+  // snapshot() 在没有任务时只返回 { queue }，没有 phase。不能只看「非空对象且没
+  // finishedAt」——那会把「没任务」当成「正在忙」，按钮永远写着排队。
+  const busy = Boolean(data.install?.phase && !data.install.finishedAt);
   nodes.downloadEngine.disabled = false;
 
   // 模型：下面这块列全部两个仓库，和引擎那块一致——上面是已装的（能切、能卸），
@@ -913,7 +915,8 @@ function renderDownload(data) {
     ...models.map((item) => {
       const row = manageRow({
         name: item.label,
-        badges: [item.installed ? "已装" : null].filter(Boolean),
+        // 不再标「已装」：按钮本身已经说了——「校验」就是已装，「下载」就是没装。
+        // 上面那块标题写「N 个已装」，每行再标一遍就是第三遍。
         meta: item.installed ? formatSize(item.bytes) : `${perRepo} · ${item.note}`,
         on: item.active,
       });
