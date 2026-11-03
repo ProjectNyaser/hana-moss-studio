@@ -677,12 +677,20 @@ function queueCard({ title, meta, percent, thumb, glyph, on, stateText, actions 
     main.appendChild(metaNode);
   }
   if (typeof percent === "number") {
+    // 百分比跟着进度条走，不放在标题那一行。它在 head 行时与条分属两行，
+    // 右端看着就是两处边界；放在同一个 flex 行里，数字和条一起收右。
+    const barRow = document.createElement("div");
+    barRow.className = "qc-bar-row";
     const bar = document.createElement("div");
     bar.className = "qc-bar";
     const fill = document.createElement("i");
     fill.style.width = `${Math.max(2, Math.min(100, percent))}%`;
     bar.appendChild(fill);
-    main.appendChild(bar);
+    const pct = document.createElement("span");
+    pct.className = "qc-pct";
+    pct.textContent = `${Math.round(percent)}%`;
+    barRow.append(bar, pct);
+    main.appendChild(barRow);
   }
   card.append(box, main);
   for (const action of actions) {
@@ -711,7 +719,7 @@ function renderQueue(data) {
     rows.push(
       queueCard({
         title: active.prompt || "(无提示词)",
-        stateText: typeof percent === "number" ? `${Math.round(percent)}%` : "正在跑",
+        stateText: typeof percent === "number" ? null : "正在跑",
         meta: `${active.phase ?? "生成中"}${active.progress?.total ? ` · ${active.progress.step}/${active.progress.total}` : ""}${active.progress?.etaMs ? ` · 约剩 ${formatDuration(active.progress.etaMs)}` : ""}`,
         percent,
         thumb: active.previewAt ? previewUrl(active.previewAt) : null,
@@ -1022,7 +1030,7 @@ function downloadRows(job) {
                 ? `排队${task.queue ? ` ${task.queue}` : ""}`
                 : draining
                   ? "校验"
-                  : `${Math.round(percent)}%`;
+                  : null;
     const act = (action, label) => ({
       label,
       run: () => runSafe(() => post("/install/task", { out: task.out, action }), label),

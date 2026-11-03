@@ -543,6 +543,25 @@ body {
 
 .queue-card .qc-meta { font-size: 11px; color: var(--ui-text-3); }
 .queue-card .qc-bar { height: 3px; border-radius: 999px; background: var(--ui-line); overflow: hidden; }
+
+/* 进度条与百分比同一行：数字跟条一起收右，不会像之前那样一上一下。 */
+.queue-card .qc-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-card .qc-bar-row .qc-bar {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-card .qc-pct {
+  flex: none;
+  font-size: 11px;
+  color: var(--ui-text-3);
+  font-variant-numeric: tabular-nums;
+}
 .queue-card .qc-bar i { display: block; height: 100%; background: var(--ui-accent); }
 
 .manage-more { margin-top: 8px; border-top: 1px dashed var(--ui-line); padding-top: 6px; }
