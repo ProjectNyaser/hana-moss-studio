@@ -80,6 +80,22 @@ const sha256File = (file) =>
       .on("error", fail);
   });
 
+/**
+ * git blob 的 sha1：sha1("blob <size>\0" + 内容)。
+ *
+ * HF 对非 LFS 文件（config.json、tokenizer.json 这些）不给 lfs.oid，但给 git 的
+ * oid，就是这个值。所以每个文件都能验，不存在只能看大小的死角。
+ */
+const gitBlobSha1 = (file, size) =>
+  new Promise((done, fail) => {
+    const hash = crypto.createHash("sha1");
+    hash.update(`blob ${size}\u0000`);
+    createReadStream(file, { highWaterMark: 4 * 1024 * 1024 })
+      .on("data", (chunk) => hash.update(chunk))
+      .on("end", () => done(hash.digest("hex")))
+      .on("error", fail);
+  });
+
 const mb = (bytes) => (bytes / 1024 / 1024).toFixed(0);
 const gib = (bytes) => (bytes / 1024 ** 3).toFixed(1);
 const brief = (error) => String(error?.message ?? error).replace(/\s+/g, " ").slice(0, 300);
@@ -1019,23 +1035,33 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
    * （普通 git blob）跳过——它们是配置与分词器，大小对了就够了。
    */
   async function verifyWeights(list, dir) {
-    const queue = list.filter((entry) => entry.lfs?.oid);
+    // 每个文件都有可比的值：LFS 文件给 sha256（lfs.oid），其余给 git blob 的 sha1（oid）。
+    // 只有两者都缺的（不该出现）才退回大小判断。
+    const targets = list
+      .map((entry) => {
+        const file = join(dir, ...entry.path.split("/"));
+        if (entry.lfs?.oid) return { entry, file, algo: "sha256", want: String(entry.lfs.oid).toLowerCase() };
+        if (entry.oid) return { entry, file, algo: "git", want: String(entry.oid).toLowerCase() };
+        return null;
+      })
+      .filter(Boolean);
+    const queue = [...targets];
     const bad = [];
     let checked = 0;
     const worker = async () => {
       for (;;) {
         if (cancelled) return;
-        const entry = queue.shift();
-        if (!entry) return;
+        const task = queue.shift();
+        if (!task) return;
         checked += 1;
-        patch({ phase: "verify", message: `校验 ${checked}/${list.length}` });
+        patch({ phase: "verify", message: `校验 ${checked}/${targets.length}` });
         let got = "";
         try {
-          got = await sha256File(join(dir, ...entry.path.split("/")));
+          got = task.algo === "git" ? await gitBlobSha1(task.file, task.entry.size ?? 0) : await sha256File(task.file);
         } catch {
           got = "";
         }
-        if (got !== String(entry.lfs.oid).toLowerCase()) bad.push(entry);
+        if (got !== task.want) bad.push(task.entry);
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
