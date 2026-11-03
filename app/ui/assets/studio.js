@@ -1015,7 +1015,9 @@ function downloadRows(job) {
             ? [act("remove", "移除")]
             : [];
     return queueCard({
-      title: task.out,
+      // 两个仓库的目录结构一样，文件名逐个对得上。不标出是哪个仓库，
+      // 同时装两份时队列里就是两排一模一样的名字。
+      title: task.variant ? `${task.variant.toUpperCase()} · ${task.out}` : task.out,
       glyph: "↓",
       stateText,
       meta,

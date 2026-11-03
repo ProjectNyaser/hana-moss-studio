@@ -1096,7 +1096,9 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
               percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
               speed,
               connections,
-              tasks,
+              // 两个仓库的文件名一模一样（transformer/... 那套目录结构相同），
+              // 队列里只靠相对路径分不出是哪个仓库的。带上 variant。
+              tasks: tasks.map((task) => ({ ...task, variant: key })),
               files: [done, count],
               // 文件数、字节、速度都在结构化字段里，message 只说异常。
               message: failedCount ? `${failedCount} 个文件失败` : "",
@@ -1142,7 +1144,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
               bytes,
               totalBytes: total,
               percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
-              tasks,
+              tasks: tasks.map((task) => ({ ...task, variant: key })),
             }),
         });
         bad = await verifyWeights(bad, weightsDir);
