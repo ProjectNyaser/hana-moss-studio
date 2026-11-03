@@ -754,7 +754,8 @@ function renderQueue(data) {
 
   // 下载任务和生图任务同一个列表：在跑的事一页看完。
   const downloading = downloadRows(data.install);
-  const downloadBusy = data.install?.phase && !data.install.finishedAt ? 1 : 0;
+  // install 没任务时是 null，有这个对象就是有任务在跑。
+  const downloadBusy = Boolean(data.install);
 
   nodes.queueCount.textContent = [
     active ? "1 正在跑" : null,
@@ -901,47 +902,36 @@ async function taskAction(out, action) {
 
 // ── 下载 ───────────────────────────────────────────────────────────────
 function renderDownload(data) {
-  const job = data.install;
-  // snapshot() 在没有任务时只返回 { queue }，没有 phase。不能只看「非空对象且没
-  // finishedAt」——那会把「没任务」当成「正在忙」，按钮永远写着排队。
-  const busy = Boolean(data.install?.phase && !data.install.finishedAt);
   nodes.downloadEngine.disabled = false;
 
   // 模型：下面这块列全部两个仓库，和引擎那块一致——上面是已装的（能切、能卸），
-  // 这里是完整清单，已装的标出来、没装的给下载按钮。
+  // 这里是完整清单。
   const models = Array.isArray(data.models) ? data.models : [];
   const perRepo = data.plan?.totalBytes ? `约 ${formatSize(data.plan.totalBytes)}` : "约 25 GiB";
   nodes.downloadModels.replaceChildren(
     ...models.map((item) => {
       const row = manageRow({
         name: item.label,
-        // 不再标「已装」：按钮本身已经说了——「校验」就是已装，「下载」就是没装。
-        // 上面那块标题写「N 个已装」，每行再标一遍就是第三遍。
+        // 不标「已装」：按钮本身已经说了——「校验」就是已装，「下载」就是没装，
+        // 上面那块标题又写了一遍「N 个已装」。
         meta: item.installed ? formatSize(item.bytes) : `${perRepo} · ${item.note}`,
         on: item.active,
       });
-      if (!item.installed) {
-        const button = document.createElement("button");
-        button.className = "btn ghost small";
-        button.type = "button";
-        button.textContent = busy ? "排队" : "下载";
-        button.addEventListener("click", () =>
-          void startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
-        );
-        row.appendChild(button);
-      } else {
-        // 已装的不代表文件是好的。再跑一遍就是 aria2 确认 + 全量 sha256，
-        // 坏的那个自动重下。比留个干看的「已装」有用。
-        const button = document.createElement("button");
-        button.className = "btn ghost small";
-        button.type = "button";
-        button.textContent = busy ? "排队" : "校验";
-        button.title = "重新比对每个文件的 sha256，不一致的会重下";
-        button.addEventListener("click", () =>
-          void startInstall("/install/weights", { variant: item.variant }, `校验 ${item.label}`),
-        );
-        row.appendChild(button);
-      }
+      const button = document.createElement("button");
+      button.className = "btn ghost small";
+      button.type = "button";
+      // 文案不随任务状态变。点下去就是进安装队列，排上了去队列页看，
+      // 按钮自己不需要再说一遍「排队」。
+      button.textContent = item.installed ? "校验" : "下载";
+      if (item.installed) button.title = "重新比对每个文件的 sha256，不一致的会重下";
+      button.addEventListener("click", () =>
+        void startInstall(
+          "/install/weights",
+          { variant: item.variant },
+          `${item.installed ? "校验" : "下载"} ${item.label}`,
+        ),
+      );
+      row.appendChild(button);
       return row;
     }),
   );

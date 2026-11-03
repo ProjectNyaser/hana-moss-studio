@@ -1213,8 +1213,12 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   return {
     /** 给 state() 用：没有安装任务时给最近一次的结果。 */
     snapshot() {
-      const base = job ? { ...job } : null;
-      return base ? { ...base, queue: pending.map((item) => item.label) } : { queue: pending.map((item) => item.label) };
+      // 
+      // 没有任务时返回 null，不返回一个只有 queue 的空壳对象。
+      // 那个空壳让调用方没法用一次判断分清「没任务」与「正在跑」：
+      // 看上去非空、但里面没有 phase，只能靠字段缺失去猜。
+      if (!job) return null;
+      return { ...job, queue: pending.map((item) => item.label) };
     },
     enqueue,
     diagRpc,
