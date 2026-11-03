@@ -840,32 +840,32 @@ function renderVersions(data) {
       : [manageRow({ name: "还没有装引擎，去「下载」页装一个" })]),
   );
 
-  // 模型：两个仓库并列，装了几个就列几个，激活的那个标出来。
+  // 模型：上面这块只列已装的（标题写的就是「N 个已装」，每行再标一遍是废话）。
+  // 未装的在下面「可下载」那块。
   const models = Array.isArray(data.models) ? data.models : [];
-  const installedCount = models.filter((item) => item.installed).length;
-  nodes.modelState.textContent = installedCount ? `${installedCount} 个已装` : "未安装";
+  const installedModels = models.filter((item) => item.installed);
+  nodes.modelState.textContent = installedModels.length ? `${installedModels.length} 个已装` : "未安装";
   const activeModel = models.find((item) => item.active) ?? null;
   nodes.removeModel.hidden = !activeModel;
   nodes.modelList.replaceChildren(
-    ...models.map((item) =>
-      manageRow({
-        name: `${item.label}${item.active ? " · 当前" : ""}`,
-        badges: [item.installed ? "已装" : null].filter(Boolean),
-        meta: item.installed ? formatSize(item.bytes) : `${item.note} · 未安装`,
-        detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
-        on: item.active,
-        dim: !item.installed,
-        actions:
-          item.installed && !item.active
-            ? [
-                {
-                  label: "用这个",
-                  run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
-                },
-              ]
-            : [],
-      }),
-    ),
+    ...(installedModels.length
+      ? installedModels.map((item) =>
+          manageRow({
+            name: `${item.label}${item.active ? " · 当前" : ""}`,
+            meta: formatSize(item.bytes),
+            detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
+            on: item.active,
+            actions: item.active
+              ? []
+              : [
+                  {
+                    label: "用这个",
+                    run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
+                  },
+                ],
+          }),
+        )
+      : [manageRow({ name: "还没有装模型，去下面下载" })]),
   );
 
   const hostRows = [];
