@@ -47,7 +47,6 @@ const nodes = {
   installed: el("versions-installed"),
   modelState: el("versions-model-state"),
   modelList: el("versions-model"),
-  removeModel: el("versions-remove-model"),
   host: el("versions-host"),
   // 下载
   toast: el("toast"),
@@ -846,8 +845,6 @@ function renderVersions(data) {
   const models = Array.isArray(data.models) ? data.models : [];
   const installedModels = models.filter((item) => item.installed);
   nodes.modelState.textContent = installedModels.length ? `${installedModels.length} 个已装` : "未安装";
-  const activeModel = models.find((item) => item.active) ?? null;
-  nodes.removeModel.hidden = !activeModel;
   nodes.modelList.replaceChildren(
     ...(installedModels.length
       ? installedModels.map((item) =>
@@ -865,6 +862,13 @@ function renderVersions(data) {
                     run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
                   },
                 ],
+            // 卸载放在行内，跟引擎那块一致：想删哪个点哪个，不用先切过去再删。
+            remove: {
+              label: "卸载",
+              question: `卸载 ${item.label}？（${formatSize(item.bytes)}）`,
+              run: () =>
+                runSafe(() => post("/models/remove", { confirm: true, variant: item.variant }), "卸载模型"),
+            },
           }),
         )
       : [manageRow({ name: "还没有装模型，去下面下载" })]),
@@ -1353,12 +1357,6 @@ nodes.engineToggle.addEventListener("click", () => {
 });
 nodes.downloadEngine.addEventListener("click", () => void startInstall("/install/engine", {}, "安装最新引擎"));
 bindSplitTabs(nodes.versionsTabs);
-nodes.removeModel.addEventListener("click", () =>
-  armable(nodes.removeModel, "再点一次删 25 GiB", "卸载当前模型", () => {
-    const active = latest?.models?.find((item) => item.active);
-    return runSafe(() => post("/models/remove", { confirm: true, variant: active?.variant ?? "sft" }), "删除模型");
-  }),
-);
 nodes.viewerImage.addEventListener("load", layoutViewerImage);
 nodes.viewerClose.addEventListener("click", closeViewer);
 nodes.viewerPrev.addEventListener("click", () => stepViewer(-1));
