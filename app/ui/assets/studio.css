@@ -472,9 +472,20 @@ body {
 .dl-row.bad .dl-track i { background: var(--ui-danger, #c0503c); }
 
 /* ── 队列卡片 ────────────────────────────────────────── */
-.queue-cards { display: flex; flex-direction: column; gap: 8px; }
+.queue-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* 二十个下载任务加上生图任务，一屏放不下。不加滚动的话 flex 会把它
+     们压成零高：看起来只剩最上面那一条。 */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
 
 .queue-card {
+  flex: none;
   display: flex;
   gap: 10px;
   align-items: center;

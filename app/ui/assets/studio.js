@@ -380,11 +380,12 @@ async function renderGallery(data) {
     galleryJobs.filter((job) => !liveIds.has(job.id) && job.status !== "cancelled"),
   );
   await Promise.all(visible.filter((job) => job.status === "done" && job.output).map((job) => loadImage(job.output)));
-  // 首帧还没有 /jobs 的结果，但 state 已经带了成图数：角标先按它显示，
-  // 等分页回来自然对齐。用 doneTotal 而不是 jobTotal：后者含失败与取消。
-  const shownCount = data.doneTotal ?? (galleryTotal || visible.length);
-  nodes.galleryCount.textContent = shownCount ? `${visible.length} / ${shownCount} 张` : "";
-  nodes.tabCount.textContent = shownCount ? ` ${shownCount}` : "";
+  // 分母要跟分子同一个口径。分子 visible 里除了成图，还包括正在跑的那一条；
+  // 分母只数 doneTotal 就会算出 49 / 48。
+  const doneCount = data.doneTotal ?? galleryTotal ?? 0;
+  const total = Math.max(visible.length, doneCount + live.length);
+  nodes.galleryCount.textContent = total ? `${visible.length} / ${total} 张` : "";
+  nodes.tabCount.textContent = total ? ` ${total}` : "";
   if (!visible.length) {
     galleryEntries = [];
     const empty = document.createElement("p");
