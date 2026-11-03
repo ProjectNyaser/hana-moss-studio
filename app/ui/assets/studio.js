@@ -785,7 +785,7 @@ function renderQueue(data) {
   nodes.queueCount.textContent = [
     active ? "1 正在跑" : null,
     queue.length ? `${queue.length} 排队` : null,
-    downloading.length ? `${downloading.length} 下载中` : null,
+    downloading.length ? `${downloading.length} ${data.install?.phase === "verify" ? "校验中" : "下载中"}` : null,
     failed.length ? `${failed.length} 失败` : null,
   ]
     .filter(Boolean)
@@ -1001,7 +1001,9 @@ function downloadRows(job) {
         title: job.label ?? "下载",
         glyph: "↓",
         stateText: job.message || job.phase || "进行中",
-        meta: `${job.tasks.length} 个文件已就位`,
+        // 校验阶段说「已就位」会让人以为已经完事了。它要跑十几到几十秒，
+        // 这期间告诉用户实际在干什么。
+        meta: job.phase === "verify" ? `${job.tasks.length} 个文件校验中` : `${job.tasks.length} 个文件已就位`,
       }),
     ];
   }
