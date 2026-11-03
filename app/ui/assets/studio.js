@@ -779,8 +779,8 @@ function renderQueue(data) {
 
   // 下载任务和生图任务同一个列表：在跑的事一页看完。
   const downloading = downloadRows(data.install);
-  // install 没任务时是 null，有这个对象就是有任务在跑。
-  const downloadBusy = Boolean(data.install);
+  // install 没任务时是 null；有了但已收尾也不算忙。
+  const downloadBusy = Boolean(data.install && !data.install.finishedAt);
 
   nodes.queueCount.textContent = [
     active ? "1 正在跑" : null,
@@ -976,6 +976,19 @@ function renderDownload(data) {
  */
 function downloadRows(job) {
   if (!job?.tasks?.length) return [];
+  // 收尾之后就不再占队列：跑完了去版本页看，取消了就当没发生过，只有失败留一行说明。
+  // 之前这里把二十条「已完成」全列出来，队列页永远是满的。
+  if (job.finishedAt) {
+    if (job.phase !== "error") return [];
+    return [
+      queueCard({
+        title: job.label ?? "下载",
+        glyph: "↓",
+        stateText: "失败",
+        meta: (job.error ?? "").slice(0, 80),
+      }),
+    ];
+  }
   // 校验阶段不经过 aria2，tasks 里全是 complete。列二十条「已完成」占满整页，
   // 真正在干的事（读盘算 sha256，二十多个文件要半分钟）反而看不到。
   // 判据不写死 phase：只要没有活着的行，就折叠成一条汇总。
@@ -987,7 +1000,7 @@ function downloadRows(job) {
       queueCard({
         title: job.label ?? "下载",
         glyph: "↓",
-        stateText: job.message ?? job.phase ?? "",
+        stateText: job.message || job.phase || "进行中",
         meta: `${job.tasks.length} 个文件已就位`,
       }),
     ];
