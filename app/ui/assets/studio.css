@@ -143,14 +143,20 @@ body {
 .manage-row.dim { opacity: 0.6; }
 .manage-row.dim .name { font-weight: 400; }
 
-/* 版本号后面那串小标签：CUDA 版本、包类型、已装、变体数。 */
+/* 版本号后面那串小标签：CUDA 版本、包类型、已装、变体数。
+   尺寸与下一段的行内按钮严格对齐：同样 11px 字、同样 20px 高、同样 0 8px 内边距。
+   只差形状：标签是胶囊，按钮是矩形。字号再小一点就会跟按钮错一条基线。 */
 .manage-row .badge {
   flex: none;
-  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0 8px;
   border: 1px solid var(--ui-line);
   border-radius: 999px;
-  font-size: 10px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 18px;
   color: var(--ui-text-3);
   white-space: nowrap;
 }
@@ -162,13 +168,18 @@ body {
 
 /* 行内的动作按钮。宿主的 ghost 是「平时无边框、悬停才出底」，放在这种密排列表里
    会让同一列的按钮看起来时而有时而没有。这里给一个常驻的淡描边，
-   并在形状上与胶囊形的 badge 分开：标签是圆的，按钮是矩形。
+   尺寸跟上面的 badge 一模一样，只把形状换成矩形。
    写成 .btn.btn 是为了压过宿主 .btn.ghost 的同级特异性。 */
 .manage-row .btn.btn {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0 8px;
   border: 1px solid var(--ui-line);
   border-radius: 6px;
-  padding: 0 8px;
   font-size: 11px;
   line-height: 18px;
   background: transparent;
