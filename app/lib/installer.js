@@ -477,32 +477,19 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     return true;
   }
 
-  /** 安装任务串行：忙时排队，完成一个自动起下一个。 */
-  let pending = [];
-
-  function startNext() {
-    const next = pending.shift();
-    if (!next) return;
-    const run = next.kind === "engine" ? installEngine(next.args) : installWeights(next.args?.variant);
-    run.catch(() => {});
-  }
-
+  /**
+   * 开始一个安装任务。
+   *
+   * 另外开一个「待办列表」是替 aria2 干活：它自己就是队列（-j4 管文件级并发，
+   * -x16 -s16 管单文件连接）。这里只做一件事——把任务转交给它，忙的时候
+   * 如实说一句「正在跑哪个」，不替用户排。
+   */
   function enqueue(kind, args) {
-    // 同一种任务只排一份：连点几下不该把权重排三次。
-    const key = kind === "engine" ? `engine:${args?.tag ?? "latest"}` : `weights:${args?.variant === "sft" ? "sft" : "base"}`;
-    const label = kind === "engine" ? `引擎 ${args?.tag ?? "latest"}` : `权重 ${args?.variant === "sft" ? "SFT" : "Base"}`;
-    if (job && !job.finishedAt) {
-      if (pending.some((item) => item.key === key)) {
-        return { queued: true, position: pending.findIndex((item) => item.key === key) + 1, duplicate: true };
-      }
-      pending.push({ kind, args, key, label });
-      onUpdate?.();
-      return { queued: true, position: pending.length };
-    }
+    if (job && !job.finishedAt) return { busy: true, label: job.label };
     // installWeights 收的是 variant 字符串，installEngine 收的是参数对象。
     const run = kind === "engine" ? installEngine(args) : installWeights(args?.variant);
     run.catch(() => {});
-    return { queued: false, position: 0 };
+    return { queued: false };
   }
 
   function patch(update) {
@@ -537,7 +524,6 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   function finish(update) {
     invalidateSizes();
     patch({ ...update, percent: 100, finishedAt: new Date().toISOString() });
-    setTimeout(startNext, 0);
   }
 
   function fail(error) {
@@ -548,7 +534,6 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       error: error instanceof Error ? error.message : String(error),
       finishedAt: new Date().toISOString(),
     });
-    setTimeout(startNext, 0);
   }
 
   /**
@@ -1017,36 +1002,6 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   }
 
   /**
-   * 拿 HF 的 lfs.oid 逐个比 sha256，返回校验不过的条目。
-   *
-   * 四路并行：单个 4.6 GiB 约六秒，四路能吃掉 NVMe 的读带宽，二十个文件二十多秒完工。
-   * 没有 lfs.oid 的小文件跳过（普通 git blob，按大小判已经够）。
-   */
-  async function verifyWeights(list, dir) {
-    const queue = list.filter((entry) => entry.lfs?.oid);
-    const bad = [];
-    let checked = 0;
-    const worker = async () => {
-      for (;;) {
-        if (cancelled) return;
-        const entry = queue.shift();
-        if (!entry) return;
-        checked += 1;
-        patch({ phase: "verify", message: `校验 ${checked}/${list.length}` });
-        let got = "";
-        try {
-          got = await sha256File(join(dir, ...entry.path.split("/")));
-        } catch {
-          got = "";
-        }
-        if (got !== String(entry.lfs.oid).toLowerCase()) bad.push(entry);
-      }
-    };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-    return bad;
-  }
-
-  /**
    * 下载任务落盘在哪个位置，相对 app-data。
    *
    * aria2 的 out 只是相对它那个 dir 的路径（transformer/xxx.safetensors），
@@ -1090,11 +1045,17 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       });
 
       {
-        const entries = wanted.map((entry) => ({
-          urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
-          out: entry.path,
-          size: entry.size ?? 0,
-        }));
+        const entries = wanted.map((entry) => {
+          const item = {
+            urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
+            out: entry.path,
+            size: entry.size ?? 0,
+          };
+          // 校验交给 aria2：HF 对 LFS 文件给了 sha256（lfs.oid），
+          // 下完它自己把内容读一遍比对，不匹配就报错。这件事不在外面再做一遍。
+          if (entry.lfs?.oid) item.checksum = `sha-256=${entry.lfs.oid}`;
+          return item;
+        });
         for (const entry of entries) mkdirSync(dirname(join(weightsDir, ...entry.out.split("/"))), { recursive: true });
         // aria2 先上（多源、多连接）。它完全起不来或个别文件反复失败，
         // 都不回退 curl——单连接不可能更快，进度也问不到。
@@ -1121,48 +1082,6 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         if (dead.length && !cancelled) {
           const names = dead.slice(0, 3).map((entry) => `${entry.item.out}（aria2 ${entry.state.errorCode}）`);
           throw new Error(`${dead.length} 个文件下载失败：${names.join("、")}。重试会从断点续传。`);
-        }
-      }
-
-      patch({ phase: "verify", message: "核对大小" });
-      // 不能只看文件大小：aria2 默认会预分配，文件一开始就是满的，
-      // 大小对得上不等于内容完整。控制文件还在 = 一定没下完。
-      const broken = wanted.filter((entry) => {
-        const target = join(weightsDir, ...entry.path.split("/"));
-        if (!existsSync(target)) return true;
-        if (existsSync(`${target}.aria2`)) return true;
-        return statSync(target).size !== entry.size;
-      });
-      if (broken.length) throw new Error(`${broken.length} 个文件不完整：${broken.slice(0, 3).map((e) => e.path).join("、")}`);
-
-      // 大小对了不代表内容对。拿 HF 的 lfs.oid 逐个比 sha256，不匹配的重新下。
-      // 哈希用 Node 算，不用 aria2 的 checksum 选项：同一块盘上 aria2 自带的 sha256
-      // 是朴素实现，4.6 GiB 要三十秒，Node 走 OpenSSL 的 SHA-NI 只要六秒；
-      // 二十个文件差出十几分钟。分工：aria2 管下载与续传，哈希归 Node。
-      let bad = await verifyWeights(wanted, weightsDir);
-      if (bad.length) {
-        patch({ phase: "download", message: `${bad.length} 个文件校验不过，重新下` });
-        for (const entry of bad) rmSync(join(weightsDir, ...entry.path.split("/")), { force: true });
-        const retry = bad.map((entry) => ({
-          urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
-          out: entry.path,
-          size: entry.size ?? 0,
-        }));
-        await downloadViaRpc(retry, {
-          dir: weightsDir,
-          concurrency: 4,
-          totalBytes: bad.reduce((sum, entry) => sum + (entry.size ?? 0), 0),
-          onTick: ({ bytes, totalBytes: total, tasks }) =>
-            patch({
-              bytes,
-              totalBytes: total,
-              percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
-              tasks: tasks.map((task) => ({ ...task, variant: key, ...where(weightsDir, task.out) })),
-            }),
-        });
-        bad = await verifyWeights(bad, weightsDir);
-        if (bad.length) {
-          throw new Error(`重下后仍有 ${bad.length} 个文件校验不过：${bad.slice(0, 3).map((e) => e.path).join("、")}`);
         }
       }
 
@@ -1228,12 +1147,9 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   return {
     /** 给 state() 用：没有安装任务时给最近一次的结果。 */
     snapshot() {
-      // 
-      // 没有任务时返回 null，不返回一个只有 queue 的空壳对象。
-      // 那个空壳让调用方没法用一次判断分清「没任务」与「正在跑」：
-      // 看上去非空、但里面没有 phase，只能靠字段缺失去猜。
+      // 没有任务时返回 null。
       if (!job) return null;
-      return { ...job, queue: pending.map((item) => item.label) };
+      return { ...job };
     },
     enqueue,
     diagRpc,
@@ -1242,8 +1158,6 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     },
     cancel() {
       if (!job || job.finishedAt) return false;
-      // 取消就是全停：排着的也一起清掉，否则用户按了取消却又有新任务自己开始。
-      pending = [];
       cancelled = true;
       child?.kill();
       // 残留的活跃任务跟着落成终态，否则收尾后那一条还挂着最后一帧速度和进度。

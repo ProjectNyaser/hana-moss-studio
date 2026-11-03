@@ -794,7 +794,7 @@ function renderQueue(data) {
 }
 
 // ── 版本 ───────────────────────────────────────────────────────────────
-/** 发起一次下载：回一句提示，排队的说清在第几位。 */
+/** 发起一次下载。忙的时候如实说一句在跑什么，不替用户排。 */
 async function startInstall(path, body, label) {
   try {
     const result = await post(path, body);
@@ -802,9 +802,11 @@ async function startInstall(path, body, label) {
       void toast(`${label}没开始：${result.error}`);
       return;
     }
-    if (result?.duplicate) void toast(`${label}已经在队列里（第 ${result.position} 位）`);
-    else if (result?.queued) void toast(`${label}已加入队列，第 ${result.position} 位`);
-    else void toast(`开始${label}`);
+    if (result?.busy) {
+      void toast(`正在${result.busyLabel ?? "执行另一个安装"}，完成后再点`);
+      return;
+    }
+    void toast(`开始${label}`);
   } catch (error) {
     void toast(`${label}没开始：${error.message ?? error}`);
   }
@@ -966,6 +968,22 @@ function renderDownload(data) {
  */
 function downloadRows(job) {
   if (!job?.tasks?.length) return [];
+  // 校验阶段不经过 aria2，tasks 里全是 complete。列二十条「已完成」占满整页，
+  // 真正在干的事（读盘算 sha256，二十多个文件要半分钟）反而看不到。
+  // 判据不写死 phase：只要没有活着的行，就折叠成一条汇总。
+  const alive = job.tasks.filter(
+    (task) => task.status === "active" || task.status === "waiting" || task.status === "paused",
+  );
+  if (!alive.length && !job.finishedAt) {
+    return [
+      queueCard({
+        title: job.label ?? "下载",
+        glyph: "↓",
+        stateText: job.message ?? job.phase ?? "",
+        meta: `${job.tasks.length} 个文件已就位`,
+      }),
+    ];
+  }
   // 已经收尾的任务不再列活跃行，否则取消后还挂着一条跑着的进度。
   const tasks = job.finishedAt
     ? job.tasks.filter((task) => task.status !== "active" && task.status !== "waiting")
