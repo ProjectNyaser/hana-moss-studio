@@ -1015,9 +1015,9 @@ function downloadRows(job) {
             ? [act("remove", "移除")]
             : [];
     return queueCard({
-      // 两个仓库的目录结构一样，文件名逐个对得上。不标出是哪个仓库，
-      // 同时装两份时队列里就是两排一模一样的名字。
-      title: task.variant ? `${task.variant.toUpperCase()} · ${task.out}` : task.out,
+      // 显示相对 app-data 的落盘位置：两个仓库的目录结构一样、文件名逐个对得上，
+      // 只写相对路径分不出是哪个仓库的。卡片上会截断，悬停看完整。
+      title: task.path ?? task.out,
       glyph: "↓",
       stateText,
       meta,

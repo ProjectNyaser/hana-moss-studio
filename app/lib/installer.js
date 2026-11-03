@@ -30,7 +30,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import path, { dirname, join, resolve } from "node:path";
+import path, { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { MOSSIMAGE } from "./mossimage.js";
@@ -965,7 +965,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
             percent: totalBytes ? Math.min(99, Math.floor((bytes / totalBytes) * 100)) : 0,
             speed,
             connections,
-            tasks,
+            tasks: tasks.map((task) => ({ ...task, ...where(engineDir, task.out) })),
           }),
       });
 
@@ -1046,6 +1046,19 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     return bad;
   }
 
+  /**
+   * 下载任务落盘在哪个位置，相对 app-data。
+   *
+   * aria2 的 out 只是相对它那个 dir 的路径（transformer/xxx.safetensors），
+   * 两个仓库的目录结构一样、文件名逐个对得上，光看这一串分不出落在哪。
+   */
+  function where(dir, out) {
+    return {
+      path: relative(dataDir, join(dir, ...out.split("/"))).replace(/\\/g, "/"),
+      dir: relative(dataDir, dir).replace(/\\/g, "/"),
+    };
+  }
+
   async function installWeights(variant = "base") {
     if (job && !job.finishedAt) throw new Error("已有安装在进行");
     const key = MODELS[variant] ? variant : "base";
@@ -1097,8 +1110,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
               speed,
               connections,
               // 两个仓库的文件名一模一样（transformer/... 那套目录结构相同），
-              // 队列里只靠相对路径分不出是哪个仓库的。带上 variant。
-              tasks: tasks.map((task) => ({ ...task, variant: key })),
+              // 队列里只靠相对路径分不出是哪个仓库的。带上 variant 与落盘路径。
+              tasks: tasks.map((task) => ({ ...task, variant: key, ...where(weightsDir, task.out) })),
               files: [done, count],
               // 文件数、字节、速度都在结构化字段里，message 只说异常。
               message: failedCount ? `${failedCount} 个文件失败` : "",
@@ -1144,7 +1157,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
               bytes,
               totalBytes: total,
               percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
-              tasks: tasks.map((task) => ({ ...task, variant: key })),
+              tasks: tasks.map((task) => ({ ...task, variant: key, ...where(weightsDir, task.out) })),
             }),
         });
         bad = await verifyWeights(bad, weightsDir);
