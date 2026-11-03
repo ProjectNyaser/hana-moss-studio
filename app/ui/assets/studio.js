@@ -429,33 +429,39 @@ async function renderGallery(data) {
     } else if (job.status === "error") {
       tile.classList.add("placeholder", "bad");
       tile.textContent = job.error ?? "生成失败";
+    } else if (job.status === "queued") {
+      tile.classList.add("placeholder");
+      const spinner = document.createElement("span");
+      spinner.className = "spinner";
+      const text = document.createElement("span");
+      text.textContent = "排队中";
+      tile.append(spinner, text);
     } else {
+      // 采样卡。结构先搭好，图等 previewAt 到了再填：preview 事件比步进稀疏，
+      // 按 previewAt 决定要不要建这块，会让整张卡在两个形状之间来回跳。
+      tile.classList.add("sampling");
       const active = data.engine.active;
-      if (active && job.id === active.jobId && active.previewAt) {
-        // 正在采样的那张也显示中间结果，而不是一个转圈。
-        tile.classList.add("sampling");
-        const preview = document.createElement("img");
-        preview.className = "preview-thumb";
+      const progress = data.progress?.[job.id] ?? active?.progress ?? null;
+      const view = { ...job, progress };
+      const preview = document.createElement("img");
+      preview.className = "preview-thumb";
+      preview.alt = "采样中";
+      // 还没收到第一帧预览时 src 为空，height: auto 会把这一格塔成一条缝。
+      // 用提交时的宽高先把地方占住。
+      if (job.width && job.height) preview.style.aspectRatio = `${job.width} / ${job.height}`;
+      if (active && active.jobId === job.id && active.previewAt) {
         preview.src = previewUrl(active.previewAt);
-        preview.alt = "采样中";
-        tile.appendChild(preview);
-        const tag = document.createElement("div");
-        tag.className = "thumb-meta";
-        tag.textContent = samplingText(active);
-        tile.appendChild(tag);
-        // 底边一条细进度，一眼看出这是半成品、走到哪一步了。
-        const bar = document.createElement("i");
-        bar.className = "thumb-progress";
-        bar.style.width = `${Math.max(2, Math.min(100, active.progress?.percent ?? 0))}%`;
-        tile.appendChild(bar);
-      } else {
-        tile.classList.add("placeholder");
-        const spinner = document.createElement("span");
-        spinner.className = "spinner";
-        const text = document.createElement("span");
-        text.textContent = job.status === "queued" ? "排队中" : "生成中";
-        tile.append(spinner, text);
       }
+      tile.appendChild(preview);
+      const tag = document.createElement("div");
+      tag.className = "thumb-meta";
+      tag.textContent = samplingText(view);
+      tile.appendChild(tag);
+      // 底边一条细进度，一眼看出这是半成品、走到哪一步了。
+      const bar = document.createElement("i");
+      bar.className = "thumb-progress";
+      bar.style.width = `${Math.max(2, Math.min(100, progress?.percent ?? 0))}%`;
+      tile.appendChild(bar);
     }
     // 右键菜单：看大图、用这张的参数、删除。失败的记录也走这里。
     tile.addEventListener("contextmenu", (event) => openMenu(event, job));
@@ -630,7 +636,7 @@ function bindSplitTabs(container) {
 }
 
 /** 队列里的一张卡：缩略图、标题、元信息、可选进度条与操作按钮。 */
-function queueCard({ title, meta, percent, thumb, on, stateText, actions = [] }) {
+function queueCard({ title, meta, percent, thumb, glyph, on, stateText, actions = [] }) {
   const card = document.createElement("div");
   card.className = on ? "queue-card on" : "queue-card";
   const box = document.createElement("div");
@@ -640,6 +646,10 @@ function queueCard({ title, meta, percent, thumb, on, stateText, actions = [] })
     img.src = thumb;
     img.alt = "";
     box.appendChild(img);
+  } else if (glyph) {
+    // 下载任务没有图，但也不该留一个空灰块。给一个字符标记。
+    box.textContent = glyph;
+    box.classList.add("glyph");
   } else {
     box.textContent = on ? "采样" : "";
   }
@@ -1006,6 +1016,7 @@ function downloadRows(job) {
             : [];
     return queueCard({
       title: task.out,
+      glyph: "↓",
       stateText,
       meta,
       percent: task.status === "active" || task.status === "paused" ? (verifying ? undefined : percent) : undefined,
