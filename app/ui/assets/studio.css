@@ -160,6 +160,27 @@ body {
   color: var(--ui-accent);
 }
 
+/* 行内的动作按钮。宿主的 ghost 是「平时无边框、悬停才出底」，放在这种密排列表里
+   会让同一列的按钮看起来时而有时而没有。这里给一个常驻的淡描边，
+   并在形状上与胶囊形的 badge 分开：标签是圆的，按钮是矩形。
+   写成 .btn.btn 是为了压过宿主 .btn.ghost 的同级特异性。 */
+.manage-row .btn.btn {
+  flex: none;
+  border: 1px solid var(--ui-line);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 18px;
+  background: transparent;
+  color: var(--ui-text-2);
+}
+
+.manage-row .btn.btn:hover {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+  background: transparent;
+}
+
 /* ── 分栏：左侧类别、右侧内容 ──────────────────────────────── */
 .split {
   display: flex;
