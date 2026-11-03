@@ -1085,19 +1085,7 @@ function state() {
       return c.json(state());
     });
 
-    // 宿主的气泡提示：页面自己画的那个只作兵底，用宿主的效果与主题一致。
-    app.post(`/${APP_ID}/toast`, async (c) => {
-      const body = await c.req.json().catch(() => ({}));
-      const text = String(body?.message ?? "");
-      if (!text) return c.json({ ok: false, error: "缺少 message" }, 400);
-      try {
-        await sdk.ui?.toast?.show({ message: text, type: body?.type ?? "info", duration: 2400 });
-        return c.json({ ok: true });
-      } catch (error) {
-        sdk.logger.warn(`气泡提示没弹出来：${message(error)}`);
-        return c.json({ ok: false, error: message(error) });
-      }
-    });
+    // 宿主的气泡提示走页面里的 hana.toast.show，不经过服务端（见 studio.js 的 toast）。
 
     app.get(`/${APP_ID}/engines/available`, async (c) => {
       try {

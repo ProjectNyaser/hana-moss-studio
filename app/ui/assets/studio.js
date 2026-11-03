@@ -134,15 +134,20 @@ function formatDuration(ms) {
 
 let toastTimer = null;
 /**
- * 一句话提示。优先走宿主的 ui.toast（和界面主题一致，不挡内容），
- * 宿主没这个能力时退回页面内浮层。
+ * 一句话提示。
+ *
+ * 直接在页面里调宿主：oh-releases 就是这么用的（ui/src/releases.js:679）。
+ * 之前绕了一圈去请求自己的 /toast 路由、再由服务端调 sdk.ui.toast，
+ * 那条路上 sdk.ui 属于 UI 侧能力，服务端手里未必是同一个通道。
+ *
+ * type 取宿主认的三个值：info / success / warning。
  */
-async function toast(text, type = "info") {
+function toast(text, type = "info") {
   try {
-    const result = await post("/toast", { message: text, type });
-    if (result?.ok) return;
+    hana.toast?.show({ message: text, type });
+    return;
   } catch {
-    // 落到本地浮层
+    // 宿主通道不可用时别把流程挂住，落到下面的页面内浮层。
   }
   if (!nodes.toast) return;
   nodes.toast.textContent = text;
