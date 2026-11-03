@@ -1009,6 +1009,40 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   }
 
   /**
+   * 用 HF 的 lfs.oid 逐个比 sha256，返回校验不过的条目。
+   *
+   * 不用 aria2 的 checksum 选项：它自带的 sha256 是纯软件实现，实测单文件
+   * 4.65 GiB 要 63 秒（75 MB/s）；这边用 OpenSSL 的 SHA-NI，同一个文件 5.8 秒
+   * （814 MB/s）。二十五 GiB 全量差出五分钟。下载全交给 aria2，只有哈希这一步归 Node。
+   *
+   * 四路并行能吃满 NVMe 的读带宽，二十个文件二十多秒跑完。没有 lfs.oid 的小文件
+   * （普通 git blob）跳过——它们是配置与分词器，大小对了就够了。
+   */
+  async function verifyWeights(list, dir) {
+    const queue = list.filter((entry) => entry.lfs?.oid);
+    const bad = [];
+    let checked = 0;
+    const worker = async () => {
+      for (;;) {
+        if (cancelled) return;
+        const entry = queue.shift();
+        if (!entry) return;
+        checked += 1;
+        patch({ phase: "verify", message: `校验 ${checked}/${list.length}` });
+        let got = "";
+        try {
+          got = await sha256File(join(dir, ...entry.path.split("/")));
+        } catch {
+          got = "";
+        }
+        if (got !== String(entry.lfs.oid).toLowerCase()) bad.push(entry);
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    return bad;
+  }
+
+  /**
    * 下载任务落盘在哪个位置，相对 app-data。
    *
    * aria2 的 out 只是相对它那个 dir 的路径（transformer/xxx.safetensors），
@@ -1052,17 +1086,11 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       });
 
       {
-        const entries = wanted.map((entry) => {
-          const item = {
-            urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
-            out: entry.path,
-            size: entry.size ?? 0,
-          };
-          // 校验交给 aria2：HF 对 LFS 文件给了 sha256（lfs.oid），
-          // 下完它自己把内容读一遍比对，不匹配就报错。这件事不在外面再做一遍。
-          if (entry.lfs?.oid) item.checksum = `sha-256=${entry.lfs.oid}`;
-          return item;
-        });
+        const entries = wanted.map((entry) => ({
+          urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
+          out: entry.path,
+          size: entry.size ?? 0,
+        }));
         for (const entry of entries) mkdirSync(dirname(join(weightsDir, ...entry.out.split("/"))), { recursive: true });
         // aria2 先上（多源、多连接）。它完全起不来或个别文件反复失败，
         // 都不回退 curl——单连接不可能更快，进度也问不到。
@@ -1089,6 +1117,38 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         if (dead.length && !cancelled) {
           const names = dead.slice(0, 3).map((entry) => `${entry.item.out}（aria2 ${entry.state.errorCode}）`);
           throw new Error(`${dead.length} 个文件下载失败：${names.join("、")}。重试会从断点续传。`);
+        }
+      }
+
+      // 下载完了不代表内容对：预分配、断点续传、磁盘写入都可能留下一个大小对、内容坏的文件。
+      // 按 lfs.oid 过一遍 sha256，不对的删了重下一遍。
+      let bad = await verifyWeights(wanted, weightsDir);
+      if (bad.length) {
+        if (cancelled) throw new Error("已取消");
+        patch({ phase: "download", message: `${bad.length} 个文件校验不过，重新下` });
+        for (const entry of bad) rmSync(join(weightsDir, ...entry.path.split("/")), { force: true });
+        await downloadViaRpc(
+          bad.map((entry) => ({
+            urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
+            out: entry.path,
+            size: entry.size ?? 0,
+          })),
+          {
+            dir: weightsDir,
+            concurrency: 4,
+            totalBytes: bad.reduce((sum, entry) => sum + (entry.size ?? 0), 0),
+            onTick: ({ bytes, totalBytes: total, tasks }) =>
+              patch({
+                bytes,
+                totalBytes: total,
+                percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
+                tasks: tasks.map((task) => ({ ...task, variant: key, ...where(weightsDir, task.out) })),
+              }),
+          },
+        );
+        bad = await verifyWeights(bad, weightsDir);
+        if (bad.length) {
+          throw new Error(`重下后仍有 ${bad.length} 个文件校验不过：${bad.slice(0, 3).map((e) => e.path).join("、")}`);
         }
       }
 
