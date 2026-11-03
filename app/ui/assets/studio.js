@@ -1308,11 +1308,14 @@ function samplingText(active) {
 /** 采样中的那张，缩略图跟着引擎的中间结果走。 */
 function updateGalleryPreview(data) {
   const active = data.engine.active;
-  if (!active?.previewAt) return;
+  // 不能因为没 previewAt 就整个退出：阶段切换（文本编码 → 去噪）不发生 preview
+  // 事件，但步数与百分比已经变了。那样画廊那张卡的进度就停在上一帧，
+  // 而队列里的同一条还在走。
+  if (!active) return;
   const tile = nodes.thumbs.querySelector(`[data-job-id="${active.jobId}"]`);
   if (!tile) return;
   const image = tile.querySelector(".preview-thumb");
-  if (image) {
+  if (image && active.previewAt) {
     const url = previewUrl(active.previewAt);
     if (image.getAttribute("src") !== url) image.src = url;
   }
@@ -1534,7 +1537,15 @@ async function boot() {
         if (!active || active.jobId !== payload.jobId) return;
         active.progress = payload.progress ?? active.progress;
         if (payload.phase) active.phase = payload.phase;
+        // 队列卡读的是 state.progress[jobId]，画廊那格读 engine.active。
+        // 两处数据源不同，只更新一处就会一个走一个停。
+        if (payload.progress) {
+          latest.progress = latest.progress ?? {};
+          latest.progress[payload.jobId] = payload.progress;
+        }
         renderStage(latest);
+        renderQueue(latest);
+        updateGalleryPreview(latest);
         broadcastState(latest);
         return;
       }
