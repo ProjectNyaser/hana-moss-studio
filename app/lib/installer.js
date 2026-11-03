@@ -695,6 +695,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       let speedAt = 0;
       let speed = 0;
       const failedIds = new Set();
+      const completed = new Set();
       // 偶尔会有某一轮 RPC 返回不完整的字段（totalLength/completedLength 读成 0），
       // 直接把 0 发出去，面板就会闪一下「0 / 0B」。记住上一轮的值当兵底。
       const known = new Map();
@@ -754,7 +755,10 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
           if (!state) continue;
           bytes += Number(state.completedLength ?? 0);
           const st = state.status;
-          if (st === "complete") done += 1;
+          if (st === "complete") {
+            done += 1;
+            completed.add(item.out);
+          }
           // 用户手动暂停的既不算完成也不算失败，停在原地等继续。
           else if (st === "paused") paused.add(item.gid);
           // removed = 用户单独取消了这一条；跟 error 一样当终态，不再等它。
@@ -809,7 +813,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         if (stall > 180) throw new Error(`下载停滞：${gib(bytes)} / ${gib(total)} GiB，${done}/${items.length} 个文件`);
 
         // 暂停的也算没有下文，循环得收尾；它们的 .aria2 控制文件还在，下次装能续传。
-        if (done + failedIds.size + paused.size === items.length) return { failed };
+        if (done + failedIds.size + paused.size === items.length) return { failed, completed };
       }
     } finally {
       control = null;
@@ -1015,20 +1019,20 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       if (!wanted.length) throw new Error("清单为空，镜像可能不可用");
 
       mkdirSync(weightsDir, { recursive: true });
-      const missing = wanted.filter((entry) => {
-        const target = join(weightsDir, ...entry.path.split("/"));
-        return !(existsSync(target) && statSync(target).size === entry.size);
-      });
-      const totalBytes = missing.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
+      // 全部交给 aria2。addUri 带 continue=true 时它自己会看 .aria2 控制文件与
+      // 本地大小：完整的直接完成为 complete，没下完的续传。在这之前先算一遍
+      // 「缺哪些」是把同一件事做第二遍，还会和 aria2 的判断打架——
+      // 预分配或最后一段先落盘时，文件大小已经是目标值，控制文件却还在。
+      const totalBytes = wanted.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
       patch({
         phase: "download",
-        message: missing.length ? `${missing.length} 个文件待下，合计 ${gib(totalBytes)} GiB` : "文件已齐，只做校验",
+        message: `${wanted.length} 个文件，共 ${gib(totalBytes)} GiB`,
         totalBytes,
         bytes: 0,
       });
 
-      if (missing.length) {
-        const entries = missing.map((entry) => ({
+      {
+        const entries = wanted.map((entry) => ({
           urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
           out: entry.path,
           size: entry.size ?? 0,
