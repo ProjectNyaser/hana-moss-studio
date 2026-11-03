@@ -904,28 +904,30 @@ function renderDownload(data) {
   const busy = Boolean(job && !job.finishedAt);
   nodes.downloadEngine.disabled = false;
 
-  // 模型：只列还没装的。已经装在上面那块管，这里再列一遍就是同一件事说两次。
+  // 模型：下面这块列全部两个仓库，和引擎那块一致——上面是已装的（能切、能卸），
+  // 这里是完整清单，已装的标出来、没装的给下载按钮。
   const models = Array.isArray(data.models) ? data.models : [];
-  const pendingModels = models.filter((item) => !item.installed);
-  const perRepo = data.plan?.totalBytes ? `约 ${formatSize(data.plan.totalBytes)}` : "约 27 GB";
+  const perRepo = data.plan?.totalBytes ? `约 ${formatSize(data.plan.totalBytes)}` : "约 25 GiB";
   nodes.downloadModels.replaceChildren(
-    ...(pendingModels.length
-      ? pendingModels.map((item) => {
-          const row = manageRow({
-            name: item.label,
-            meta: `${perRepo} · ${item.note}`,
-          });
-          const button = document.createElement("button");
-          button.className = "btn ghost small";
-          button.type = "button";
-          button.textContent = busy ? "排队" : "下载";
-          button.addEventListener("click", () =>
-            void startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
-          );
-          row.appendChild(button);
-          return row;
-        })
-      : [manageRow({ name: "两个仓库都已装", meta: "要重装先在上面卸载" })]),
+    ...models.map((item) => {
+      const row = manageRow({
+        name: item.label,
+        badges: [item.installed ? "已装" : null].filter(Boolean),
+        meta: item.installed ? formatSize(item.bytes) : `${perRepo} · ${item.note}`,
+        on: item.active,
+      });
+      if (!item.installed) {
+        const button = document.createElement("button");
+        button.className = "btn ghost small";
+        button.type = "button";
+        button.textContent = busy ? "排队" : "下载";
+        button.addEventListener("click", () =>
+          void startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
+        );
+        row.appendChild(button);
+      }
+      return row;
+    }),
   );
 
   // 下载任务已经并进队列页，这里只管版本页的模型下载入口。
