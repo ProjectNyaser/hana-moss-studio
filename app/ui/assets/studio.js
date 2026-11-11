@@ -499,7 +499,31 @@ async function renderGallery(data) {
 }
 
 // ── 行与确认 ───────────────────────────────────────────────────────────
-function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], remove }) {
+/** 整行换成确认条。不复用原按钮：行会被重建，靠按钮状态记住「待确认」容易看错。 */
+function askConfirm(row, { label, question, run, yesText }) {
+  const bar = document.createElement("div");
+  bar.className = "confirm-bar";
+  const text = document.createElement("span");
+  text.textContent = question ?? `${label}？`;
+  const yes = document.createElement("button");
+  yes.className = "btn small danger";
+  yes.type = "button";
+  yes.textContent = yesText ?? "确认卸载";
+  yes.addEventListener("click", () => void run());
+  const no = document.createElement("button");
+  no.className = "btn ghost small";
+  no.type = "button";
+  no.textContent = "取消";
+  no.addEventListener("click", () => {
+    versionsKey = "";
+    void refresh();
+  });
+  bar.append(text, yes, no);
+  row.replaceChildren(bar);
+  yes.focus({ preventScroll: true });
+}
+
+function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], remove, menu = [] }) {
   const row = document.createElement("div");
   row.className = on ? "manage-row on" : dim ? "manage-row dim" : "manage-row";
   const nameNode = document.createElement("span");
@@ -533,32 +557,41 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
     button.className = "btn ghost small";
     button.type = "button";
     button.textContent = remove.label;
-    button.addEventListener("click", () => {
-      // 整行换成确认条，不复用这个按钮：行会被重建，靠按钮自己的状态记住「待确认」
-      // 很容易看起来像别的行变成了待确认。
-      const bar = document.createElement("div");
-      bar.className = "confirm-bar";
-      const text = document.createElement("span");
-      text.textContent = remove.question ?? `${remove.label}？`;
-      const yes = document.createElement("button");
-      yes.className = "btn small danger";
-      yes.type = "button";
-      yes.textContent = "确认卸载";
-      yes.addEventListener("click", () => void remove.run());
-      const no = document.createElement("button");
-      no.className = "btn ghost small";
-      no.type = "button";
-      no.textContent = "取消";
-      no.addEventListener("click", () => {
-        versionsKey = "";
-        void refresh();
-      });
-      bar.append(text, yes, no);
-      row.replaceChildren(bar);
-      // 确认条是临时插进来的，抢一下焦点：整行刚被换掉，鼠标可能在原地。
-      yes.focus({ preventScroll: true });
-    });
+    button.addEventListener("click", () => askConfirm(row, remove));
     row.append(button);
+  }
+  // 低频动作收进「⋯」：行里只留真正会用到的那个按钮。
+  if (menu.length) {
+    const wrap = document.createElement("div");
+    wrap.className = "row-menu";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "row-menu-trigger";
+    trigger.textContent = "⋯";
+    trigger.title = "更多";
+    trigger.setAttribute("aria-label", "更多操作");
+    const pop = document.createElement("div");
+    pop.className = "row-menu-pop";
+    pop.hidden = true;
+    for (const item of menu) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = item.danger ? "row-menu-item danger" : "row-menu-item";
+      button.textContent = item.label;
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        pop.hidden = true;
+        if (item.question) askConfirm(row, item);
+        else void item.run();
+      });
+      pop.appendChild(button);
+    }
+    trigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      pop.hidden = !pop.hidden;
+    });
+    wrap.append(trigger, pop);
+    row.append(wrap);
   }
 
   // 有明细的行可以点开：组件体积这类信息平时收着，需要时才展开。
@@ -881,11 +914,14 @@ function renderVersions(data) {
             actions: item.current
               ? []
               : [{ label: "切换", run: () => runSafe(() => post("/engine/use", { name: item.name }), "切换") }],
-            remove: {
-              label: "卸载",
-              question: `卸载 ${item.version}？`,
-              run: () => runSafe(() => post("/engines/remove", { name: item.name }), "卸载"),
-            },
+            menu: [
+              {
+                label: "卸载",
+                danger: true,
+                question: `卸载 ${item.version}？`,
+                run: () => runSafe(() => post("/engines/remove", { name: item.name }), "卸载"),
+              },
+            ],
           }),
         )
       : [manageRow({ name: "还没有装引擎，去「下载」页装一个" })]),
@@ -905,8 +941,6 @@ function renderVersions(data) {
             meta: formatSize(item.bytes),
             detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
             on: item.active,
-            // 当前在用的那个不给卸载：删了目录，设置里的 modelPath 就成了空指，
-            // 下次出图直接报「模型目录不存在」。要删先切到另一个。
             actions: item.active
               ? []
               : [
@@ -915,14 +949,17 @@ function renderVersions(data) {
                     run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
                   },
                 ],
-            remove: item.active
-              ? null
-              : {
-                  label: "卸载",
-                  question: `卸载 ${item.label}？（${formatSize(item.bytes)}）`,
-                  run: () =>
-                    runSafe(() => post("/models/remove", { confirm: true, variant: item.variant }), "卸载模型"),
-                },
+            // 卸载对当前那个也留着（删完服务端会把 modelPath 落到另一个或清空），
+            // 只是收进「⋯」，行里不摆第二个按钮。
+            menu: [
+              {
+                label: "卸载",
+                danger: true,
+                question: `卸载 ${item.label}？（${formatSize(item.bytes)}）`,
+                run: () =>
+                  runSafe(() => post("/models/remove", { confirm: true, variant: item.variant }), "卸载模型"),
+              },
+            ],
           }),
         )
       : [manageRow({ name: "还没有装模型，去下面下载" })]),
@@ -1610,6 +1647,12 @@ nodes.stageCancel.addEventListener("click", () => {
   const active = latest?.engine?.active;
   if (!active) return;
   void post("/cancel", { id: active.jobId });
+});
+document.addEventListener("click", () => {
+  // 点别处就把行尾菜单收起来；触发按钮与菜单项自己 stopPropagation。
+  for (const pop of document.querySelectorAll(".row-menu-pop")) {
+    if (!pop.hidden) pop.hidden = true;
+  }
 });
 document.addEventListener("contextmenu", (event) => {
   // 图上右键已自己处理；空白处的右键只负责把菜单关掉。
