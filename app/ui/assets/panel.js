@@ -1229,9 +1229,13 @@ let modelsKey = "";
 function renderModels(data) {
   const models = (Array.isArray(data?.models) ? data.models : []).filter((item) => item.installed);
   const current = models.find((item) => item.active) ?? null;
-  const dit = data?.settings?.modelFiles?.dit ?? null;
-  nodes.modelNote.textContent = dit ? ` DiT：${basenameOf(dit)}` : "";
-  nodes.modelNote.title = dit ?? "";
+  const ditPath = data?.settings?.modelFiles?.dit ?? null;
+  // 单文件 DiT 是「替掉 bundle 里那份权重」，不是另一个模型，所以在下面单独说一句，
+  // 不跟模型名挤在同一行——那样看起来像两个模型名。
+  const ditFile = ditPath ? (data?.files ?? []).find((item) => item.target === ditPath) ?? null : null;
+  nodes.modelNote.textContent = ditPath ? `单文件 DiT：${shortDitName(ditFile?.name ?? basenameOf(ditPath))}` : "";
+  nodes.modelNote.title = ditPath ?? "";
+  nodes.modelNote.hidden = !ditPath;
   const key = models.map((item) => `${item.variant}:${item.label}`).join("|") + `#${current?.variant ?? ""}`;
   if (key === modelsKey) return;
   modelsKey = key;
@@ -1254,13 +1258,27 @@ function renderModels(data) {
 }
 
 /**
- * 档位可能被服务端改：单文件 DiT 一装就带自己的档位（INT4→turbo、INT8→high），
- * 启停时也会纠错。这里把选择框拉回来，手里正在改的那一下不算。
+ * 档位跟着 DiT 走：单文件 INT4 只跑 turbo、INT8 只跑 high，引擎没有第二个选择。
+ * 没装单文件 DiT 时就看设置里的值（服务端可能因为卸载而改过它）。
  */
 let lastTierEdit = 0;
+let tierDirty = false;
 function syncTier(data) {
+  const ditPath = data?.settings?.modelFiles?.dit ?? null;
+  const ditFile = ditPath ? ((data?.files ?? []).find((item) => item.target === ditPath) ?? null) : null;
+  if (ditFile?.tier) {
+    if (nodes.tier.value !== ditFile.tier) nodes.tier.value = ditFile.tier;
+    nodes.tier.disabled = true;
+    nodes.tier.title = `它只能跑 ${ditFile.tier} 档`;
+    return;
+  }
+  if (nodes.tier.disabled) {
+    nodes.tier.disabled = false;
+    nodes.tier.title = "";
+  }
   const tier = data?.settings?.tier;
   if (!tier || tier === nodes.tier.value) return;
+  if (tierDirty) return;
   if (document.activeElement === nodes.tier) return;
   if (Date.now() - lastTierEdit < 2000) return;
   nodes.tier.value = tier;
@@ -1268,6 +1286,11 @@ function syncTier(data) {
 
 function basenameOf(path) {
   return String(path ?? "").split(/[\\/]/).pop() ?? "";
+}
+
+/** 文件展示名再把开头的「DiT」去掉：上下的句子已经说了这是 DiT。 */
+function shortDitName(name) {
+  return String(name ?? "").replace(/^DiT\s*/, "");
 }
 
 
@@ -1462,11 +1485,14 @@ function collectDefaults() {
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    void post("/settings", {
-      memoryMode: nodes.memoryMode.value,
-      tier: nodes.tier.value,
-      defaults: collectDefaults(),
-    }).catch(() => {
+    const patch = { memoryMode: nodes.memoryMode.value, defaults: collectDefaults() };
+    // 档位只在用户真的动过它时才写回去：服务端会因为单文件 DiT 自己改档位，
+    // 面板不能拿一个旧值把它盖回去。
+    if (tierDirty) {
+      patch.tier = nodes.tier.value;
+      tierDirty = false;
+    }
+    void post("/settings", patch).catch(() => {
       /* 存不进去也不打断手头的操作 */
     });
   }, 800);
@@ -1508,6 +1534,7 @@ for (const node of [nodes.width, nodes.height]) {
 
 nodes.tier.addEventListener("change", () => {
   lastTierEdit = Date.now();
+  tierDirty = true;
 });
 
 // 切模型：只改设置，引擎下次 load 时按新目录读；已加载的缓存由服务端作废。
