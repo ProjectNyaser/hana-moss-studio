@@ -1360,6 +1360,61 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     return { ok: true, id, target };
   }
 
+  /**
+   * 校验一个单文件：按 HuggingFace 的 LFS sha256（或 git oid）重算一遍。
+   * 只读不算下载，几个 GB 的盘也是一两秒的事。
+   */
+  async function verifyFile(id) {
+    const entry = (MOSSIMAGE.files ?? []).find((item) => item.id === id);
+    if (!entry) throw new Error(`没有这个文件：${id}`);
+    const target = fileTarget(entry);
+    if (!existsSync(target)) throw new Error("这个文件还没下载");
+    const tree = JSON.parse(
+      await fetchText(network, `${MODEL_ENDPOINT}/api/models/${entry.repo}/tree/main?recursive=true`),
+    );
+    const remote = (tree ?? []).find((item) => item.path === entry.path);
+    if (!remote) throw new Error(`仓库里找不到 ${entry.path}`);
+    const size = statSync(target).size;
+    if (remote.size && size !== remote.size) return { ok: false, reason: `大小不对：${size} ≠ ${remote.size}` };
+    const want = remote.lfs?.oid ?? remote.oid ?? null;
+    if (!want) return { ok: true, note: "仓库没给哈希，只比了大小" };
+    const got = remote.lfs?.oid ? await sha256File(target) : await gitBlobSha1(target, size);
+    if (got === want) return { ok: true };
+    return { ok: false, reason: "内容与仓库不一致，建议删掉重下", want, got };
+  }
+
+  /** 校验配置包：同样逐个对哈希。 */
+  async function verifyConfigPack() {
+    const dir = configDirTarget();
+    if (!existsSync(dir)) throw new Error("没有已装配置包");
+    const repo = MODELS.sft.repo;
+    const tree = JSON.parse(await fetchText(network, `${MODEL_ENDPOINT}/api/models/${repo}/tree/main?recursive=true`));
+    const wanted = (tree ?? []).filter((entry) => {
+      if (entry.type !== "file") return false;
+      return CONFIG_INCLUDES.some((pattern) =>
+        pattern.endsWith("/*") ? entry.path.startsWith(pattern.slice(0, -1)) : entry.path === pattern,
+      );
+    });
+    const bad = [];
+    for (const entry of wanted) {
+      const file = join(dir, ...entry.path.split("/"));
+      if (!existsSync(file)) {
+        bad.push(entry.path);
+        continue;
+      }
+      const size = statSync(file).size;
+      if (entry.size && size !== entry.size) {
+        bad.push(entry.path);
+        continue;
+      }
+      const want = entry.lfs?.oid ?? entry.oid ?? null;
+      if (!want) continue;
+      const got = entry.lfs?.oid ? await sha256File(file) : await gitBlobSha1(file, size);
+      if (got !== want) bad.push(entry.path);
+    }
+    return { ok: !bad.length, bad };
+  }
+
   async function installWeights(variant = "base", options = {}) {
     const key = MODELS[variant] ? variant : "base";
     const configOnly = Boolean(options.configOnly);
@@ -1603,6 +1658,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     installConfigPack,
     removeConfigPack,
     configDirTarget,
+    verifyFile,
+    verifyConfigPack,
     taskAction,
     listEngines,
     listModels,

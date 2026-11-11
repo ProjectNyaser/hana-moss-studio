@@ -1208,6 +1208,26 @@ function state() {
       }
     });
 
+    // 校验：不重下，只对哈希；不匹配时界面会建议重下。
+    app.post(`/${APP_ID}/files/verify`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      try {
+        const result = await installer.verifyFile(String(body?.id ?? ""));
+        return c.json({ ...state(), verify: result });
+      } catch (error) {
+        return c.json({ ...state(), error: message(error) }, 400);
+      }
+    });
+
+    app.post(`/${APP_ID}/config/verify`, async (c) => {
+      try {
+        const result = await installer.verifyConfigPack();
+        return c.json({ ...state(), verify: result });
+      } catch (error) {
+        return c.json({ ...state(), error: message(error) }, 400);
+      }
+    });
+
     app.post(`/${APP_ID}/install/config`, async (c) => {
       const body = await c.req.json().catch(() => ({}));
       const variant = readVariant(body?.variant);

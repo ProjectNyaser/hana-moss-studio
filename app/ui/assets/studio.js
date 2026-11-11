@@ -48,6 +48,8 @@ const nodes = {
   installed: el("versions-installed"),
   modelState: el("versions-model-state"),
   modelList: el("versions-model"),
+  configList: el("config-list"),
+  configState: el("config-state"),
   host: el("versions-host"),
   // 下载
   toast: el("toast"),
@@ -551,9 +553,25 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], det
     button.addEventListener("click", () => void action.run());
     row.append(button);
   }
+  for (const action of [...(detailActions ?? [])]) {
+    const button = document.createElement("button");
+    button.className = "btn ghost small";
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", () => void action.run());
+    row.append(button);
+  }
+  if (remove) {
+    const button = document.createElement("button");
+    button.className = "btn ghost small";
+    button.type = "button";
+    button.textContent = remove.label;
+    button.addEventListener("click", () => askConfirm(row, remove));
+    row.append(button);
+  }
+
   // 有明细的行可以点开：组件体积这类信息平时收着，需要时才展开。
-  // 低频动作（卸载）也放在展开区里，行上不多一个按钮。
-  if (detail?.length || detailActions?.length || remove) {
+  if (detail?.length) {
     row.classList.add("expandable");
     const box = document.createElement("div");
     box.className = "manage-detail";
@@ -566,33 +584,6 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], det
       const value = document.createElement("span");
       value.textContent = item.value;
       line.append(label, value);
-      box.appendChild(line);
-    }
-    if (detailActions?.length || remove) {
-      const line = document.createElement("div");
-      line.className = "manage-detail-line actions";
-      for (const action of detailActions ?? []) {
-        const button = document.createElement("button");
-        button.className = "btn ghost small";
-        button.type = "button";
-        button.textContent = action.label;
-        button.addEventListener("click", (event) => {
-          event.stopPropagation();
-          void action.run();
-        });
-        line.appendChild(button);
-      }
-      if (remove) {
-        const button = document.createElement("button");
-        button.className = "btn ghost small danger";
-        button.type = "button";
-        button.textContent = remove.label;
-        button.addEventListener("click", (event) => {
-          event.stopPropagation();
-          askConfirm(row, remove);
-        });
-        line.appendChild(button);
-      }
       box.appendChild(line);
     }
     row.addEventListener("click", (event) => {
@@ -658,6 +649,20 @@ const runSafe = async (fn, label) => {
     if (next) render(next);
   } catch (error) {
     void toast(`${label}失败：${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
+/** 校验结果只读不重下：结果一句话就够。 */
+const runVerify = async (path, body, label) => {
+  try {
+    const next = await post(path, body ?? {});
+    const verify = next?.verify;
+    if (!verify) throw new Error(next?.error ?? "没有结果");
+    if (verify.ok) void toast(`${label}：校验通过`);
+    else if (verify.reason) void toast(`${label}：${verify.reason}`);
+    else void toast(`${label}：${verify.bad?.length ?? 0} 个文件不一致`);
+  } catch (error) {
+    void toast(`${label}校验失败：${error instanceof Error ? error.message : String(error)}`);
   }
 };
 
@@ -940,16 +945,26 @@ function renderVersions(data) {
         on: item.active,
         // 版本页只管增删：选哪个模型、用哪份 DiT 权重都在侧栏。
         actions: [],
-        // 删东西放在展开区里，行上不摆按钮。
+        // 卸载与校验都直接摆行上：一行就这两个动作，没必要藏进展开。
         detailActions: item.installed
           ? item.lite
             ? [
+                {
+                  label: "校验",
+                  run: () => runVerify("/config/verify", {}, item.label),
+                },
                 {
                   label: "补下完整权重",
                   run: () => startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
                 },
               ]
-            : []
+            : [
+                {
+                  label: "校验",
+                  run: () =>
+                    startInstall("/install/weights", { variant: item.variant }, `校验 ${item.label}`),
+                },
+              ]
           : [
               {
                 label: "只下配置与分词器（约 258 MB）",
@@ -1042,6 +1057,9 @@ function renderDownload(data) {
           on: item.active,
           // 版本页只管增删；装好就自动用上，用不用、怎么用在它自己的地方选。
           actions: [],
+          detailActions: item.installed
+            ? [{ label: "校验", run: () => runVerify("/files/verify", { id: item.id }, item.name) }]
+            : [],
           remove: item.installed
             ? {
                 label: "卸载",
@@ -1083,6 +1101,9 @@ function renderConfigPack(data) {
           run: () => runSafe(() => post("/config/remove", { confirm: true }), "卸载配置"),
         }
       : null,
+    detailActions: pack.installed
+      ? [{ label: "校验", run: () => runVerify("/config/verify", {}, "配置与分词器") }]
+      : [],
   });
   if (!pack.installed) {
     const button = document.createElement("button");
