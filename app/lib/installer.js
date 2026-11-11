@@ -706,9 +706,15 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         port: session.port,
         secret: session.secret,
         gids: new Map(items.map((item) => [join(dir, ...item.out.split("/")), item.gid])),
+        // 暂停 / 继续会给下载换一个新 GID，操作完要把循环里那份也改掉，
+        // 否则下一轮轮询就找不到这条下载，进度停住、再点一次又报 GID not found。
+        items,
       };
       let stall = 0;
       let rpcFailures = 0;
+      // 一条从没读到过状态的任务不能永远停在「下载中」：90 秒还一片空白就判它没起来。
+      const startedAt = Date.now();
+      let ticks = 0;
       let lastBytes = -1;
       let lastDone = -1;
       let speedAt = 0;
@@ -727,6 +733,9 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
             ),
           );
           throw new Error("已取消");
+        }
+        if (ticks === 0 && Date.now() - startedAt > 90_000) {
+          throw new Error("下载器没有响应：90 秒内没有任何进度（再点一次下载会重试）");
         }
         await sleep(1000);
         // 一次拿全量再按 gid 对号：逐个 tellStatus 在 20 个文件时会并发 20 次 RPC，
@@ -766,6 +775,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
           continue;
         }
         rpcFailures = 0;
+        ticks += 1;
 
         // 只统计 aria2 自报的 completedLength。查不到状态的按 0 算，绝不当已完成：
         // 新加的 gid 还没进 tellActive 时，当已完成会让进度一步跳到 100%。
@@ -857,14 +867,22 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   async function taskAction(taskId, filePath, action) {
     const task = tasks.get(taskId);
     if (!task?.control) return { ok: false, error: "这个任务不在下载中" };
-    const direct = task.control.gids.get(filePath);
-    const abs = direct ? null : join(dataDir, ...String(filePath ?? "").split(/[\\/]+/).filter(Boolean));
-    const gid = direct ?? task.control.gids.get(abs);
+    const relative = String(filePath ?? "");
+    const absolute = join(dataDir, ...relative.split(/[\\/]+/).filter(Boolean));
+    const key = task.control.gids.has(relative) ? relative : absolute;
+    const gid = task.control.gids.get(key);
     if (!gid) return { ok: false, error: "找不到这个文件" };
     const method =
       action === "pause" ? "aria2.pause" : action === "resume" ? "aria2.unpause" : "aria2.forceRemove";
     try {
-      await aria2Call(task.control.port, task.control.secret, method, [gid], 5000);
+      const result = await aria2Call(task.control.port, task.control.secret, method, [gid], 5000);
+      // aria2 的 pause / unpause 会返回新的 GID（旧的就废了），两个地方都跟着换。
+      const next = typeof result === "string" && result ? result : null;
+      if (next && next !== gid) {
+        task.control.gids.set(key, next);
+        const item = task.control.items?.find((entry) => entry.gid === gid);
+        if (item) item.gid = next;
+      }
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
