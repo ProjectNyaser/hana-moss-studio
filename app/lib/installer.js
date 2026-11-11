@@ -1419,7 +1419,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       const missing = [];
       if (!settings.modelFiles?.dit) missing.push("DiT");
       if (!settings.modelFiles?.textEncoder) missing.push("文本编码器");
-      return { missing };
+      return { lite: true, missing };
     } catch {
       return null;
     }

@@ -926,7 +926,7 @@ function renderVersions(data) {
         badges: [item.active ? "当前" : null, item.lite ? "轻量" : null].filter(Boolean),
         meta: item.installed
           ? item.lite
-            ? `${formatSize(item.bytes)} · 缺 DiT 与文本编码器权重`
+            ? `${formatSize(item.bytes)} · 只有配置与分词器，权重靠单文件`
             : formatSize(item.bytes)
           : [item.estimate ? `约 ${formatSize(item.estimate)}` : null, item.note].filter(Boolean).join(" · "),
         detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
@@ -945,7 +945,7 @@ function renderVersions(data) {
             : []
           : [
               {
-                label: "只下配置（约 258 MB）",
+                label: "只下配置与分词器（约 258 MB）",
                 run: () => startInstall("/install/config", { variant: item.variant }, `配置 ${item.label}`),
               },
             ],

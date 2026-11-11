@@ -1259,10 +1259,15 @@ function renderModels(data) {
     }
     nodes.model.disabled = !models.length;
     nodes.model.value = models.length && current ? current.variant : nodes.model.value;
-  // 轻量包（只有配置）：说清楚还缺哪个单文件权重，否则引擎只会报目录不完整。
-  const missing = data?.modelLite?.missing ?? [];
-  nodes.modelHint.hidden = !missing.length;
-  nodes.modelHint.textContent = missing.length ? `这个模型只有配置，还缺：${missing.join("、")}` : "";
+  // 轻量包（只有配置与分词器）：两个仓库这两部分字节相同，选「哪个模型」就没意义了，
+  // 差异全在 DiT 权重里——那个由下面的选择框决定。
+  const lite = data?.modelLite ?? null;
+  nodes.model.disabled = !models.length || Boolean(lite);
+  nodes.modelHint.hidden = !lite;
+  if (lite) {
+    const lacking = lite.missing.length ? `，还缺：${lite.missing.join("、")}` : "";
+    nodes.modelHint.textContent = `配置包与 SFT/Base 同款，模型差异全在 DiT 权重里${lacking}`;
+  }
   }
 
   // DiT 权重：空值就是 bundle 自带。只列装好的，没装的去版本页下载。
