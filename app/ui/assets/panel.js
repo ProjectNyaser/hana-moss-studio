@@ -88,6 +88,7 @@ const nodes = {
   model: el("pn-model"),
   dit: el("pn-dit"),
   ditNote: el("pn-dit-note"),
+  te: el("pn-te"),
   errors: el("pn-errors"),
   sampler: el("pn-sampler"),
   scheduler: el("pn-scheduler"),
@@ -1227,6 +1228,14 @@ function renderEngine(data) {
  */
 let modelsKey = "";
 let ditsKey = "";
+let tesKey = "";
+
+function makeOption(value, text) {
+  const node = document.createElement("option");
+  node.value = value;
+  node.textContent = text;
+  return node;
+}
 function renderModels(data) {
   const models = (Array.isArray(data?.models) ? data.models : []).filter((item) => item.installed);
   const current = models.find((item) => item.active) ?? null;
@@ -1274,6 +1283,21 @@ function renderModels(data) {
   nodes.ditNote.textContent =
     ditFile?.tier && ditFile.tier !== data?.settings?.tier ? `它只能跑 ${ditFile.tier} 档` : "";
   nodes.ditNote.title = ditFile?.path ?? "";
+
+  // 文本编码器：bundle 自带的 bf16，或已装的 INT8 / W4A8。只影响显存占用。
+  const tes = (data?.files ?? []).filter((item) => item.role === "text_encoder" && item.installed);
+  const tePath = data?.settings?.modelFiles?.textEncoder ?? null;
+  const teFile = tePath ? (tes.find((item) => item.target === tePath) ?? null) : null;
+  const teKey = tes.map((item) => `${item.id}:${item.target}`).join("|") + `#${teFile?.id ?? ""}`;
+  if (teKey !== tesKey) {
+    tesKey = teKey;
+    nodes.te.replaceChildren(
+      makeOption("", "bundle 自带（bf16）"),
+      ...tes.map((item) => makeOption(item.target, item.name)),
+    );
+    nodes.te.disabled = !tes.length;
+  }
+  nodes.te.value = teFile?.target ?? "";
 }
 
 /**
@@ -1559,6 +1583,25 @@ nodes.dit.addEventListener("change", async () => {
         lastTierEdit = Date.now();
       }
       say(`DiT 权重：${shortDitName(file.name)}${file.tier ? `（${file.tier} 档）` : ""}`, "ok");
+    }
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+});
+
+// 文本编码器：只换权重文件，档位不受影响。
+nodes.te.addEventListener("change", async () => {
+  const target = nodes.te.value;
+  const files = Array.isArray(latest?.files) ? latest.files : [];
+  try {
+    if (!target) {
+      await post("/settings", { modelFiles: { ...(latest?.settings?.modelFiles ?? {}), textEncoder: null } });
+      say("文本编码器：bundle 自带（bf16）", "ok");
+    } else {
+      const file = files.find((item) => item.target === target);
+      if (!file) throw new Error("这个文件不在清单里");
+      await post("/files/use", { id: file.id });
+      say(`文本编码器：${file.name}`, "ok");
     }
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
