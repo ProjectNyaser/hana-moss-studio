@@ -901,10 +901,12 @@ function renderVersions(data) {
       ? installedModels.map((item) =>
           manageRow({
             name: item.label,
-            badges: [item.active ? "当前" : null].filter(Boolean),
+            badges: item.active ? ["当前"] : [],
             meta: formatSize(item.bytes),
             detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
             on: item.active,
+            // 当前在用的那个不给卸载：删了目录，设置里的 modelPath 就成了空指，
+            // 下次出图直接报「模型目录不存在」。要删先切到另一个。
             actions: item.active
               ? []
               : [
@@ -913,13 +915,14 @@ function renderVersions(data) {
                     run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
                   },
                 ],
-            // 卸载放在行内，跟引擎那块一致：想删哪个点哪个，不用先切过去再删。
-            remove: {
-              label: "卸载",
-              question: `卸载 ${item.label}？（${formatSize(item.bytes)}）`,
-              run: () =>
-                runSafe(() => post("/models/remove", { confirm: true, variant: item.variant }), "卸载模型"),
-            },
+            remove: item.active
+              ? null
+              : {
+                  label: "卸载",
+                  question: `卸载 ${item.label}？（${formatSize(item.bytes)}）`,
+                  run: () =>
+                    runSafe(() => post("/models/remove", { confirm: true, variant: item.variant }), "卸载模型"),
+                },
           }),
         )
       : [manageRow({ name: "还没有装模型，去下面下载" })]),
@@ -1006,7 +1009,7 @@ function renderDownload(data) {
         const row = manageRow({
           name: item.name,
           meta: formatSize(item.bytes),
-          badges: item.active ? ["在用"] : [],
+          // 状态交给右侧那个按钮说，不再另外拄一个「在用」小标。
         });
         row.title = item.note ?? "";
         const button = document.createElement("button");
