@@ -85,6 +85,8 @@ const nodes = {
   cancel: el("pn-cancel"),
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
+  model: el("pn-model"),
+  modelNote: el("pn-model-note"),
   errors: el("pn-errors"),
   sampler: el("pn-sampler"),
   scheduler: el("pn-scheduler"),
@@ -1217,6 +1219,57 @@ function renderEngine(data) {
   nodes.start.hidden = !(engine.serverFound && !engine.running);
 }
 
+/**
+ * 模型选择放在出图的地方。
+ *
+ * 只有装好的 bundle 才进选项；单文件 DiT 不在这一列（它是「替换掉哪份权重」），
+ * 选上了就在标签后面点名一句，否则用户看到的模型名和引擎真在跑的对不上。
+ */
+let modelsKey = "";
+function renderModels(data) {
+  const models = (Array.isArray(data?.models) ? data.models : []).filter((item) => item.installed);
+  const current = models.find((item) => item.active) ?? null;
+  const dit = data?.settings?.modelFiles?.dit ?? null;
+  nodes.modelNote.textContent = dit ? ` DiT：${basenameOf(dit)}` : "";
+  nodes.modelNote.title = dit ?? "";
+  const key = models.map((item) => `${item.variant}:${item.label}`).join("|") + `#${current?.variant ?? ""}`;
+  if (key === modelsKey) return;
+  modelsKey = key;
+  nodes.model.replaceChildren(
+    ...models.map((item) => {
+      const option = document.createElement("option");
+      option.value = item.variant;
+      option.textContent = item.label;
+      return option;
+    }),
+  );
+  if (!models.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "还没有装模型";
+    nodes.model.replaceChildren(option);
+  }
+  nodes.model.disabled = !models.length;
+  if (current) nodes.model.value = current.variant;
+}
+
+/**
+ * 档位可能被服务端改：单文件 DiT 一装就带自己的档位（INT4→turbo、INT8→high），
+ * 启停时也会纠错。这里把选择框拉回来，手里正在改的那一下不算。
+ */
+let lastTierEdit = 0;
+function syncTier(data) {
+  const tier = data?.settings?.tier;
+  if (!tier || tier === nodes.tier.value) return;
+  if (document.activeElement === nodes.tier) return;
+  if (Date.now() - lastTierEdit < 2000) return;
+  nodes.tier.value = tier;
+}
+
+function basenameOf(path) {
+  return String(path ?? "").split(/[\\/]/).pop() ?? "";
+}
+
 
 const PHASE_LABEL = {
   starting: "准备",
@@ -1239,6 +1292,8 @@ function render(data) {
   // 事件是主路（studio 转发 settings）；这一句只做补课：漏了事件也能对上。
   catchUpSettings(data);
   renderEngine(data);
+  renderModels(data);
+  syncTier(data);
   nodes.generate.disabled = submitting;
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。
   const busy = Boolean(data.engine.active) || data.queue.length > 0;
@@ -1450,6 +1505,22 @@ for (const node of [nodes.width, nodes.height]) {
     }
   });
 }
+
+nodes.tier.addEventListener("change", () => {
+  lastTierEdit = Date.now();
+});
+
+// 切模型：只改设置，引擎下次 load 时按新目录读；已加载的缓存由服务端作废。
+nodes.model.addEventListener("change", async () => {
+  const variant = nodes.model.value;
+  if (!variant) return;
+  try {
+    await post("/weights/use", { variant });
+    say("模型已切换，下次出图重新加载", "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+});
 
 // 导入 LoRA：二进制直传，落在 app-data/loras 里，路径稳定。
 nodes.loraImport.addEventListener("click", () => nodes.loraFile.click());

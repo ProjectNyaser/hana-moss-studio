@@ -929,15 +929,8 @@ function renderVersions(data) {
           : [item.estimate ? `约 ${formatSize(item.estimate)}` : null, item.note].filter(Boolean).join(" · "),
         detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
         on: item.active,
-        actions:
-          item.installed && !item.active
-            ? [
-                {
-                  label: "切换",
-                  run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
-                },
-              ]
-            : [],
+        // 选哪个模型在侧栏选；这张表只管装、校、卸，不再摆一个「切换」。
+        actions: [],
         // 校验和卸载都不常用，放进展开区；卸载对当前那个也留着
         // （删完服务端会把 modelPath 落到另一个或清空）。
         detailActions: item.installed
