@@ -136,7 +136,7 @@ body {
 /* 状态与动作各占一个固定宽的槽：行尾三列对齐，不随“有没有标记”一路平移 */
 .manage-row .status {
   flex: none;
-  width: 84px;
+  width: 112px;
   display: flex;
   justify-content: flex-end;
   gap: 4px;
@@ -175,11 +175,12 @@ body {
   align-items: center;
   box-sizing: border-box;
   height: 20px;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 1px solid var(--ui-line);
   border-radius: 999px;
   font-size: 11px;
   line-height: 18px;
+  white-space: nowrap;
   color: var(--ui-text-3);
   white-space: nowrap;
 }

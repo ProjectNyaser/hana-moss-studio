@@ -916,9 +916,11 @@ function renderVersions(data) {
       ? engines.map((item) =>
           manageRow({
             name: `${item.version}`,
-            badges: [item.cuda ?? null, item.variant === "system-cuda" ? "system-cuda" : "bundled", item.current ? "当前" : null].filter(
-              Boolean,
-            ),
+            badges: [
+              item.cuda ?? null,
+              item.variant === "system-cuda" ? "系统" : "自带",
+              item.current ? "当前" : null,
+            ].filter(Boolean),
             meta: formatSize(item.bytes),
             detail: [
               { label: "变体", value: item.variant === "system-cuda" ? "system-cuda" : "bundled" },
