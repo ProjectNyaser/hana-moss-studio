@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { scanOutputs } from "./outputs.js";
+import { VALUES } from "./params.js";
 
 /** 苔室的持久化。
  *
@@ -24,6 +25,17 @@ export const DEFAULT_SETTINGS = {
     hiresScale: 0,
     hiresSteps: 0,
     hiresStrength: 0.45,
+    // 采样面：MOSS-Image 的官方组合是 euler + moss + shift 5。
+    sampler: "euler",
+    scheduler: "moss",
+    shift: 5,
+    // 加速器默认关：它们是 lossy 的，得用户自己决定。
+    stepCache: "off",
+    stepCacheThreshold: null,
+    // LoRA 库：[{path, strength, enabled}]，跟面板上的勾选一致。
+    loras: [],
+    // 控制适配器：路径 + kind（depth / canny / …），图每次再说。
+    control: { adapter: null, kind: null, loraStrength: 1, strength: 1 },
   },
 };
 
@@ -89,6 +101,19 @@ export function createStore(dataDir, outputsDir) {
         hiresScale: clampFloat(defaults.hiresScale, 0, 64, 0),
         hiresSteps: clamp(defaults.hiresSteps, 0, 80, 0),
         hiresStrength: clampFloat(defaults.hiresStrength, 0.05, 1, 0.45),
+        sampler: VALUES.sampler.includes(defaults.sampler) ? defaults.sampler : DEFAULT_SETTINGS.defaults.sampler,
+        scheduler: VALUES.scheduler.includes(defaults.scheduler) ? defaults.scheduler : DEFAULT_SETTINGS.defaults.scheduler,
+        shift: clampFloat(defaults.shift, 0.1, 20, DEFAULT_SETTINGS.defaults.shift),
+        stepCache: VALUES.stepCache.includes(defaults.stepCache) ? defaults.stepCache : "off",
+        stepCacheThreshold:
+          defaults.stepCacheThreshold == null ? null : clampFloat(defaults.stepCacheThreshold, 0.0001, 1, 0.03),
+        loras: normalizeLoras(defaults.loras),
+        control: {
+          adapter: typeof defaults.control?.adapter === "string" && defaults.control.adapter ? defaults.control.adapter : null,
+          kind: typeof defaults.control?.kind === "string" && defaults.control.kind ? defaults.control.kind : null,
+          loraStrength: clampFloat(defaults.control?.loraStrength, 0, 10, 1),
+          strength: clampFloat(defaults.control?.strength, 0, 10, 1),
+        },
       },
     };
   }
@@ -149,6 +174,21 @@ export function createStore(dataDir, outputsDir) {
       return runtime;
     },
   };
+}
+
+/** LoRA 库：路径去重、强度收进可用区间、坏条目丢掉。勾选状态是界面自己的事。 */
+function normalizeLoras(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const path = typeof item?.path === "string" ? item.path.trim() : "";
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    out.push({ path, strength: clampFloat(item?.strength ?? 1, -8, 8, 1), enabled: item?.enabled !== false });
+    if (out.length >= 64) break;
+  }
+  return out;
 }
 
 export function clamp(value, min, max, fallback) {

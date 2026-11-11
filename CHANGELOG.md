@@ -1,5 +1,20 @@
 # Changelog
 
+## 未发布
+
+把引擎协议里那层生成参数接到界面与工具上。
+
+- 采样面：采样器（九种）、调度器（七种）、`shift` 进入侧栏与 `moss_generate`，缺省是官方组合 `euler` + `moss`
+- 加速器：`step_cache`（fbcache）与阈值，lossy，侧栏开关，报告里回实际跳过的调用
+- LoRA：导入到 `app-data/loras`、勾选与强度随设置存下来；工具可用 `loras` 与 `loraPlacement`
+- 图生图与局部重绘：侧栏选参考图（浏览器里按目标尺寸裁好）、在图上画蒙版；工具可用 `initImage` / `mask` / `maskEncoding`
+- 编辑适配器：工作区右键「用这张做编辑参考」，把图作为 `references` 送进下一次生成
+- 控制适配器：工具面支持 `controlAdapter` / `controlKind` / `controlImage`（需带 `video_embedder` 的完整文件）
+- 工具：新增 `moss_estimate`（空跑 `check` 给估算与拒绝理由）、`moss_inspect`（问文件是什么）、`moss_engine`（start / stop / release）
+- 显存：侧栏与引擎页加「释放显存」，把显存还给显卡但留住引擎
+- 进度卡：元信息行补采样器与 LoRA 个数
+- 修正：从 PNG 读回记录时把采样器字段拿错了名字（`shaper`）
+
 ## 0.1.0
 
 首个发布版本。

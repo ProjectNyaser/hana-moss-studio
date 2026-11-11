@@ -68,6 +68,30 @@ git submodule update --init --depth 1
 
 协议号变了必须回去复核 `lib/engine.js`：请求名、参数形状与事件类型都在那里，`hello` 返回的 `protocol_version` 对不上会直接拒。
 
+## 生成参数面
+
+侧栏的「采样」与「LoRA」两段对应引擎协议里的可调项，工具面同名：
+
+| 参数 | 缺省 | 说明 |
+|---|---|---|
+| `sampler` | `euler` | 九个采样器（`ab2` / `dpmpp_2m` / `res_multistep` 等），换的是数值积分器 |
+| `scheduler` | `moss` | 七个调度器；`moss` + `euler` 是官方组合，逐位一致 |
+| `shift` | `5` | 噪声偏移，越大越偏整体结构 |
+| `stepCache` | `off` | `fbcache` 跳过快稳定的 DiT 块，lossy，能明显加快 |
+| `stepCacheThreshold` | 模型默认 | 加速阈值 (0,1]，SFT 上默认 0.03 |
+| `cfgTruncation` | `1`（关） | 只在前段跑负向分支，lossy |
+| `loras` | 空 | `[{path, strength}]`，按序叠加，最多 64 个 |
+| `loraPlacement` | `default` | `merge` 会把 LoRA 合进权重（换 LoRA 要重载） |
+| `mask` | — | 局部重绘蒙版，和 `initImage` 同尺寸的灰度图 |
+| `controlAdapter` / `controlKind` | 空 | 控制适配器（需带 `video_embedder` 的完整文件）+ 图类型 |
+| `referenceImages` | 空 | 编辑适配器的参考图，最多 4 张，第一张是源图 |
+
+侧栏的「参考图」除了图生图与蒙版，还承接编辑参考图：工作区里右键一张图选「用这张做编辑参考」，它就会作为 `references` 的第一张送进下一次生成（需要 LoRA 列表里有编辑适配器）。控制适配器目前只在工具面开放。
+
+侧栏里 LoRA 是「库」：导入的 safetensors 落在 `app-data/hana-moss-studio/loras/`，勾选与强度跟着设置存下来。参考图在浏览器里按目标尺寸裁好（crop / fit / stretch）再上传，蒙版就在这张裁好的图上画，所以引擎拿到的 `init_image` 与蒙版天然同尺寸。
+
+工具面另有三件：`moss_estimate`（空跑 `check`，给「能不能跑、要多久」）、`moss_inspect`（问引擎一个文件是什么）、`moss_engine`（start / stop / release，`release` 把显存还回去但留住引擎）。
+
 ## 装引擎与权重
 
 用户不需要命令行。左侧面板「引擎与模型」里两个按钮：
@@ -167,6 +191,8 @@ node scripts/smoke-generate.mjs --engine <moss-server 路径> --model <diffusers
 
 - **只支持 Windows x64**。引擎上游也有 Linux x64 资产，但苔室只在这个平台验证过；macOS 没有任何引擎构建。非 Windows 平台上启动引擎会直接报平台不支持。
 - 单张上限 4.2 百万像素、单边 4096。4K 出不了；`hiresScale` 受同一个上限，只做两段式细化，不能把图做大。
-- 只吃 MOSS-Image 那套目录结构，不吃单文件 checkpoint。LoRA 协议里支持，苔室还没接。
+- 只吃 MOSS-Image 那套目录结构，不吃单文件 checkpoint。单文件 DiT / 文本编码器在协议里有（`dit_file` / `text_encoder_file`），苔室还没接。
+- 控制适配器只认带 `video_embedder` 的完整文件：HuggingFace 上 `thedeoxen/MOSS-Image-*-controlnet` 那批只有 LoRA，`moss_inspect` 会判成 `lora`，当 `control` 用会被引擎拒。
+- 加速器（`step_cache` / `cfg_truncation`）与 LoRA 合并都是 lossy 的：开了之后与同一随机种子的未加速结果不是同一张图。
 - 一次只跑一个任务。单卡小显存下并发只会互相拖慢。
 - 6 GB 卡上 `balanced` 策略在 1024² 及以上会 arena overflow，大图必须切 `min_memory`。

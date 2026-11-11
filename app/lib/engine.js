@@ -50,6 +50,85 @@ export function resolveServerPath(settingPath) {
  */
 export const PLATFORM_SUPPORTED = process.platform === "win32" && process.arch === "x64";
 
+/**
+ * 引擎的 generate 参数：任务记录 → 协议形状。排队与预估算的都是这一份，
+ * 不会出现「预估算的是一套、真跑的又是一套」。
+ */
+/**
+ * 引擎的 generate 参数：任务记录 → 协议形状。排队与预估算的都是这一份，
+ * 不会出现「预估算的是一套、真跑的又是一套」。
+ */
+export function buildGenerateParams(job, { previewPath = null, previewEvery = 1 } = {}) {
+  const params = {
+    prompt: job.prompt,
+    negative_prompt: job.negativePrompt ?? "",
+    width: job.width,
+    height: job.height,
+    steps: job.steps,
+    cfg: job.cfg,
+    seed: job.seed,
+    save_metadata: true,
+    include_prompts: true,
+  };
+  // 入队的那一份才有输出路径；check 不写文件。
+  if (job.output) params.output = job.output;
+  if (previewPath) {
+    // 采样过程中不断重写这张低分辨率预览图，每次重写会发一个 preview 事件。
+    params.preview_output = previewPath;
+    params.preview_every = previewEvery;
+  }
+  if (job.sampler) params.sampler = job.sampler;
+  if (job.scheduler) params.scheduler = job.scheduler;
+  if (Number.isFinite(job.shift)) params.shift = job.shift;
+  if (job.stepCache && job.stepCache !== "off") {
+    params.step_cache = job.stepCache;
+    if (Number.isFinite(job.stepCacheThreshold)) params.step_cache_threshold = job.stepCacheThreshold;
+  }
+  if (Number.isFinite(job.cfgTruncation) && job.cfgTruncation < 1) params.cfg_truncation = job.cfgTruncation;
+  if (job.loraPlacement && job.loraPlacement !== "default") params.lora_placement = job.loraPlacement;
+  if (Array.isArray(job.loras) && job.loras.length) {
+    params.loras = job.loras.map((item) => ({ path: item.path, strength: item.strength }));
+  }
+  if (job.control?.adapter) {
+    params.control = {
+      adapter: job.control.adapter,
+      lora_strength: job.control.loraStrength ?? 1,
+      images: (job.control.images ?? []).map((item) => ({
+        kind: item.kind,
+        path: item.path,
+        strength: item.strength ?? 1,
+        start: item.start ?? 0,
+        end: item.end ?? 1,
+      })),
+    };
+  }
+  // 编辑适配器的参考图：最多 4 张，第一张是源图。
+  if (job.references?.images?.length) {
+    params.references = { images: job.references.images, max_edge: job.references.maxEdge ?? 512 };
+  }
+  if (job.initImage) {
+    // 图生图：引擎按 init_image 读取源图，只跑 denoise_strength 之后的那段采样。
+    params.init_image = job.initImage;
+    params.denoise_strength = job.strength;
+    params.resize = job.resize;
+    // 蒙版是 init_image 的同尺寸灰度图，白色重画、黑色保留。
+    if (job.mask) {
+      params.mask = job.mask;
+      params.mask_encoding = job.maskEncoding ?? "u8";
+    }
+  }
+  if (job.hiresWidth > 0 && job.hiresHeight > 0) {
+    // 服务端接受 hires 对象：{width, height, strength?, steps?}
+    params.hires = {
+      width: job.hiresWidth,
+      height: job.hiresHeight,
+      strength: job.hiresStrength,
+      steps: job.hiresSteps > 0 ? job.hiresSteps : job.steps,
+    };
+  }
+  return params;
+}
+
 export class Engine {
   constructor({ getSettings, outputsDir, cacheDir, previewDir, onEvent }) {
     this.getSettings = getSettings;
@@ -352,6 +431,17 @@ export class Engine {
   }
 
   /** 模型、设备、性能档任一变化都需要重新 load。 */
+  loadParams(job = {}) {
+    const settings = this.getSettings();
+    return {
+      model: settings.modelPath,
+      mode: settings.memoryMode,
+      device: job.device ?? 0,
+      tier: settings.tier,
+      cache_dir: this.cacheDir,
+    };
+  }
+
   async ensureLoaded(job) {
     const settings = this.getSettings();
     const key = JSON.stringify([settings.modelPath, job.device ?? 0, settings.memoryMode, settings.tier]);
@@ -360,14 +450,29 @@ export class Engine {
       throw new Error("模型目录不存在，请先在「设置」里指向 MOSS-Image 的 diffusers 目录");
     }
     this.onEvent({ type: "engine-log", message: "正在加载模型，首次加载需要较长时间" });
-    await this.call("load", {
-      model: settings.modelPath,
-      mode: settings.memoryMode,
-      device: job.device ?? 0,
-      tier: settings.tier,
-      cache_dir: this.cacheDir,
-    }, 900_000);
+    await this.call("load", this.loadParams(job), 900_000);
     this.loadedKey = key;
+  }
+
+  /** `inspect`：不加载模型、不碰显存，只看文件是什么。界面用它校验 LoRA 与模型文件。 */
+  inspect(path) {
+    if (!this.child) throw new Error("引擎未运行");
+    return this.call("inspect", { path }, 180_000);
+  }
+
+  /** `check`：同一份 load + generate 的空跑，给估算与拒绝理由，不加载权重、不写文件。 */
+  check(load, generate) {
+    if (!this.child) throw new Error("引擎未运行");
+    return this.call("check", { load, generate }, 180_000);
+  }
+
+  /** `release`：把显存还回去但留住引擎。下次出图自己再 load。 */
+  async release({ keepHostCopy = true } = {}) {
+    if (!this.child) throw new Error("引擎未运行");
+    if (this.active) throw new Error("有任务在跑，不能释放显存");
+    const result = await this.call("release", { keep_host_copy: Boolean(keepHostCopy) }, 900_000);
+    this.loadedKey = null;
+    return result;
   }
 
   async generate(job) {
@@ -401,36 +506,12 @@ export class Engine {
     }
     // 上一张的预览可能是缩图，新任务第一帧之前不能拿它充数。
     this.previewIsSmall = false;
-    const params = {
-      output: job.output,
-      prompt: job.prompt,
-      negative_prompt: job.negativePrompt ?? "",
-      width: job.width,
-      height: job.height,
-      steps: job.steps,
-      cfg: job.cfg,
-      seed: job.seed,
-      save_metadata: true,
-      include_prompts: true,
-      // 采样过程中不断重写这张低分辨率预览图，每次重写会发一个 preview 事件。
-      preview_output: this.previewPath,
-      preview_every: 1,
-    };
-    if (job.initImage) {
-      // 图生图：引擎按 init_image 读取源图，只跑 denoise_strength 之后的那段采样。
-      params.init_image = job.initImage;
-      params.denoise_strength = job.strength;
-      params.resize = job.resize;
-    }
-    if (job.hiresWidth > 0 && job.hiresHeight > 0) {
-      // 服务端接受 hires 对象：{width, height, strength?, steps?}
-      params.hires = {
-        width: job.hiresWidth,
-        height: job.hiresHeight,
-        strength: job.hiresStrength,
-        steps: job.hiresSteps > 0 ? job.hiresSteps : job.steps,
-      };
-    }
+    const params = buildGenerateParams(job, {
+      previewPath: this.previewPath,
+      // 大图每步都写一张预览等于多花一大截 IO，隔几步给一帧就够看趋势。
+      previewEvery: job.width * job.height > 2_500_000 ? 3 : 1,
+    });
+    params.output = job.output;
     try {
       await this.request(String(job.id), "generate", params, 3_600_000);
     } catch (error) {

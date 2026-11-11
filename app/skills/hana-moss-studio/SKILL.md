@@ -9,14 +9,17 @@ description: 苔室（Hana-Moss-Studio，v2 App）——MOSS-Image 的本机出�
 
 ## 快速上手
 
-先看状态，再出图。两件事都别跳过：
+先看状态，再出图。三件事都别跳过：
 
 ```
 moss_status()
+moss_estimate(prompt="...", width=1024, height=1024, steps=16)
 moss_generate(prompt="...", width=1024, height=1024, steps=16)
 ```
 
 `moss_generate` **提交即返回**，不阻塞到出图。回合纪律：提交完不要原地等，下面的进度卡会自己刷新，出图后宿主把结果投递回会话。需要当场拿到文件时才轮询。
+
+大图或试新参数组合先 `moss_estimate`：它不加载权重、不写文件，几秒内回「能不能跑、要多久、有没有把加速器打开」。
 
 首次使用若引擎或模型路径未配，`moss_status` 会写明「未配置」。这时先照 `references/platform.md` 把这台机器的引擎与权重装好、把两个路径写回设置；用户已经有引擎时只问路径，不要猜。
 
@@ -48,12 +51,44 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 | `steps` | 采样步数。缺省取设置值 |
 | `cfg` | 缺省 3。MOSS-Image 对高 CFG 敏感，3～4 之间是常态 |
 | `seed` | 缺省随机。回执里会给实际用的种子，想复现就拿它 |
+| `sampler` | 采样器，缺省 `euler`（官方组合）。`ab2` / `dpmpp_2m` 一类换的是数值积分器，构图随之变 |
+| `scheduler` | 噪声调度，缺省 `moss`（逐位复现官方流水线）。`karras` / `beta` 更锐，`sgm_uniform` 更稳 |
+| `shift` | 噪声偏移，缺省 5。越大越偏整体结构、细节越少 |
+| `stepCache` | `off`（缺省）/ `fbcache`。跳过块变化很小的 DiT 前向：更快，但这张图与不加速的不是同一张（lossy） |
+| `stepCacheThreshold` | 加速阈值 (0,1]，缺省用模型默认（SFT 0.03）。越大越快、偏得越多 |
+| `cfgTruncation` | CFG 截断 [0,1]，缺省 1（关）。小于 1 只在前段跑负向分支，lossy |
+| `loras` | LoRA 列表，`["路径"]` 或 `[{path, strength}]`，按顺序叠加，最多 64 个。缺省用设置里勾选的那些 |
+| `loraPlacement` | `default` / `merge` / `side_branch`。`merge` 会把权重合进 DiT，换 LoRA 要重载模型 |
 | `hiresScale` | 高清修正倍数。`0` 关闭（缺省），`2` 表示先出基础图再放大 2 倍精修 |
 | `hiresSteps` | 修正步数，缺省跟主采样一致 |
 | `hiresStrength` | 修正重绘强度，缺省 0.45。越小越贴近原图，太大等于重画 |
 | `initImage` | 图生图的参考图**绝对路径**（png/jpg）。给了它就按这张图的构图与配色重画 |
 | `strength` | 图生图重绘强度 0.05~1，缺省 0.6。0.8 左右会重画背景又保住配色布局 |
 | `resize` | 参考图适配：`crop`（居中等比裁，缺省）/ `fit`（留边）/ `stretch`（拉伸） |
+| `mask` | 局部重绘蒙版**绝对路径**，与 `initImage` 同尺寸的灰度图：白（≥128）重画、黑保留 |
+| `maskEncoding` | `u8`（缺省，按灰度值）/ `binary01`（只认 0 与 1） |
+| `controlAdapter` / `controlKind` / `controlImage` | 控制适配器：文件路径、kind（`depth` / `canny` / `pose` 之类，取适配器支持的）、控制图路径 |
+| `controlStrength` / `controlLoraStrength` | 控制图强度（0~10，缺省 1）与适配器自带 LoRA 部分的强度 |
+| `referenceImages` / `referenceMaxEdge` | 编辑适配器的参考图（最多 4 张，第一张是源图）与长边像素（缺省 512） |
+
+路径的限制：宿主只允许 App 读写 HANA_HOME 与工作区，桌面上的图直接当 `initImage` 会被权限层拦下。这种图先 `POST .../inputs/upload?kind=init`（或让用户在侧栏选）落到苔室的运行时目录，再拿返回的路径。LoRA 同理，走 `/loras/import` 落在 `app-data/hana-moss-studio/loras/`。
+
+两类适配器要分清：
+
+- **控制适配器**（`controlAdapter`）必须是一个带 `video_embedder` 的完整适配器文件。HuggingFace 上 `thedeoxen/MOSS-Image-*-controlnet` 那一批只有 LoRA 部分，`moss_inspect` 会把它们判成 `lora`，拿去当 `control` 会被引擎拒（`no video_embedder.weight`）。
+- **编辑适配器**（`referenceImages`）是一个 LoRA：先放进 `loras`，再给参考图。`chinoll/Moss-Image-Edit` 这类文件实测能在 `rank 64` 下加载并跑通编辑。
+
+### `moss_estimate`
+
+与 `moss_generate` 同参数（`prompt` 必填，其余按需）。空跑一次 `check`：不加载权重、不写文件，返回能不能跑、拒绝理由、总耗时与分阶段估算。`plan.estimate.rates` 是 `measured` 时才算的是这台机器的实测系数，`default` 只是引擎内置经验值。
+
+### `moss_inspect`
+
+`{path}` → 文件是什么：`dit` / `text_encoder` / `lora` / `control_adapter` / `unknown`，能不能加载，可用 tier，控制适配器支持哪些 kind，LoRA 的 rank 与适配器数。不加载模型、不占显存。给 LoRA 之前先问一句，比出图失败再排查便宜。
+
+### `moss_engine`
+
+`{action: "start" | "stop" | "release"}`。`release` 把显存还给显卡但留住引擎（`keepHostCopy` 缺省 true，权重留在内存里，下次出图直接传）；6 GB 卡上跑完一批要给别的工作腾卡时用它。
 
 ### `moss_status`
 
@@ -113,6 +148,10 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 | 出图很糊、像没画完 | 步数太少。8 步是底线，抬到 16～24 |
 | 每次都要等三十多秒才动 | 文本编码器在从盘上重读（`te_weight_load`）。模型放 NVMe 会快五倍 |
 | `invalid_params: the size must be at most 4096 / 4.2 megapixels` | 撞硬限。降像素；改走 `hiresScale` 也绕不过去 |
+| `loras[0].path: file not found` | 路径不在宿主可读范围，或文件被移走。用 `/loras/import` 导进 app-data 再指过去 |
+| LoRA 没效果 | 先 `moss_inspect`：`loadable` 为假，或 `base_model` 不是 MOSS；也可以把强度抬到 1.2 试一次 |
+| `An inpainting mask needs an init image` | 只给了 `mask`。局部重绘必须先给 `initImage`，两张同尺寸 |
+| 开了 `fbcache` 后和之前不一样 | 这是加速器的定义：它是 lossy 的。要对比就关掉重跑同一个种子 |
 | 引擎未启动 / 模型未加载 | 在苔室工作区或左侧面板点「启动引擎」；路径未配就先装或去填 |
 | 报找不到 `cublasLt64_*.dll` | 装的是 `system-cuda` 包，库里没有；补库或换 `bundled` 包（`references/platform.md`） |
 | 换了机器或换了显卡就起不来 | 包与平台的组合不对（驱动、算力），重新选包（`references/platform.md`） |

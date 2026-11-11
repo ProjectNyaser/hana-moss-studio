@@ -3,7 +3,7 @@
   "id": "hana-moss-studio",
   "name": "苔室",
   "version": "0.1.0",
-  "description": "MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、提示词面板与画廊；工具出图在对话里挂实时进度卡，左侧状态面板跟着当前任务走。",
+  "description": "MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、采样器与加速器、LoRA、图生图与局部重绘；工具出图在对话里挂实时进度卡，左侧状态面板跟着当前任务走。",
   "entry": "index.js",
   "icon": "assets/icon.png",
   "minAppVersion": "1.5.7-beta",
@@ -14,8 +14,19 @@
     "app/session.start-turn"
   ],
   "network": {
-    "allowedHosts": ["api.github.com", "github.com", "huggingface.co", "hf-mirror.com", "127.0.0.1", "localhost"],
-    "methods": ["GET", "HEAD", "POST"],
+    "allowedHosts": [
+      "api.github.com",
+      "github.com",
+      "huggingface.co",
+      "hf-mirror.com",
+      "127.0.0.1",
+      "localhost"
+    ],
+    "methods": [
+      "GET",
+      "HEAD",
+      "POST"
+    ],
     "allowLocalhost": true,
     "defaultTimeoutMs": 45000,
     "maxResponseBytes": 16777216

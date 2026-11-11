@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import { defineApp } from "./sdk/app-contract/server-client.js";
-import { Engine } from "./lib/engine.js";
+import { Engine, buildGenerateParams } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
+import { capabilityMap, menuValues, readGeneration, VALUES } from "./lib/params.js";
 import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
 import { createInstaller, probeGpu, probeGpuDetailed } from "./lib/installer.js";
 import { shrinkToWebp } from "./lib/image.js";
@@ -102,7 +103,11 @@ export default defineApp(async (sdk) => {
   const thumbsDir = join(runtimeDir, "thumbs");
   /** 下载器的日志与控制文件。 */
   const downloadsDir = join(runtimeDir, "downloads");
-  for (const dir of [outputsDir, engineCacheDir, previewDir, thumbsDir, downloadsDir]) {
+  /** 参考图与蒙版：界面按目标尺寸画好再传上来，任务只引用这里的绝对路径。 */
+  const inputsDir = join(runtimeDir, "inputs");
+  /** 导入的 LoRA：放 app-data 里，路径稳定，换工作区也找得到。 */
+  const lorasDir = join(dataDir, "loras");
+  for (const dir of [outputsDir, engineCacheDir, previewDir, thumbsDir, downloadsDir, inputsDir, lorasDir]) {
     mkdirSync(dir, { recursive: true });
   }
   migrateRuntimeDirs(dataDir, { engineCacheDir, previewDir, thumbsDir, runtimeDir });
@@ -166,6 +171,15 @@ export default defineApp(async (sdk) => {
       steps: job.steps,
       cfg: job.cfg,
       seed: job.seed,
+      sampler: job.sampler ?? null,
+      scheduler: job.scheduler ?? null,
+      shift: job.shift ?? null,
+      stepCache: job.stepCache ?? "off",
+      loras: Array.isArray(job.loras) ? job.loras : [],
+      control: job.control ?? null,
+      references: job.references ?? null,
+      initImage: job.initImage ?? null,
+      mask: job.mask ?? null,
       status: job.status,
       // 高清修正开着时引擎总步数 = 主步数 + 修正步数，界面靠这个区分两段。
       hiresScale: job.hiresScale ?? 0,
@@ -430,15 +444,17 @@ export default defineApp(async (sdk) => {
     };
   }
 
-  function submit(input) {
+  /**
+   * 一次生成的归一化：排队、工具、预估算的都是这一层。
+   * 返回的记录不含 id / output，那两样只属于真正入队的那些。
+   */
+  function buildRecord(input, settings) {
     const prompt = String(input?.prompt ?? "").trim();
     if (!prompt) throw new Error("提示词不能为空");
-    const settings = store.getSettings();
     const box = resolveSize(input, settings.defaults);
-    const id = `mj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const fileName = `${id}.png`;
+    // 参数面先收敛：认不出的采样器、缺文件的 LoRA 在这里就拒，别让它排进队列才失败。
+    const gen = readGeneration(input, settings.defaults);
     const record = {
-      id,
       prompt,
       negativePrompt: String(input?.negativePrompt ?? "").trim(),
       width: box.width,
@@ -448,6 +464,16 @@ export default defineApp(async (sdk) => {
       steps: clamp(input?.steps, MIN_STEPS, 80, Math.max(MIN_STEPS, settings.defaults.steps)),
       cfg: clampFloat(input?.cfg, 0, 20, settings.defaults.cfg),
       seed: Number.isInteger(input?.seed) ? input.seed : Math.floor(Math.random() * 4294967295),
+      sampler: gen.sampler,
+      scheduler: gen.scheduler,
+      shift: gen.shift,
+      stepCache: gen.stepCache,
+      stepCacheThreshold: gen.stepCacheThreshold,
+      cfgTruncation: gen.cfgTruncation,
+      loraPlacement: gen.loraPlacement,
+      loras: gen.loras,
+      control: gen.control,
+      references: gen.references,
       // 倍率统一在这里收进当前尺寸做得到的范围：无论参数来自面板、工具还是卡片，
       // 否则界面显示关闭、引擎却按旧倍率跑了第二阶段。倍率是浮点，不能用取整的 clamp。
       hiresScale: Math.round(
@@ -458,12 +484,11 @@ export default defineApp(async (sdk) => {
       ) / 100,
       hiresSteps: clamp(input?.hiresSteps ?? settings.defaults.hiresSteps, 0, 80, 0),
       hiresStrength: clampFloat(input?.hiresStrength ?? settings.defaults.hiresStrength, 0.05, 1, 0.45),
-      initImage: typeof input?.initImage === "string" && input.initImage.trim() ? input.initImage.trim() : null,
+      initImage: gen.initImage,
+      mask: gen.mask,
+      maskEncoding: gen.maskEncoding,
       strength: clampFloat(input?.strength, 0.05, 1, 0.6),
-      resize: ["crop", "fit", "stretch"].includes(input?.resize) ? input.resize : "crop",
-      status: "queued",
-      createdAt: new Date().toISOString(),
-      output: fileName,
+      resize: VALUES.resize.includes(input?.resize) ? input.resize : "crop",
     };
     // 引擎的高清修正要的是具体目标尺寸，不是倍数，这里先算好。
     // 1.0 等于关闭：目标与基础图同尺寸，第二阶段没有意义。
@@ -479,6 +504,15 @@ export default defineApp(async (sdk) => {
         record.hiresHeight = fitted.height;
       }
     }
+    return record;
+  }
+
+  function submit(input) {
+    const settings = store.getSettings();
+    const record = buildRecord(input, settings);
+    const id = `mj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const fileName = `${id}.png`;
+    Object.assign(record, { id, status: "queued", createdAt: new Date().toISOString(), output: fileName });
     store.upsertJob(record);
     const entry = remember(liveEntry(record));
     queue.push({ ...record, output: join(outputsDir, fileName) });
@@ -629,6 +663,14 @@ export default defineApp(async (sdk) => {
       cfg: job.cfg,
       // 高清修正开着时引擎总步数会多出第二阶段，界面要能解释这个差额。
       hiresScale: job.hiresScale ?? 0,
+      sampler: job.sampler ?? null,
+      scheduler: job.scheduler ?? null,
+      shift: job.shift ?? null,
+      stepCache: job.stepCache ?? "off",
+      loras: Array.isArray(job.loras) ? job.loras : [],
+      control: job.control ? { kind: job.control.kind ?? null, images: job.control.images?.length ?? 0 } : null,
+      hasInitImage: Boolean(job.initImage),
+      hasMask: Boolean(job.mask),
       seed: job.report?.seedUsed ?? job.seed,
       status: job.status,
       output: job.output ?? null,
@@ -666,6 +708,11 @@ async function ensureThumb(file, size = 320) {
   } catch {
     /* 转不出来就等路由那里退回原图 */
   }
+}
+
+function engineFacets() {
+  const hello = engine.snapshot().hello;
+  return { menus: menuValues(hello), capabilities: capabilityMap(hello) };
 }
 
 function state() {
@@ -725,6 +772,7 @@ function state() {
       modelBytes: MODEL_BYTES,
     },
     plan: modelPlan(),
+    facets: engineFacets(),
     installs: installer.snapshot(),
     engines: installer.listEngines(),
     models: installer.listModels(),
@@ -805,6 +853,16 @@ function state() {
       steps: source.steps,
       cfg: source.cfg,
       hiresScale: source.hiresScale ?? 0,
+      sampler: source.sampler ?? null,
+      scheduler: source.scheduler ?? null,
+      shift: source.shift ?? null,
+      stepCache: source.stepCache ?? "off",
+      loras: Array.isArray(source.loras) ? source.loras : [],
+      control: source.control ?? null,
+      references: source.references ?? null,
+      initImage: source.initImage ?? null,
+      mask: source.mask ?? null,
+      strength: source.strength ?? null,
       seed: entry?.report?.seedUsed ?? record?.report?.seedUsed ?? source.seed,
       status,
       statusText: STATUS_TEXT[status] ?? status,
@@ -1160,6 +1218,97 @@ function state() {
       return c.json(state());
     });
 
+    /** 释放显存但留住引擎：6 GB 卡上跑完一批想干别的事时用。 */
+    app.post(`/${APP_ID}/engine/release`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      try {
+        const result = await engine.release({ keepHostCopy: body?.keepHostCopy !== false });
+        schedulePush(0);
+        return c.json({ ...state(), release: result });
+      } catch (error) {
+        return c.json({ ...state(), error: message(error) }, 400);
+      }
+    });
+
+    /** 文件是什么：LoRA / 控制适配器 / DiT / 文本编码器。不加载模型也不碰显存。 */
+    app.post(`/${APP_ID}/inspect`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const path = typeof body?.path === "string" ? body.path.trim() : "";
+      if (!path) return c.json({ error: "缺少 path" }, 400);
+      if (!existsSync(path)) return c.json({ error: `文件不存在：${path}` }, 404);
+      try {
+        if (!engine.snapshot().running) await engine.start();
+        return c.json(await engine.inspect(path));
+      } catch (error) {
+        return c.json({ error: message(error) }, 502);
+      }
+    });
+
+    /**
+     * 空跑一次：不加载权重、不写文件，只把同一份参数交给引擎检查并给估算。
+     * 大图动辄几分钟，先问一句「这个组合跑得起来吗、要多久」比事后看报错便宜。
+     */
+    app.post(`/${APP_ID}/estimate`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const settings = store.getSettings();
+      let record;
+      try {
+        record = buildRecord(body ?? {}, settings);
+      } catch (error) {
+        return c.json({ ok: false, error: message(error) }, 400);
+      }
+      try {
+        if (!engine.snapshot().running) await engine.start();
+        const result = await engine.check(engine.loadParams(), buildGenerateParams(record));
+        return c.json({ ok: Boolean(result?.ok), check: result, size: { width: record.width, height: record.height } });
+      } catch (error) {
+        return c.json({ ok: false, error: message(error) }, 502);
+      }
+    });
+
+    /** 参考图与蒙版：界面在浏览器里按目标尺寸画好，把 PNG 传上来落盘。 */
+    app.post(`/${APP_ID}/inputs/upload`, async (c) => {
+      const raw = c.req.query("kind");
+      const kind = ["init", "mask", "ref"].includes(raw) ? raw : "init";
+      try {
+        const data = Buffer.from(await c.req.arrayBuffer());
+        if (!data.length) return c.json({ error: "空文件" }, 400);
+        if (data.length > 64 * 1024 * 1024) return c.json({ error: "文件太大（上限 64 MB）" }, 413);
+        // 只认 PNG：界面自己画的就是 PNG，别的格式不猜。
+        if (data.readUInt32BE(0) !== 0x89504e47) return c.json({ error: "只接受 PNG" }, 415);
+        const name = `${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.png`;
+        writeFileSync(join(inputsDir, name), data);
+        return c.json({ ok: true, kind, name, path: join(inputsDir, name), url: `/${APP_ID}/inputs/${name}` });
+      } catch (error) {
+        return c.json({ error: message(error) }, 400);
+      }
+    });
+
+    app.get(`/${APP_ID}/inputs/:name`, (c) => {
+      const name = String(c.req.param("name") ?? "");
+      if (!/^[A-Za-z0-9._-]+\.png$/.test(name)) return c.text("not found", 404);
+      const file = join(inputsDir, name);
+      if (!existsSync(file)) return c.text("not found", 404);
+      return c.body(readFileSync(file), 200, { "content-type": "image/png", "cache-control": "private, max-age=60" });
+    });
+
+    /** LoRA 导入：二进制直传，落在 app-data 里，路径稳定，删了 App 也找得到。 */
+    app.post(`/${APP_ID}/loras/import`, async (c) => {
+      const raw = String(c.req.query("name") ?? "lora.safetensors");
+      const name = basename(raw).replace(/[^A-Za-z0-9._-]/g, "_") || "lora.safetensors";
+      if (!/\.(safetensors|ckpt|pt)$/i.test(name)) return c.json({ error: "只接受 safetensors / ckpt / pt" }, 415);
+      try {
+        const data = Buffer.from(await c.req.arrayBuffer());
+        if (!data.length) return c.json({ error: "空文件" }, 400);
+        if (data.length > 4 * 1024 * 1024 * 1024) return c.json({ error: "文件太大（上限 4 GB）" }, 413);
+        const target = join(lorasDir, name);
+        writeFileSync(target, data);
+        return c.json({ ok: true, name, path: target, bytes: data.length });
+      } catch (error) {
+        return c.json({ error: message(error) }, 400);
+      }
+    });
+
     app.post(`/${APP_ID}/generate`, async (c) => {
       const body = await c.req.json().catch(() => ({}));
       try {
@@ -1268,8 +1417,66 @@ function state() {
         width: { type: "integer", description: "宽度，缺省取苔室设置里的默认值。单张最大 4.2 百万像素" },
         height: { type: "integer", description: "高度，与宽度共同受 4.2 百万像素限制" },
         steps: { type: "integer", description: "采样步数，缺省取设置值。步数越少越容易发寡，高分辨率建议多给几步" },
-        cfg: { type: "number", description: "CFG，缺省 3" },
-        seed: { type: "integer", description: "随机种子，缺省随机" },
+        cfg: { type: "number", description: "CFG，缺省 3。MOSS-Image 对高 CFG 敏感，3～4 是常态" },
+        seed: { type: "integer", description: "随机种子，缺省随机。回执里会给实际用的种子" },
+        sampler: {
+          type: "string",
+          description:
+            "采样器，缺省 euler（官方组合）。可选 euler / ab2 / euler_ancestral / heun / dpmpp_2m / dpmpp_2m_sde / er_sde / res_multistep / dataspace",
+        },
+        scheduler: {
+          type: "string",
+          description: "噪声明度调度，缺省 moss（官方，逐位复现官方流水线）。可选 simple / normal / karras / exponential / beta / sgm_uniform",
+        },
+        shift: { type: "number", description: "噪声偏移（协议 shift），缺省 5。越大越偏重整体结构，细节少" },
+        stepCache: {
+          type: "string",
+          description: "加速器：off（缺省）/ fbcache。fbcache 跳过快稳定下来的 DiT 块，更快但图会变（lossy）",
+        },
+        stepCacheThreshold: {
+          type: "number",
+          description: "加速器的相对变化阈值（0, 1]，缺省用模型的默认值（SFT 0.03）。越大越快、与不开缓存差得越多",
+        },
+        cfgTruncation: { type: "number", description: "CFG 截断 [0,1]，缺省 1（关闭）。小于 1 时只在前段跑负向分支，lossy" },
+        loras: {
+          type: "array",
+          description:
+            "LoRA 列表，按顺序叠加：\"路径\" 或 {path, strength}。路径必须是本机已有的 safetensors/LoRA 文件；缺省用设置里勾选的那些",
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "LoRA 文件绝对路径" },
+              strength: { type: "number", description: "强度，缺省 1" },
+            },
+            required: ["path"],
+          },
+        },
+        loraPlacement: {
+          type: "string",
+          description: "LoRA 作用位置：default（缺省）/ merge（合并进权重，换 LoRA 要重载模型）/ side_branch",
+        },
+        mask: {
+          type: "string",
+          description:
+            "局部重绘蒙版的绝对路径（png/jpg，与 initImage 同尺寸的灰度图：白色重画、黑色保留）。必须同时给 initImage",
+        },
+        maskEncoding: { type: "string", description: "蒙版编码：u8（缺省，按灰度值）/ binary01（只认 0 与 1）" },
+        controlAdapter: {
+          type: "string",
+          description:
+            "控制适配器文件的绝对路径（depth / canny / pose / lineart 那类）。先用 moss_inspect 看它支持哪些 kind 与能不能加载",
+        },
+        controlKind: { type: "string", description: "控制图类型，必须是适配器支持的那个 kind（moss_inspect 的 control_kinds）" },
+        controlImage: { type: "string", description: "控制图绝对路径（png/jpg），引擎会按 width×height 缩放后编码" },
+        controlStrength: { type: "number", description: "控制强度 0~10，缺省 1。太大会把提示词的构图盖掉" },
+        controlLoraStrength: { type: "number", description: "适配器自带 LoRA 部分的强度，缺省 1" },
+        referenceImages: {
+          type: "array",
+          description:
+            "编辑适配器的参考图（绝对路径，最多 4 张，第一张是源图）。需要先把编辑适配器放进 loras；引擎按参考图重画",
+          items: { type: "string" },
+        },
+        referenceMaxEdge: { type: "integer", description: "参考图长边像素（16~2048），缺省 512" },
         hiresScale: {
           type: "number",
           description: "高清修正倍数：0 关闭（缺省），2 表示先按基础尺寸生成、再放大 2 倍细化。不改变尺寸上限，目标尺寸同样受 4.2 百万像素 / 单边 4096 限制",
@@ -1300,7 +1507,14 @@ function state() {
       const queuedAt = queue.findIndex((job) => job.id === entry.id);
       const position = entry.status === "queued" ? (queuedAt >= 0 ? queuedAt + 1 : queue.length + 1) : null;
       const lines = [
-        `已提交出图任务：${entry.width}×${entry.height}，${entry.steps} 步，CFG ${entry.cfg}，种子 ${entry.seed}。`,
+        `已提交出图任务：${entry.width}×${entry.height}，${entry.steps} 步，CFG ${entry.cfg}，${entry.sampler} + ${entry.scheduler}，种子 ${entry.seed}。`,
+        entry.loras?.length ? `- LoRA：${entry.loras.map((item) => `${basename(item.path)}@${item.strength}`).join("，")}` : "",
+        entry.stepCache !== "off" ? `- 加速：${entry.stepCache}（lossy，与不开缓存不是同一张图）` : "",
+        entry.initImage ? `- 参考图：${basename(entry.initImage)}${entry.mask ? " + 蒙版" : ""}，强度 ${entry.strength}` : "",
+        entry.control ? `- 控制：${basename(entry.control.adapter)}（${entry.control.kind ?? "无 kind"}，${entry.control.images.length} 张图）` : "",
+        entry.references?.images?.length
+          ? `- 编辑参考图：${entry.references.images.length} 张（长边 ${entry.references.maxEdge}）`
+          : "",
         `- 提示词：${entry.prompt.slice(0, 120)}${entry.prompt.length > 120 ? "…" : ""}`,
         `- 进度：下方卡片实时刷新（${position ? `队列第 ${position} 位` : "已开始"}）。`,
         entry.taskId
@@ -1321,6 +1535,10 @@ function state() {
             steps: entry.steps,
             cfg: entry.cfg,
             seed: entry.seed,
+            sampler: entry.sampler,
+            scheduler: entry.scheduler,
+            loras: entry.loras?.length ?? 0,
+            stepCache: entry.stepCache,
             submittedAt: entry.createdAt,
             taskNote: entry.taskNote,
           },
@@ -1346,6 +1564,9 @@ function state() {
         current.engine.device
           ? `设备：${current.engine.device.name}${current.engine.device.totalMemoryBytes ? ` · ${(current.engine.device.totalMemoryBytes / 1024 ** 3).toFixed(1)} GB` : ""}`
           : "设备：未探测",
+        // 出图缺省值：moss_generate 不传参数时就按这套跑，调参前先看这里。
+        `缺省：${current.settings.defaults.width}×${current.settings.defaults.height}，${current.settings.defaults.steps} 步，CFG ${current.settings.defaults.cfg}，${current.settings.defaults.sampler} + ${current.settings.defaults.scheduler}，shift ${current.settings.defaults.shift}`,
+        `精度档：${current.settings.tier} · 显存策略：${current.settings.memoryMode} · 加速：${current.settings.defaults.stepCache ?? "off"}${current.settings.defaults.loras?.length ? ` · LoRA ${current.settings.defaults.loras.filter((item) => item.enabled !== false).length}/${current.settings.defaults.loras.length}` : ""}`,
         active
           ? `当前任务：${active.id} · ${taskProgress(active).phase}${active.total ? ` ${active.step}/${active.total}` : ""}（${active.percent}%）`
           : "当前任务：空闲",
@@ -1354,8 +1575,136 @@ function state() {
           .slice(0, 5)
           .map((job) => `${job.id}:${job.status}`)
           .join("，") || "无"}`,
-      ];
+        current.engine.lastError ? `最近错误：${current.engine.lastError}` : "",
+      ].filter(Boolean);
       return { content: [{ type: "text", text: lines.join("\n") }] };
+    },
+  });
+
+  await sdk.tools.register({
+    name: "moss_inspect",
+    description:
+      "问引擎一个文件是什么：LoRA / 控制适配器 / DiT / 文本编码器，能不能加载，需要哪个 tier，控制适配器支持哪些 kind。不加载模型、不占显存。给 LoRA 或单文件模型前先用它确认。",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string", description: "文件绝对路径（.safetensors / .ckpt / .pt）" } },
+      required: ["path"],
+    },
+    execute: async (args) => {
+      const path = String(args?.path ?? "").trim();
+      if (!path) return { content: [{ type: "text", text: "缺少 path" }], isError: true };
+      if (!existsSync(path)) return { content: [{ type: "text", text: `文件不存在：${path}` }], isError: true };
+      try {
+        if (!engine.snapshot().running) await engine.start();
+        const info = await engine.inspect(path);
+        const lines = [
+          `${basename(path)}：${info.kind}，${info.loadable ? "可加载" : "不可加载"}，${(info.file_bytes / 1024 ** 3).toFixed(2)} GB，${info.tensors} 个张量`,
+          info.precision ? `- 精度：${info.precision}${info.quantization ? `（${info.quantization}）` : ""}` : "",
+          info.tiers?.length ? `- 可用 tier：${info.tiers.join(" / ")}` : "",
+          info.control_kinds?.length ? `- 控制 kind：${info.control_kinds.join(" / ")}` : "",
+          info.adapter_types?.length ? `- 适配器类型：${info.adapter_types.join(" / ")}，rank ${info.lora_rank ?? "?"}` : "",
+          info.base_model ? `- 基础模型：${info.base_model}` : "",
+          info.note ? `- 说明：${info.note}` : "",
+        ].filter(Boolean);
+        return { content: [{ type: "text", text: lines.join("\n") }], details: { moss: info } };
+      } catch (error) {
+        return { content: [{ type: "text", text: `检查失败：${message(error)}` }], isError: true };
+      }
+    },
+  });
+
+  await sdk.tools.register({
+    name: "moss_estimate",
+    description:
+      "开跑前空跑一次：把和 moss_generate 相同的参数交给引擎检查，返回「能不能跑、要多久」。不加载权重、不写文件，几秒内回来。大图或试新参数组合先问它。",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "正向提示词，必填" },
+        negativePrompt: { type: "string", description: "反向提示词" },
+        width: { type: "integer", description: "宽度" },
+        height: { type: "integer", description: "高度" },
+        steps: { type: "integer", description: "采样步数" },
+        cfg: { type: "number", description: "CFG" },
+        sampler: { type: "string", description: "采样器，同 moss_generate" },
+        scheduler: { type: "string", description: "调度器，同 moss_generate" },
+        shift: { type: "number", description: "噪声偏移" },
+        stepCache: { type: "string", description: "off / fbcache" },
+        loras: { type: "array", description: "LoRA 列表，同 moss_generate", items: { type: "object" } },
+        hiresScale: { type: "number", description: "高清修正倍数" },
+        initImage: { type: "string", description: "参考图路径" },
+        mask: { type: "string", description: "蒙版路径" },
+        strength: { type: "number", description: "重绘强度" },
+        controlAdapter: { type: "string", description: "控制适配器路径" },
+        controlKind: { type: "string", description: "控制图 kind" },
+        controlImage: { type: "string", description: "控制图路径" },
+        referenceImages: { type: "array", description: "编辑适配器的参考图路径", items: { type: "string" } },
+      },
+      required: ["prompt"],
+    },
+    execute: async (args) => {
+      let record;
+      try {
+        record = buildRecord(args ?? {}, store.getSettings());
+      } catch (error) {
+        return { content: [{ type: "text", text: `参数不合法：${message(error)}` }], isError: true };
+      }
+      try {
+        if (!engine.snapshot().running) await engine.start();
+        const check = await engine.check(engine.loadParams(), buildGenerateParams(record));
+        if (!check?.ok) {
+          const error = check?.error ?? {};
+          return {
+            content: [{ type: "text", text: `跑不了：${error.code ?? "refused"}：${error.message ?? "引擎拒绝了这个组合"}` }],
+            details: { moss: check },
+            isError: true,
+          };
+        }
+        const estimate = check.plan?.estimate ?? {};
+        const lines = [
+          `可以跑：${record.width}×${record.height}，${record.steps} 步，预计约 ${Math.round(estimate.total_s ?? 0)} 秒（去噪 ${Math.round(estimate.denoise_s ?? 0)} 秒，每步约 ${Number(estimate.step_s ?? 0).toFixed(2)} 秒）。`,
+          `- 文本编码 ${Math.round(estimate.text_encoder_s ?? 0)} 秒，加载模型 ${Math.round(estimate.dit_load_s ?? 0)} 秒，解码 ${Math.round(estimate.decode_s ?? 0)} 秒`,
+          `- 估算来源：${estimate.rates ?? "default"}（default 是引擎内置系数，measured 才是这台机器的实测）`,
+          check.explanation ? `- ${check.explanation}` : "",
+          ...(check.warnings ?? []).map((line) => `- 注意：${line}`),
+        ].filter(Boolean);
+        return { content: [{ type: "text", text: lines.join("\n") }], details: { moss: check } };
+      } catch (error) {
+        return { content: [{ type: "text", text: `估算失败：${message(error)}` }], isError: true };
+      }
+    },
+  });
+
+  await sdk.tools.register({
+    name: "moss_engine",
+    description:
+      "管引擎进程：start 启动、stop 停掉、release 把显存还回去但留住引擎（下次出图自动重新加载）。显存不足、要让显卡给别的工作时用 release。",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "start / stop / release" },
+        keepHostCopy: { type: "boolean", description: "release 时是否把 DiT 权重留在内存里（缺省 true，下次加载更快）" },
+      },
+      required: ["action"],
+    },
+    execute: async (args) => {
+      const action = String(args?.action ?? "");
+      try {
+        if (action === "start") await engine.start();
+        else if (action === "stop") engine.stop();
+        else if (action === "release") await engine.release({ keepHostCopy: args?.keepHostCopy !== false });
+        else return { content: [{ type: "text", text: `未知动作 ${action}，可选 start / stop / release` }], isError: true };
+      } catch (error) {
+        return { content: [{ type: "text", text: `${action} 失败：${message(error)}` }], isError: true };
+      }
+      schedulePush(0);
+      const snapshot = engine.snapshot();
+      const text = [
+        `引擎：${snapshot.running ? "运行中" : "已停止"}${action === "release" ? "，显存已释放（模型下次出图重新加载）" : ""}`,
+        `模型：${snapshot.loaded ? "已加载" : "未加载"}`,
+        snapshot.lastError ? `最近错误：${snapshot.lastError}` : "",
+      ].filter(Boolean);
+      return { content: [{ type: "text", text: text.join("\n") }], details: { moss: snapshot } };
     },
   });
 

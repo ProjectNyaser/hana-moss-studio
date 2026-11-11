@@ -1,7 +1,7 @@
 // 苔室侧栏：生成设置与运行状态都在这条侧栏里，工作区那边只留画布与画廊。
 // 数据：GET /hana-moss-studio/state（轮询 1.5s）；写操作走同前缀的 POST 路由。
 import { hana } from "./sdk.js";
-import { startLive } from "./live.js";
+import { startLive, inputUrl, outputUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
 const API = "/hana-moss-studio";
@@ -86,6 +86,51 @@ const nodes = {
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
   errors: el("pn-errors"),
+  sampler: el("pn-sampler"),
+  scheduler: el("pn-scheduler"),
+  shift: el("pn-shift"),
+  stepCache: el("pn-step-cache"),
+  stepThreshold: el("pn-step-threshold"),
+  stepThresholdField: el("pn-threshold-field"),
+  accelNote: el("pn-accel-note"),
+  samplerNote: el("pn-sampler-note"),
+  loraList: el("pn-lora-list"),
+  loraNote: el("pn-lora-note"),
+  loraImport: el("pn-lora-import"),
+  loraFile: el("pn-lora-file"),
+  loraPathShow: el("pn-lora-path-show"),
+  loraPathRow: el("pn-lora-path-row"),
+  loraPath: el("pn-lora-path"),
+  loraPathAdd: el("pn-lora-path-add"),
+  ref: el("pn-ref"),
+  refImg: el("pn-ref-img"),
+  refNote: el("pn-ref-note"),
+  refClear: el("pn-ref-clear"),
+  refPick: el("pn-ref-pick"),
+  refFile: el("pn-ref-file"),
+  refResize: el("pn-ref-resize"),
+  strength: el("pn-strength"),
+  maskEdit: el("pn-mask-edit"),
+  mask: el("pn-mask"),
+  maskInfo: el("pn-mask-info"),
+  maskStage: el("pn-mask-stage"),
+  maskCanvas: el("pn-mask-canvas"),
+  maskSize: el("pn-mask-size"),
+  maskPaint: el("pn-mask-paint"),
+  maskErase: el("pn-mask-erase"),
+  maskPct: el("pn-mask-pct"),
+  maskClear: el("pn-mask-clear"),
+  maskCancel: el("pn-mask-cancel"),
+  maskSave: el("pn-mask-save"),
+  maskZoomIn: el("pn-mask-zoom-in"),
+  maskZoomOut: el("pn-mask-zoom-out"),
+  maskZoomLabel: el("pn-mask-zoom-label"),
+  editRef: el("pn-editref"),
+  editRefName: el("pn-editref-name"),
+  editRefClear: el("pn-editref-clear"),
+  refControls: el("pn-ref-controls"),
+  release: el("pn-release"),
+  start: el("pn-start"),
 };
 
 let latest = null;
@@ -122,9 +167,9 @@ function syncTheme() {
 }
 
 // ── 网络 ───────────────────────────────────────────────────────────────
-async function api(path, init) {
+async function api(path, init, timeoutMs = 10000) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await hana.api.fetch(`${API}${path}`, { ...init, signal: controller.signal });
@@ -142,12 +187,12 @@ async function api(path, init) {
   return data;
 }
 
-function post(path, body) {
+function post(path, body, timeoutMs) {
   return api(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
-  });
+  }, timeoutMs);
 }
 
 function say(text, kind) {
@@ -168,6 +213,9 @@ function setSettings(settings) {
   nodes.cfg.value = settings.defaults.cfg;
   hiresScale = Math.max(1, Number(settings.defaults.hiresScale) || 1);
   nodes.hiresSteps.value = settings.defaults.hiresSteps ?? 0;
+  fillMenus(settings.defaults);
+  loras = Array.isArray(settings.defaults.loras) ? settings.defaults.loras.map((item) => ({ ...item })) : [];
+  renderLoras();
   syncNotchFromSize();
   renderSize();
 }
@@ -490,6 +538,432 @@ function bindSizeSliders() {
 }
 
 /** serverPath → 引擎目录（去掉 bin/moss-server[.exe]）。 */
+const SAMPLER_LABEL = {
+  euler: "Euler（官方）",
+  ab2: "AB2",
+  euler_ancestral: "Euler a",
+  heun: "Heun",
+  dpmpp_2m: "DPM++ 2M",
+  dpmpp_2m_sde: "DPM++ 2M SDE",
+  er_sde: "ER SDE",
+  res_multistep: "RES Multistep",
+  dataspace: "Dataspace",
+};
+const SCHEDULER_LABEL = {
+  moss: "MOSS（官方）",
+  simple: "Simple",
+  normal: "Normal",
+  karras: "Karras",
+  exponential: "Exponential",
+  beta: "Beta",
+  sgm_uniform: "SGM Uniform",
+};
+
+/** 引擎自报的枚举（hello.values）。没连引擎时用本地常量兜底。 */
+let facets = null;
+/** LoRA 库：[{path, strength, enabled}]，与设置里的 defaults.loras 同形。 */
+let loras = [];
+/** 参考图的原始位图；尺寸变了、适配方式变了都靠它重新准备。 */
+let refImage = null;
+/** 已按目标尺寸准备好并落盘的参考图：{path, url, width, height}。 */
+let refPrepared = null;
+/** 已保存的蒙版路径（必须与 refPrepared 同尺寸）。 */
+let maskPath = null;
+/** 编辑适配器的源图与已准备好的参考图。 */
+let editSource = null;
+let editRef = null;
+
+function setOptions(select, values, labelOf, current) {
+  select.replaceChildren(
+    ...values.map((value) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = labelOf(value);
+      return option;
+    }),
+  );
+  if (current && values.includes(current)) select.value = current;
+}
+
+/** 菜单只建一次：之后用户选什么就以控件为准，不再被设置覆盖。 */
+function fillMenus(defaults) {
+  const samplers = facets?.menus?.sampler ?? Object.keys(SAMPLER_LABEL);
+  const schedulers = facets?.menus?.scheduler ?? Object.keys(SCHEDULER_LABEL);
+  setOptions(nodes.sampler, samplers, (value) => SAMPLER_LABEL[value] ?? value, defaults.sampler);
+  setOptions(nodes.scheduler, schedulers, (value) => SCHEDULER_LABEL[value] ?? value, defaults.scheduler);
+  nodes.shift.value = defaults.shift ?? 5;
+  nodes.stepCache.value = defaults.stepCache ?? "off";
+  nodes.stepThreshold.value = defaults.stepCacheThreshold ?? "";
+  syncAccel();
+}
+
+/** 加速器开着才需要阈值；关着就把那行收起来，不是禁用。 */
+function syncAccel() {
+  const on = nodes.stepCache.value !== "off";
+  nodes.stepThresholdField.hidden = !on;
+  nodes.accelNote.hidden = !on;
+  nodes.samplerNote.textContent = on ? "lossy" : "";
+}
+
+// ── LoRA ────────────────────────────────────────────────────────────────
+function loraName(path) {
+  return String(path).split(/[\\/]/).pop() || String(path);
+}
+
+function renderLoras() {
+  nodes.loraList.replaceChildren(
+    ...loras.map((item) => {
+      const li = document.createElement("li");
+      li.className = "pn-lora";
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.checked = item.enabled !== false;
+      check.title = "勾上就跟着这次生成一起跑";
+      check.addEventListener("change", () => {
+        item.enabled = check.checked;
+        summarizeLoras();
+        scheduleSave();
+      });
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = loraName(item.path);
+      name.title = item.path;
+      const strength = document.createElement("input");
+      strength.type = "number";
+      strength.min = "-8";
+      strength.max = "8";
+      strength.step = "0.05";
+      strength.value = item.strength ?? 1;
+      strength.title = "强度";
+      strength.addEventListener("input", () => {
+        item.strength = Number(strength.value);
+        scheduleSave();
+      });
+      const drop = document.createElement("button");
+      drop.type = "button";
+      drop.className = "drop";
+      drop.textContent = "×";
+      drop.title = "从列表里移除（不删文件）";
+      drop.addEventListener("click", () => {
+        loras = loras.filter((entry) => entry !== item);
+        renderLoras();
+        scheduleSave();
+      });
+      li.append(check, name, strength, drop);
+      return li;
+    }),
+  );
+  if (!loras.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "还没有 LoRA。导入一个 safetensors 就会出现在这里。";
+    nodes.loraList.append(li);
+  }
+  summarizeLoras();
+}
+
+function summarizeLoras() {
+  const active = loras.filter((item) => item.enabled !== false);
+  nodes.loraNote.textContent = active.length ? `${active.length} 个生效` : "未使用";
+}
+
+function addLora(path, strength = 1) {
+  const clean = String(path ?? "").trim();
+  if (!clean) return;
+  const found = loras.find((item) => item.path === clean);
+  if (found) {
+    found.enabled = true;
+    if (Number.isFinite(strength)) found.strength = strength;
+  } else {
+    loras.push({ path: clean, strength: Number.isFinite(strength) ? strength : 1, enabled: true });
+  }
+  renderLoras();
+  scheduleSave();
+}
+
+async function uploadBinary(path, blob) {
+  const response = await hana.api.fetch(`${API}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: blob,
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!response.ok) throw new Error(data?.error ?? `上传失败（${response.status}）`);
+  return data;
+}
+
+// ── 参考图与蒙版 ────────────────────────────────────────────────────
+/** 把一张位图按目标尺寸画成 PNG：crop / fit / stretch 都在这里。 */
+function drawFitted(image, width, height, mode) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, width, height);
+  const scaleX = width / image.naturalWidth;
+  const scaleY = height / image.naturalHeight;
+  if (mode === "stretch") {
+    ctx.drawImage(image, 0, 0, width, height);
+  } else if (mode === "fit") {
+    const scale = Math.min(scaleX, scaleY);
+    const w = Math.round(image.naturalWidth * scale);
+    const h = Math.round(image.naturalHeight * scale);
+    ctx.drawImage(image, Math.round((width - w) / 2), Math.round((height - h) / 2), w, h);
+  } else {
+    // crop：居中裁成目标比例
+    const scale = Math.max(scaleX, scaleY);
+    const w = Math.round(image.naturalWidth * scale);
+    const h = Math.round(image.naturalHeight * scale);
+    ctx.drawImage(image, Math.round((width - w) / 2), Math.round((height - h) / 2), w, h);
+  }
+  return canvas;
+}
+
+async function canvasBlob(canvas) {
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) throw new Error("图片编码失败");
+  return blob;
+}
+
+/** 把参考图按目标尺寸准备成 PNG 并上传：引擎拿到的 init_image 就等于任务尺寸，
+ *  蒙版也只需按同一张画。 */
+async function prepareRef(width, height) {
+  if (!refImage) return null;
+  if (refPrepared && refPrepared.width === width && refPrepared.height === height) return refPrepared;
+  const blob = await canvasBlob(drawFitted(refImage, width, height, nodes.refResize.value));
+  const result = await uploadBinary("/inputs/upload?kind=init", blob);
+  refPrepared = { path: result.path, url: inputUrl(result.name), width, height };
+  // 尺寸换了的旧蒙版不能再用：它和新的 init_image 不同尺寸，引擎会拒。
+  if (maskPath) {
+    maskPath = null;
+    say("尺寸变了，蒙版已清空，需要重新画。", "bad");
+  }
+  updateRefNote();
+  return refPrepared;
+}
+
+/** 编辑适配器的参考图：不走蒙版，直接从画廊或文件带进来。 */
+async function prepareEditReference(width, height) {
+  if (!editSource) return null;
+  if (editRef && editRef.width === width && editRef.height === height) return editRef;
+  const blob = await canvasBlob(drawFitted(editSource, width, height, "fit"));
+  const result = await uploadBinary("/inputs/upload?kind=ref", blob);
+  editRef = { path: result.path, url: inputUrl(result.name), width, height };
+  return editRef;
+}
+
+function updateRefNote() {
+  if (!refPrepared) {
+    nodes.refNote.textContent = "未选择";
+    nodes.maskEdit.hidden = true;
+    // 没参考图时重绘强度与适配无处可用，不摆在那里让用户以为它们会生效。
+    nodes.refControls.hidden = true;
+    return;
+  }
+  const size = `${refPrepared.width}×${refPrepared.height}`;
+  nodes.refNote.textContent = maskPath ? `局部重绘 · ${size}` : `图生图 · ${size}`;
+  nodes.maskEdit.hidden = false;
+  nodes.maskEdit.textContent = maskPath ? "改蒙版" : "画蒙版";
+  nodes.refControls.hidden = false;
+}
+
+async function setReference(blobOrUrl) {
+  try {
+    const image = new Image();
+    const url = typeof blobOrUrl === "string" ? blobOrUrl : URL.createObjectURL(blobOrUrl);
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("这张图读不出来"));
+      image.src = url;
+    });
+    refImage = image;
+    refPrepared = null;
+    maskPath = null;
+    nodes.ref.hidden = false;
+    nodes.refImg.src = typeof blobOrUrl === "string" ? blobOrUrl : url;
+    nodes.refNote.textContent = "准备中…";
+    await prepareRef(Number(nodes.width.value), Number(nodes.height.value));
+    say("参考图已就绪，可以另写提示词，也可以直接跑。", "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+}
+
+function clearReference() {
+  refImage = null;
+  refPrepared = null;
+  maskPath = null;
+  nodes.ref.hidden = true;
+  nodes.refImg.removeAttribute("src");
+  updateRefNote();
+}
+
+/** 编辑参考图：只记源图，到出手那一刻再按当时尺寸准备。 */
+async function setEditReference(url, name = "画廊图") {
+  try {
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("这张图读不出来"));
+      image.src = url;
+    });
+    editSource = image;
+    editRef = null;
+    nodes.editRef.hidden = false;
+    nodes.editRefName.textContent = `编辑参考：${name}`;
+    nodes.editRef.title = "需要 LoRA 列表里有编辑适配器（如 Moss-Image-Edit），它按这张参考图重画";
+    say("编辑参考图已就绪：确认 LoRA 里有编辑适配器再跑。", "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+}
+
+function clearEditReference() {
+  editSource = null;
+  editRef = null;
+  nodes.editRef.hidden = true;
+  nodes.editRefName.textContent = "";
+}
+
+// 蒙版画布：白色笔触就是「重画这里」。保存时按 alpha 阈值二值化，避免半透明边。
+let maskCtx = null;
+let maskPainting = false;
+let maskMode = "paint";
+/** 1 是「适应栏宽」，更大的倍数给细部笔刷用。 */
+let maskZoom = 1;
+const MASK_ZOOMS = [1, 1.5, 2, 3, 4];
+
+function openMaskEditor() {
+  if (!refPrepared) {
+    say("先选一张参考图。", "bad");
+    return;
+  }
+  const canvas = nodes.maskCanvas;
+  canvas.width = refPrepared.width;
+  canvas.height = refPrepared.height;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  maskCtx = ctx;
+  maskMode = "paint";
+  maskZoom = 1;
+  nodes.maskPaint.classList.add("on");
+  nodes.maskErase.classList.remove("on");
+  nodes.maskInfo.textContent = `${refPrepared.width}×${refPrepared.height}`;
+  nodes.maskPct.textContent = "";
+  // 画布当背景图用：init 图作 CSS 背景，笔触在透明画布上叠。
+  canvas.style.backgroundImage = `url(${refPrepared.url})`;
+  canvas.style.backgroundSize = "100% 100%";
+  nodes.mask.hidden = false;
+  layoutMaskCanvas();
+  say("在图上抹出要重画的区域，保存后就能跑局部重绘。");
+}
+
+function layoutMaskCanvas() {
+  const canvas = nodes.maskCanvas;
+  const stage = nodes.maskStage;
+  const ratio = canvas.width / canvas.height;
+  // 适应：先按宽度铺满，再按高度回退；缩放：在此基础上乘倍数，交给 stage 滚动。
+  const fitWidth = Math.max(40, stage.clientWidth - 10);
+  let width = fitWidth;
+  let height = width / ratio;
+  if (height > window.innerHeight * 0.62) {
+    height = window.innerHeight * 0.62;
+    width = height * ratio;
+  }
+  canvas.style.width = `${Math.round(width * maskZoom)}px`;
+  canvas.style.height = `${Math.round(height * maskZoom)}px`;
+  nodes.maskZoomLabel.textContent = maskZoom > 1 ? `${Math.round(maskZoom * 100)}%` : "适应";
+}
+
+function maskPoint(event) {
+  const canvas = nodes.maskCanvas;
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    scale: canvas.width / Math.max(1, rect.width),
+  };
+}
+
+let maskLast = null;
+
+function paintTo(point) {
+  if (!maskCtx) return;
+  // 笔刷尺寸是屏幕像素，画到画布上要按显示比例放大。
+  const radius = ((Number(nodes.maskSize.value) || 60) / 2) * point.scale;
+  maskCtx.globalCompositeOperation = maskMode === "erase" ? "destination-out" : "source-over";
+  // 半透明红：能看清底下画的是什么。保存时会统一换成白（引擎只认亮度）。
+  maskCtx.strokeStyle = "rgba(255, 96, 96, 0.55)";
+  maskCtx.fillStyle = "rgba(255, 96, 96, 0.55)";
+  maskCtx.lineWidth = radius * 2;
+  maskCtx.lineCap = "round";
+  maskCtx.lineJoin = "round";
+  if (!maskLast) {
+    maskCtx.beginPath();
+    maskCtx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    maskCtx.fill();
+  } else {
+    // 连成线：快速拖动时 pointermove 之间的空隙才不会断成一串点。
+    maskCtx.beginPath();
+    maskCtx.moveTo(maskLast.x, maskLast.y);
+    maskCtx.lineTo(point.x, point.y);
+    maskCtx.stroke();
+  }
+  maskLast = { x: point.x, y: point.y };
+}
+
+async function saveMask() {
+  if (!maskCtx || !refPrepared) return;
+  const source = nodes.maskCanvas;
+  const out = document.createElement("canvas");
+  out.width = source.width;
+  out.height = source.height;
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(source, 0, 0);
+  // 二值化：笔触是白（叠在黑底上约 217），没碰过的地方是 0。
+  // 判提看亮度而不是 alpha：整张已铺了不透明黑底，alpha 处处是 255。
+  const image = ctx.getImageData(0, 0, out.width, out.height);
+  const data = image.data;
+  let painted = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const on = data[i] > 8;
+    data[i] = on ? 255 : 0;
+    data[i + 1] = on ? 255 : 0;
+    data[i + 2] = on ? 255 : 0;
+    data[i + 3] = 255;
+    if (on) painted += 1;
+  }
+  if (!painted) {
+    say("蒙版是空的：至少抹一块要重画的区域。", "bad");
+    return;
+  }
+  ctx.putImageData(image, 0, 0);
+  const share = Math.round((painted / (out.width * out.height)) * 1000) / 10;
+  const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png"));
+  try {
+    nodes.maskSave.disabled = true;
+    const result = await uploadBinary("/inputs/upload?kind=mask", blob);
+    maskPath = result.path;
+    nodes.mask.hidden = true;
+    updateRefNote();
+    say(`蒙版已保存，重画面积 ${share}%。`, "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    nodes.maskSave.disabled = false;
+  }
+}
+
+
 /** 侧栏只报状态：引擎跑没跑、模型加载了没。管理与下载都在主区域。 */
 function renderEngine(data) {
   const { engine } = data;
@@ -511,6 +985,10 @@ function renderEngine(data) {
   nodes.dot.className = dotClass;
   nodes.state.textContent = label;
   nodes.state.title = engine.lastError ?? "";
+  // 显存只在「引擎在跑、模型已加载、没有任务」时才存在可释放的东西。
+  nodes.release.hidden = !(engine.running && engine.loaded && !engine.active);
+  // 引擎没起来、但路径已经配好时给一个拉起入口（出图也会自动拉起）。
+  nodes.start.hidden = !(engine.serverFound && !engine.running);
 }
 
 
@@ -530,6 +1008,7 @@ const PHASE_LABEL = {
 /** 安装区：没有任务时给一句提示，有任务时给进度与取消。 */
 function render(data) {
   latest = data;
+  facets = data.facets ?? facets;
   setSettings(data.settings);
   renderEngine(data);
   nodes.generate.disabled = submitting;
@@ -583,6 +1062,45 @@ async function onGenerate() {
   }
   const seed = nodes.seed.value.trim();
   if (seed) payload.seed = Number(seed);
+  payload.sampler = nodes.sampler.value;
+  payload.scheduler = nodes.scheduler.value;
+  payload.shift = Number(nodes.shift.value) || 5;
+  payload.stepCache = nodes.stepCache.value;
+  const threshold = Number(nodes.stepThreshold.value);
+  if (nodes.stepCache.value !== "off" && Number.isFinite(threshold) && threshold > 0) {
+    payload.stepCacheThreshold = threshold;
+  }
+  const activeLoras = loras.filter((item) => item.enabled !== false && item.path);
+  if (activeLoras.length) payload.loras = activeLoras.map(({ path, strength }) => ({ path, strength: Number(strength) }));
+  try {
+    // 参考图按当前尺寸现准备：改了尺寸也能直接跑，不用用户再选一次。
+    if (refImage) {
+      say("正在准备参考图…");
+      const prepared = await prepareRef(Number(nodes.width.value), Number(nodes.height.value));
+      if (prepared) {
+        payload.initImage = prepared.path;
+        payload.strength = Math.min(1, Math.max(0.05, Number(nodes.strength.value) || 0.6));
+        // 参考图已经按目标尺寸裁/缩好了，引擎那边不需要再适配一次。
+        payload.resize = "stretch";
+        if (maskPath) {
+          payload.mask = maskPath;
+          payload.maskEncoding = "u8";
+        }
+      }
+    }
+    if (editSource) {
+      const prepared = await prepareEditReference(Number(nodes.width.value), Number(nodes.height.value));
+      if (prepared) {
+        payload.referenceImages = [prepared.path];
+        payload.referenceMaxEdge = 512;
+      }
+    }
+  } catch (error) {
+    submitting = false;
+    nodes.generate.disabled = false;
+    say(error instanceof Error ? error.message : String(error), "bad");
+    return;
+  }
   try {
     const result = await post("/generate", payload);
     say(`已入队 ${result.job?.jobId ?? ""}`, "ok");
@@ -613,13 +1131,22 @@ async function onCancel() {
 let saveTimer = null;
 
 function collectDefaults() {
+  // 以库里的那份为底：面板没暴露的参数（控制适配器、LoRA 作用位置、CFG 截断）不能被一次保存抹掉。
+  const base = latest?.settings?.defaults ?? {};
   return {
+    ...base,
     width: Number(nodes.width.value) || 768,
     height: Number(nodes.height.value) || 768,
     steps: Number(nodes.steps.value) || 8,
     cfg: Number(nodes.cfg.value) || 3,
     hiresScale: Math.round(Math.min(hiresScale, hiresMax()) * 100) / 100,
     hiresSteps: Math.round(Number(nodes.hiresSteps.value) || 0),
+    sampler: nodes.sampler.value,
+    scheduler: nodes.scheduler.value,
+    shift: Number(nodes.shift.value) || 5,
+    stepCache: nodes.stepCache.value,
+    stepCacheThreshold: nodes.stepThreshold.value === "" ? null : Number(nodes.stepThreshold.value) || null,
+    loras: loras.map((item) => ({ path: item.path, strength: Number(item.strength) || 1, enabled: item.enabled !== false })),
   };
 }
 
@@ -644,10 +1171,150 @@ for (const node of [
   nodes.hiresSteps,
   nodes.memoryMode,
   nodes.tier,
+  nodes.sampler,
+  nodes.scheduler,
+  nodes.shift,
+  nodes.stepCache,
+  nodes.stepThreshold,
 ]) {
   node.addEventListener("input", scheduleSave);
   node.addEventListener("change", scheduleSave);
 }
+
+nodes.stepCache.addEventListener("change", syncAccel);
+
+// 参考图：换了尺寸就把旧蒙版作废（它和新的 init_image 不同尺寸）。
+for (const node of [nodes.width, nodes.height]) {
+  node.addEventListener("change", () => {
+    if (!refImage) return;
+    refPrepared = null;
+    if (maskPath) {
+      maskPath = null;
+      updateRefNote();
+    }
+  });
+}
+
+// 导入 LoRA：二进制直传，落在 app-data/loras 里，路径稳定。
+nodes.loraImport.addEventListener("click", () => nodes.loraFile.click());
+nodes.loraFile.addEventListener("change", async () => {
+  const file = nodes.loraFile.files?.[0];
+  nodes.loraFile.value = "";
+  if (!file) return;
+  try {
+    nodes.loraImport.disabled = true;
+    say(`正在导入 ${file.name}…`);
+    const result = await uploadBinary(`/loras/import?name=${encodeURIComponent(file.name)}`, file);
+    addLora(result.path);
+    say(`已导入 ${file.name}，已勾选。`, "ok");
+    // 顺手问一句它是什么：base 不对或读不出来，现在知道比出图失败才知道好。
+    void post("/inspect", { path: result.path }).then(
+      (info) => {
+        if (!info?.loadable) say(`${file.name}：${info?.note ?? "引擎读不了这个文件"}`, "bad");
+        else if (info.kind === "lora") say(`已导入 ${file.name}（rank ${info.lora_rank ?? "?"}，${info.adapter_types?.join("/") ?? "lora"}）`, "ok");
+      },
+      () => {},
+    );
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    nodes.loraImport.disabled = false;
+  }
+});
+nodes.loraPathShow.addEventListener("click", () => {
+  nodes.loraPathRow.hidden = !nodes.loraPathRow.hidden;
+  if (!nodes.loraPathRow.hidden) nodes.loraPath.focus();
+});
+nodes.loraPathAdd.addEventListener("click", () => {
+  addLora(nodes.loraPath.value);
+  nodes.loraPath.value = "";
+});
+nodes.loraPath.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  addLora(nodes.loraPath.value);
+  nodes.loraPath.value = "";
+});
+
+// 参考图
+nodes.refPick.addEventListener("click", () => nodes.refFile.click());
+nodes.refFile.addEventListener("change", async () => {
+  const file = nodes.refFile.files?.[0];
+  nodes.refFile.value = "";
+  if (file) await setReference(file);
+});
+nodes.refClear.addEventListener("click", () => clearReference());
+nodes.editRefClear.addEventListener("click", () => clearEditReference());
+nodes.refResize.addEventListener("change", async () => {
+  if (!refImage) return;
+  refPrepared = null;
+  maskPath = null;
+  try {
+    await prepareRef(Number(nodes.width.value), Number(nodes.height.value));
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+});
+
+// 蒙版编辑
+nodes.maskEdit.addEventListener("click", openMaskEditor);
+nodes.maskCancel.addEventListener("click", () => {
+  nodes.mask.hidden = true;
+});
+nodes.maskClear.addEventListener("click", () => {
+  if (!maskCtx) return;
+  maskCtx.clearRect(0, 0, nodes.maskCanvas.width, nodes.maskCanvas.height);
+});
+nodes.maskSave.addEventListener("click", () => void saveMask());
+nodes.maskPaint.addEventListener("click", () => {
+  maskMode = "paint";
+  nodes.maskPaint.classList.add("on");
+  nodes.maskErase.classList.remove("on");
+});
+nodes.maskErase.addEventListener("click", () => {
+  maskMode = "erase";
+  nodes.maskErase.classList.add("on");
+  nodes.maskPaint.classList.remove("on");
+});
+
+const maskDown = (event) => {
+  if (nodes.mask.hidden) return;
+  event.preventDefault();
+  maskPainting = true;
+  maskLast = null;
+  nodes.maskCanvas.setPointerCapture?.(event.pointerId);
+  paintTo(maskPoint(event));
+};
+nodes.maskCanvas.addEventListener("pointerdown", maskDown);
+nodes.maskCanvas.addEventListener("pointermove", (event) => {
+  if (!maskPainting) return;
+  paintTo(maskPoint(event));
+});
+const maskUp = (event) => {
+  if (!maskPainting) return;
+  maskPainting = false;
+  maskLast = null;
+  try {
+    nodes.maskCanvas.releasePointerCapture?.(event.pointerId);
+  } catch {
+    /* 指针没了 */
+  }
+};
+nodes.maskCanvas.addEventListener("pointerup", maskUp);
+nodes.maskCanvas.addEventListener("pointercancel", maskUp);
+nodes.maskZoomIn.addEventListener("click", () => {
+  const index = MASK_ZOOMS.indexOf(maskZoom);
+  maskZoom = MASK_ZOOMS[Math.min(MASK_ZOOMS.length - 1, index + 1)];
+  layoutMaskCanvas();
+});
+nodes.maskZoomOut.addEventListener("click", () => {
+  const index = MASK_ZOOMS.indexOf(maskZoom);
+  maskZoom = MASK_ZOOMS[Math.max(0, index - 1)];
+  layoutMaskCanvas();
+});
+window.addEventListener("resize", () => {
+  if (!nodes.mask.hidden) layoutMaskCanvas();
+});
 
 // 手敲宽高滑块不动，这里把刻度跟着实际像素量对齐。
 for (const node of [nodes.width, nodes.height]) {
@@ -659,6 +1326,34 @@ for (const node of [nodes.width, nodes.height]) {
 
 nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
+nodes.start.addEventListener("click", async () => {
+  nodes.start.disabled = true;
+  say("正在启动引擎…");
+  try {
+    const result = await post("/engine/start", {}, 120000);
+    say("引擎已启动。", "ok");
+    render(result);
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    nodes.start.disabled = false;
+  }
+});
+
+nodes.release.addEventListener("click", async () => {
+  nodes.release.disabled = true;
+  say("正在把权重读回内存并释放显存…");
+  try {
+    const result = await post("/engine/release", {}, 180000);
+    const freed = result.release?.vram_released_bytes ?? 0;
+    say(`已释放 ${(freed / 1024 ** 3).toFixed(2)} GB 显存，下次出图自动重新加载。`, "ok");
+    render(result);
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    nodes.release.disabled = false;
+  }
+});
 bindSizeSliders();
 
 // ── 主区域的“用这张的参数” ─────────────────────────────────────
@@ -672,13 +1367,29 @@ function applyReuse(job) {
   // CFG 取 0 是合法值，不能当假值跳过。
   if (job.cfg != null && job.cfg !== "") nodes.cfg.value = String(job.cfg);
   nodes.seed.value = job.seed != null && job.seed !== "" ? String(job.seed) : "";
+  // 采样面一并带回来：只回提示词会把「这张怎么来的」弄丢。
+  if (job.sampler && nodes.sampler.querySelector(`option[value="${job.sampler}"]`)) nodes.sampler.value = job.sampler;
+  if (job.scheduler && nodes.scheduler.querySelector(`option[value="${job.scheduler}"]`)) nodes.scheduler.value = job.scheduler;
+  if (job.shift != null) nodes.shift.value = String(job.shift);
+  if (job.stepCache) nodes.stepCache.value = job.stepCache;
+  syncAccel();
+  for (const item of Array.isArray(job.loras) ? job.loras : []) {
+    if (item?.path) addLora(item.path, Number(item.strength) || 1);
+  }
   say("已载入这张的参数", "ok");
 }
 
 reuseChannel?.addEventListener("message", (event) => {
   const data = event.data;
-  if (data?.type !== "reuse" || !data.job) return;
-  applyReuse(data.job);
+  if (data?.type === "reuse" && data.job) applyReuse(data.job);
+  // 作品区的右键菜单：把这图当参考图送进来。
+  if (data?.type === "reference" && typeof data.name === "string") {
+    void setReference(outputUrl(data.name));
+  }
+  // 编辑适配器：这张图当 instructions 的源图。
+  if (data?.type === "edit-reference" && typeof data.name === "string") {
+    void setEditReference(outputUrl(data.name), data.name);
+  }
 });
 
 async function boot() {

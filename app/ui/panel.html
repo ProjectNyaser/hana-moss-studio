@@ -46,17 +46,22 @@
     .pn-block + .pn-block { padding-top: 10px; border-top: 1px solid var(--ui-line); }
 
     /* 尺寸与像素量放在标题行右侧，不再单独占一行。 */
-    #pn-size-note { font-size: 11px; white-space: nowrap; }
+    #pn-size-note { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .pn-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+      min-width: 0;
       font-size: 11.5px;
       color: var(--ui-text-3);
       letter-spacing: 0.03em;
     }
+    /* 右侧那串「2560×1440 · 3.6MP」不换行，得允许它自己让位，
+       否则它把整个面板撑宽，右边一列会被裁掉。 */
+    .pn-head > * { min-width: 0; }
+    .pn-head > .hint { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .pn-state { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ui-text-2); min-width: 0; }
     .pn-state-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -163,7 +168,46 @@
     .pn-fold[open] > summary::after { transform: rotate(90deg); }
     .pn-fold .fold-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
 
+    /* 生成按钮放在参数之后：从上往下读就知道填完该按哪里 */
+    #pn-actions {
+      margin-top: 4px;
+      padding-top: 10px;
+      border-top: 1px solid var(--ui-line);
+    }
+
     .pn-foot { margin-top: auto; display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--ui-text-3); }
+
+    /* LoRA 行：勾选、名字、强度、删除 */
+    .pn-lora { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .pn-lora input[type="checkbox"] { flex: none; margin: 0; }
+    .pn-lora .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+    .pn-lora input[type="number"] { width: 56px; flex: none; padding: 2px 4px; font-size: 11px; }
+    .pn-lora .drop { flex: none; border: 0; background: transparent; color: var(--ui-text-3); cursor: pointer; padding: 0 4px; font: inherit; }
+    .pn-lora .drop:hover { color: var(--danger); }
+    .pn-lora.bad .name { color: var(--danger); }
+
+    /* 参考图缩略 */
+    .pn-ref { position: relative; border: 1px solid var(--ui-line); border-radius: 8px; overflow: hidden; background: var(--ui-overlay); }
+    .pn-ref img { display: block; width: 100%; max-height: 140px; object-fit: contain; }
+    .pn-ref-x { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: var(--ui-overlay-strong); color: var(--ui-text); cursor: pointer; line-height: 1; font-size: 13px; }
+    /* 编辑参考图：只是一个小标签，不占位置 */
+    .pn-editref { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border: 1px dashed var(--ui-line); border-radius: 6px; font-size: 11px; color: var(--ui-text-2); min-width: 0; }
+    .pn-editref .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pn-editref .drop { flex: none; border: 0; background: transparent; color: var(--ui-text-3); cursor: pointer; padding: 0 2px; font: inherit; }
+    .pn-editref .drop:hover { color: var(--danger); }
+
+    /* 蒙版编辑器：侧栏里铺满整个视口，画布按比例缩到宽度 */
+    .pn-mask { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; background: var(--ui-sidebar); }
+    .pn-mask-bar { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ui-text-3); min-width: 0; }
+    .pn-mask-bar .spacer { flex: 1; }
+    .pn-mask-stage { position: relative; flex: 0 1 auto; max-height: 62vh; min-height: 60px; display: flex; align-items: flex-start; justify-content: center; overflow: auto; background: var(--ui-overlay); border-radius: 8px; }
+    .pn-mask-stage canvas { position: relative; max-width: none; max-height: none; touch-action: none; cursor: crosshair; background-repeat: no-repeat; }
+    .pn-mask-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11px; color: var(--ui-text-2); }
+    .pn-mask-tools input[type="range"] { width: 90px; }
+    .pn-mask-tools .pn-preset.on { border-color: var(--ui-accent); color: var(--ui-accent); }
+    .pn-mask-zoom { display: flex; align-items: center; gap: 2px; }
+    .pn-mask-zoom button { width: 20px; height: 20px; border-radius: 5px; border: 1px solid var(--ui-line); background: transparent; color: var(--ui-text-2); font: inherit; line-height: 1; cursor: pointer; }
+    .pn-mask-zoom button:hover { border-color: var(--ui-text-3); color: var(--ui-text); }
 
     .pn-pane-off { display: none !important; }
 
@@ -254,6 +298,10 @@
       <div class="pn-state">
         <span class="dot" id="pn-dot"></span>
         <span class="pn-state-text" id="pn-state">读取状态…</span>
+        <button class="btn ghost small" id="pn-start" type="button" hidden
+                title="拉起 moss-server（出图时也会自动拉起）">启动</button>
+        <button class="btn ghost small" id="pn-release" type="button" hidden
+                title="把显存还给显卡，引擎留着：下次出图会自动重新加载">释放显存</button>
       </div>
       <p class="hint" id="pn-message" role="status"></p>
     </div>
@@ -331,14 +379,105 @@
           </select>
         </label>
       </div>
-      <div class="pn-row" id="pn-actions">
-        <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
-        <button class="btn ghost" id="pn-cancel" type="button" hidden>取消</button>
+    </div>
+
+    <div class="pn-block">
+      <div class="pn-head">
+        <span class="pn-head-title"><svg class="ic"><use href="#i-sliders"/></svg>采样</span>
+        <span class="hint" id="pn-sampler-note"></span>
       </div>
+      <div class="pn-grid">
+        <label class="field"><span class="label">采样器</span><select id="pn-sampler"></select></label>
+        <label class="field"><span class="label">调度器</span><select id="pn-scheduler"></select></label>
+      </div>
+      <div class="pn-grid">
+        <label class="field"><span class="label">偏移 shift</span><input id="pn-shift" type="number" min="0.1" max="20" step="0.5" value="5"></label>
+        <label class="field"><span class="label">加速</span><select id="pn-step-cache"><option value="off">关</option><option value="fbcache">fbcache</option></select></label>
+      </div>
+      <label class="field" id="pn-threshold-field" hidden>
+        <span class="label">加速阈值</span>
+        <input id="pn-step-threshold" type="number" min="0.001" max="1" step="0.005" placeholder="模型默认 0.03">
+      </label>
+      <p class="hint" id="pn-accel-note" hidden>fbcache 跳过快稳定的 DiT 块：更快，但这张图会跟不加速的不同。阈值越大越快。</p>
+    </div>
+
+    <div class="pn-block">
+      <div class="pn-head">
+        <span class="pn-head-title"><svg class="ic"><use href="#i-spark"/></svg>LoRA</span>
+        <span class="hint" id="pn-lora-note">未使用</span>
+      </div>
+      <ul class="pn-list" id="pn-lora-list"></ul>
+      <div class="pn-install-actions">
+        <button class="btn ghost small" id="pn-lora-import" type="button">导入文件</button>
+        <button class="btn ghost small" id="pn-lora-path-show" type="button">按路径添加</button>
+      </div>
+      <div class="pn-grid" id="pn-lora-path-row" hidden>
+        <input id="pn-lora-path" type="text" placeholder="LoRA 绝对路径">
+        <button class="btn ghost small" id="pn-lora-path-add" type="button">添加</button>
+      </div>
+      <input type="file" id="pn-lora-file" accept=".safetensors,.ckpt,.pt" hidden>
+    </div>
+
+    <div class="pn-block">
+      <div class="pn-head">
+        <span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>参考图</span>
+        <span class="hint" id="pn-ref-note">未选择</span>
+      </div>
+      <div class="pn-ref" id="pn-ref" hidden>
+        <img id="pn-ref-img" alt="参考图">
+        <button class="pn-ref-x" id="pn-ref-clear" type="button" title="清除参考图">×</button>
+      </div>
+      <div class="pn-grid" id="pn-ref-controls" hidden>
+        <label class="field"><span class="label">重绘强度</span><input id="pn-strength" type="number" min="0.05" max="1" step="0.05" value="0.6"></label>
+        <label class="field">
+          <span class="label">适配</span>
+          <select id="pn-ref-resize"><option value="crop">crop</option><option value="fit">fit</option><option value="stretch">stretch</option></select>
+        </label>
+      </div>
+      <div class="pn-install-actions">
+        <button class="btn ghost small" id="pn-ref-pick" type="button">选参考图</button>
+        <button class="btn ghost small" id="pn-mask-edit" type="button" hidden>画蒙版</button>
+      </div>
+      <p class="hint">作品区右键「以这张为参考」可以把画廊里的图直接带进来。蒙版用白色区域告诉引擎「哪里重画」。</p>
+      <div class="pn-editref" id="pn-editref" hidden>
+        <span class="name" id="pn-editref-name"></span>
+        <button class="drop" id="pn-editref-clear" type="button" title="移除编辑参考图">×</button>
+      </div>
+      <input type="file" id="pn-ref-file" accept="image/*" hidden>
+    </div>
+
+    <div class="pn-row" id="pn-actions">
+      <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
+      <button class="btn ghost" id="pn-cancel" type="button" hidden>取消</button>
     </div>
 
     <div class="pn-foot">
       <span id="pn-errors"></span>
+    </div>
+  </div>
+
+  <div class="pn-mask" id="pn-mask" hidden>
+    <div class="pn-mask-bar">
+      <span id="pn-mask-info"></span>
+      <span class="spacer"></span>
+      <button class="btn ghost small" id="pn-mask-clear" type="button">清空</button>
+      <button class="btn ghost small" id="pn-mask-cancel" type="button">取消</button>
+      <button class="btn primary small" id="pn-mask-save" type="button">保存</button>
+    </div>
+    <div class="pn-mask-stage" id="pn-mask-stage">
+      <canvas id="pn-mask-canvas"></canvas>
+    </div>
+    <div class="pn-mask-tools">
+      <span>笔刷</span>
+      <input id="pn-mask-size" type="range" min="6" max="240" step="2" value="60">
+      <button class="pn-preset on" id="pn-mask-paint" type="button">画</button>
+      <button class="pn-preset" id="pn-mask-erase" type="button">擦</button>
+      <span class="pn-mask-zoom">
+        <button id="pn-mask-zoom-out" type="button" title="缩小">−</button>
+        <span id="pn-mask-zoom-label">适应</span>
+        <button id="pn-mask-zoom-in" type="button" title="放大">+</button>
+      </span>
+      <span class="hint" id="pn-mask-pct"></span>
     </div>
   </div>
 

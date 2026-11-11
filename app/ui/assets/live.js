@@ -60,6 +60,17 @@ export function previewUrl(at) {
   return url.toString();
 }
 
+/**
+ * 上传到苔室的参考图 / 蒙版。与输出图一样要走路由前缀与 surface 会话，
+ * 否则 <img> 打到宿主根上，只能拿到 404。
+ */
+export function inputUrl(name) {
+  const url = new URL(`${ROUTE_BASE}${API}/inputs/${encodeURIComponent(name)}`, location.origin);
+  const session = new URLSearchParams(location.search).get("appSurfaceSession");
+  if (session) url.searchParams.set("appSurfaceSession", session);
+  return url.toString();
+}
+
 export function startLive({ hana, onState, onEvent, fetchState, onError }) {
   let disposed = false;
   let retryTimer = null;

@@ -43,6 +43,7 @@ const nodes = {
   // 版本
   engineState: el("versions-engine-state"),
   engineToggle: el("versions-engine-toggle"),
+  engineRelease: el("versions-engine-release"),
   engineNote: el("versions-engine-note"),
   installed: el("versions-installed"),
   modelState: el("versions-model-state"),
@@ -96,9 +97,9 @@ function syncTheme() {
 }
 
 // ── 网络 ───────────────────────────────────────────────────────────────
-async function api(path, init) {
+async function api(path, init, timeoutMs = 15000) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await hana.api.fetch(`${API}${path}`, { ...init, signal: controller.signal });
@@ -116,12 +117,12 @@ async function api(path, init) {
   return data;
 }
 
-function post(path, body) {
+function post(path, body, timeoutMs) {
   return api(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
-  });
+  }, timeoutMs);
 }
 
 // ── 格式化 ─────────────────────────────────────────────────────────────
@@ -832,9 +833,10 @@ function renderVersions(data) {
       ? "空闲（出图时自动启动）"
       : "未安装";
   // 不需要手动启动：出图会自己拉起。只留一个「停止」给想立刻腾显存的人。
-  nodes.engineToggle.hidden = !engine.running;
-  nodes.engineToggle.textContent = "停止引擎";
+  nodes.engineToggle.hidden = false;
+  nodes.engineToggle.textContent = engine.running ? "停止引擎" : "启动引擎";
   nodes.engineToggle.disabled = false;
+  nodes.engineRelease.hidden = !(engine.running && engine.loaded && !engine.active);
   const cublasError = engine.device?.cublaslt?.error;
   nodes.engineNote.textContent = cublasError
     ? "缺 cuBLASLt：这个包能启动但出不了图，换 bundled 版本"
@@ -1211,6 +1213,10 @@ function openMenu(event, job) {
   const items = [];
   if (job.status === "done" && job.output) {
     items.push({ label: "载入这张", run: () => loadJob(job) });
+    // 图生图的入口就在这里：看到一张想接着改的图，直接送进侧栏当参考。
+    items.push({ label: "以这张为参考", run: () => useAsReference(job) });
+    // 编辑适配器（Moss-Image-Edit 一类）的入口：源图 + 指令。
+    items.push({ label: "用这张做编辑参考", run: () => useAsEditReference(job) });
     items.push({ sep: true });
   }
   items.push({
@@ -1266,9 +1272,28 @@ function loadJob(job) {
       steps: job.steps,
       cfg: job.cfg,
       seed: job.seed,
+      sampler: job.sampler ?? null,
+      scheduler: job.scheduler ?? null,
+      shift: job.shift ?? null,
+      stepCache: job.stepCache ?? "off",
+      loras: Array.isArray(job.loras) ? job.loras : [],
     },
   });
   void refresh();
+}
+
+/** 以这张为参考：侧栏把文件读成位图，按当前目标尺寸裁好后当 init_image。 */
+function useAsReference(job) {
+  if (!job?.output) return;
+  channel?.postMessage({ type: "reference", name: job.output });
+  showView("canvas");
+}
+
+/** 编辑参考：交给侧栏当 references 的第一张（需要编辑适配器在 LoRA 里）。 */
+function useAsEditReference(job) {
+  if (!job?.output) return;
+  channel?.postMessage({ type: "edit-reference", name: job.output });
+  showView("canvas");
 }
 
 // ── 总渲染 ─────────────────────────────────────────────────────────────
@@ -1398,7 +1423,15 @@ nodes.tabs.addEventListener("click", (event) => {
   if (tab?.dataset.view) showView(tab.dataset.view);
 });
 nodes.engineToggle.addEventListener("click", () => {
-  void runSafe(() => post("/engine/stop"), "停止");
+  // 引擎没起来时这个按钮就该是「启动」：之前它只会停，用户只能靠出图把引擎拉起来。
+  const running = Boolean(latest?.engine?.running);
+  void runSafe(() => post(running ? "/engine/stop" : "/engine/start"), running ? "停止" : "启动");
+});
+nodes.engineRelease.addEventListener("click", () => {
+  nodes.engineRelease.disabled = true;
+  void runSafe(() => post("/engine/release", {}, 180000), "释放显存").finally(() => {
+    nodes.engineRelease.disabled = false;
+  });
 });
 nodes.downloadEngine.addEventListener("click", () => void startInstall("/install/engine", {}, "安装最新引擎"));
 bindSplitTabs(nodes.versionsTabs);

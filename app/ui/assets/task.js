@@ -157,6 +157,9 @@ function renderMeta(job) {
   if (job.total) items.push(["步进", `${job.step}/${job.total}`]);
   if (num(job.etaMs)) items.push(["预计", `剩 ${formatDuration(job.etaMs)}`]);
   items.push(["尺寸", `${job.width}×${job.height}`]);
+  // 采样面与 LoRA 也算「这张是怎么来的」，出图后要能一眼看到。
+  if (job.sampler) items.push(["采样", `${job.sampler}${job.scheduler ? ` / ${job.scheduler}` : ""}`]);
+  if (Array.isArray(job.loras) && job.loras.length) items.push(["LoRA", `${job.loras.length} 个`]);
   const html = items.map(([label, value]) => `<span class="m">${esc(label)}<b>${esc(value)}</b></span>`).join("");
   if (view.meta.innerHTML !== html) view.meta.innerHTML = html;
 }
