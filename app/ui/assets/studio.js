@@ -1059,6 +1059,35 @@ function renderDownload(data) {
   }
 }
 
+/** 配置与分词器：装了它就能用单文件权重，不必下 27 GB 的整包。 */
+function renderConfigPack(data) {
+  const pack = data?.configPack ?? { installed: false };
+  const inUse = Boolean(pack.installed && data?.settings?.modelPath === pack.path);
+  nodes.configState.textContent = pack.installed ? (inUse ? "在用" : "已装") : "未安装";
+  const row = manageRow({
+    name: "配置、分词器与 VAE",
+    meta: pack.installed ? "约 258 MB" : "约 258 MB · DiT 与文本编码器用单文件",
+    badges: inUse ? ["在用"] : [],
+    on: inUse,
+    remove: pack.installed
+      ? {
+          label: "卸载",
+          question: "卸载配置与分词器？（单文件权重不受影响）",
+          run: () => runSafe(() => post("/config/remove", { confirm: true }), "卸载配置"),
+        }
+      : null,
+  });
+  if (!pack.installed) {
+    const button = document.createElement("button");
+    button.className = "btn ghost small";
+    button.type = "button";
+    button.textContent = "下载";
+    button.addEventListener("click", () => runSafe(() => post("/config/install", {}), "下载配置与分词器"));
+    row.appendChild(button);
+  }
+  nodes.configList.replaceChildren(row);
+}
+
 /**
  * 下载任务 → 队列行。和生图任务用同一套卡片，一个页面里就看完全部在跑的事。
  */

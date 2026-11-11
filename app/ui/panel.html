@@ -366,11 +366,11 @@
         <label class="field"><span class="label">CFG</span><input id="pn-cfg" type="number" min="0" max="20" step="0.5" value="3"></label>
         <label class="field"><span class="label">种子</span><input id="pn-seed" type="number" min="0" placeholder="留空随机"></label>
       </div>
-      <label class="field">
+      <label class="field" id="pn-model-field">
         <span class="label">模型</span>
         <select id="pn-model"></select>
-        <span class="hint" id="pn-model-hint" hidden></span>
       </label>
+      <span class="hint" id="pn-model-hint" hidden></span>
       <label class="field">
         <span class="label">DiT 权重</span>
         <select id="pn-dit"></select>

@@ -386,6 +386,78 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     return join(dataDir, "models", MODELS[key].dir);
   }
 
+  /** 自管清单里的「配置与分词器」目录：不随 SFT/Base 分身，两份内容完全一样。 */
+  function configDirTarget() {
+    return join(dataDir, "models", "moss-image-config");
+  }
+
+  /**
+   * 装配置包：只拿 model_index、scheduler、tokenizer、vae 与两个组件的 config.json，
+   * 约 258 MB。DiT 与文本编码器由单文件提供，所以这里不碰权重。
+   */
+  async function installConfigPack() {
+    const repo = MODELS.sft.repo;
+    const dir = configDirTarget();
+    const task = makeTask("config", "配置与分词器");
+    try {
+      task.patch({ phase: "listing", message: "读取文件清单" });
+      const tree = JSON.parse(await fetchText(network, `${MODEL_ENDPOINT}/api/models/${repo}/tree/main?recursive=true`));
+      const wanted = (tree ?? []).filter((entry) => {
+        if (entry.type !== "file") return false;
+        return CONFIG_INCLUDES.some((pattern) =>
+          pattern.endsWith("/*") ? entry.path.startsWith(pattern.slice(0, -1)) : entry.path === pattern,
+        );
+      });
+      if (!wanted.length) throw new Error("清单为空，镜像可能不可用");
+      mkdirSync(dir, { recursive: true });
+      const totalBytes = wanted.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
+      task.patch({ phase: "download", message: `${wanted.length} 个文件，共 ${gib(totalBytes)} GiB`, totalBytes, bytes: 0 });
+      const entries = wanted.map((entry) => ({
+        urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${repo}/resolve/main/${entry.path}`),
+        out: entry.path,
+        size: entry.size ?? 0,
+      }));
+      for (const entry of entries) mkdirSync(dirname(join(dir, ...entry.out.split("/"))), { recursive: true });
+      const outcome = await downloadViaRpc(task, entries, {
+        dir,
+        concurrency: 4,
+        totalBytes,
+        onTick: ({ bytes, totalBytes: total, done, total: count, speed, connections, files, failed: failedCount }) =>
+          task.patch({
+            bytes,
+            totalBytes: total,
+            percent: total ? Math.min(99, Math.floor((bytes / total) * 100)) : 0,
+            speed,
+            connections,
+            tasks: files.map((file) => ({ ...file, ...where(dir, file.out) })),
+            files: [done, count],
+            message: failedCount ? `${failedCount} 个文件失败` : "",
+          }),
+      });
+      const dead = outcome?.failed ?? [];
+      if (dead.length && !task.cancelled) throw new Error(`${dead.length} 个文件下载失败，重试会续传`);
+      const bad = await verifyWeights(task, wanted, dir);
+      if (bad.length) throw new Error(`${bad.length} 个文件校验不过：${bad.slice(0, 3).map((e) => e.path).join("、")}`);
+      saveSettings({ modelPath: dir, modelPaths: { ...(getSettings().modelPaths ?? {}), config: dir } });
+      task.finish({ phase: "done", message: `配置就绪：${wanted.length} 个文件`, detail: { modelPath: dir } });
+      onInstalled?.("config", { modelPath: dir });
+    } catch (error) {
+      task.fail(error);
+    }
+  }
+
+  function removeConfigPack() {
+    const dir = configDirTarget();
+    if (!existsSync(dir)) throw new Error("没有已装配置包");
+    rmSync(dir, { recursive: true, force: true });
+    const settings = getSettings();
+    const paths = { ...(settings.modelPaths ?? {}) };
+    delete paths.config;
+    const next = settings.modelPath === dir ? (settings.modelPaths?.base ?? "") : settings.modelPath;
+    saveSettings({ modelPaths: paths, modelPath: next && existsSync(next) ? next : null });
+    return true;
+  }
+
   /**
    * 已装引擎清单。旧版本装完不删，回滚就是在这里切回去。
    * 只列真带 bin/moss-server.exe 的目录，半途而废的解压残留不会冒充可用版本。
@@ -1527,6 +1599,9 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     fileTier,
     reconcileTier,
     liteModelGaps,
+    installConfigPack,
+    removeConfigPack,
+    configDirTarget,
     taskAction,
     listEngines,
     listModels,

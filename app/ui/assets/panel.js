@@ -86,6 +86,7 @@ const nodes = {
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
   model: el("pn-model"),
+  modelField: el("pn-model-field"),
   modelHint: el("pn-model-hint"),
   dit: el("pn-dit"),
   ditNote: el("pn-dit-note"),
@@ -1259,14 +1260,18 @@ function renderModels(data) {
     }
     nodes.model.disabled = !models.length;
     nodes.model.value = models.length && current ? current.variant : nodes.model.value;
-  // 轻量包（只有配置与分词器）：两个仓库这两部分字节相同，选「哪个模型」就没意义了，
-  // 差异全在 DiT 权重里——那个由下面的选择框决定。
+  // 自管清单：没装整包时「模型」这一格没有意义（两个仓库的配置与分词器相同），直接收起来。
+  nodes.modelField.hidden = !models.length;
+  // 轻量包（只有配置与分词器）：模型差异全在 DiT 权重里。
   const lite = data?.modelLite ?? null;
   nodes.model.disabled = !models.length || Boolean(lite);
-  nodes.modelHint.hidden = !lite;
+  const configReady = Boolean(data?.configPack?.installed);
+  nodes.modelHint.hidden = !(lite || (!models.length && configReady));
   if (lite) {
     const lacking = lite.missing.length ? `，还缺：${lite.missing.join("、")}` : "";
     nodes.modelHint.textContent = `配置包与 SFT/Base 同款，模型差异全在 DiT 权重里${lacking}`;
+  } else if (!models.length && configReady) {
+    nodes.modelHint.textContent = "只装了配置与分词器：模型差异全在 DiT 权重里";
   }
   }
 

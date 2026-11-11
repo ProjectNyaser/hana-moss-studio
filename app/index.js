@@ -744,6 +744,10 @@ function state() {
     })(),
     // 只下了配置的轻量包：DiT 与文本编码器必须来自单文件，界面要能说清缺什么。
     modelLite: installer.liteModelGaps(settings),
+    configPack: (() => {
+      const dir = installer.configDirTarget();
+      return { installed: existsSync(dir), path: dir };
+    })(),
     // 设置版本：界面靠它决定要不要重新对一遍，不必每帧序列化比较。
     settingsRev: store.settingsRevision(),
     engine: {
@@ -1184,6 +1188,24 @@ function state() {
       const result = installer.enqueue("weights", { variant });
       schedulePush(0);
       return c.json({ ...state(), queued: Boolean(result.queued), queuePosition: result.position ?? null, duplicate: Boolean(result.duplicate) });
+    });
+
+    // 自管清单：配置与分词器是一个可装可卸的条目，不属于任何一个整包。
+    app.post(`/${APP_ID}/config/install`, async (c) => {
+      installer.installConfigPack();
+      schedulePush(0);
+      return c.json(state());
+    });
+
+    app.post(`/${APP_ID}/config/remove`, async (c) => {
+      try {
+        installer.removeConfigPack();
+        engine.loadedKey = null;
+        schedulePush(0);
+        return c.json(state());
+      } catch (error) {
+        return c.json({ ...state(), error: message(error) }, 400);
+      }
     });
 
     app.post(`/${APP_ID}/install/config`, async (c) => {
