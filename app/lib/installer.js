@@ -838,8 +838,9 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         }
         if (stall > 180) throw new Error(`下载停滞：${gib(bytes)} / ${gib(total)} GiB，${done}/${items.length} 个文件`);
 
-        // 暂停的也算没有下文，循环得收尾；它们的 .aria2 控制文件还在，下次装能续传。
-        if (done + failedIds.size + paused.size === items.length) return { failed, completed };
+        // 暂停的不算终态：循环得留着，aria2 也得活着，否则「继续」就没有会话可续。
+        // 全部完成或失败才收尾（被移除的单条算失败）。
+        if (done + failedIds.size === items.length) return { failed, completed };
       }
     } finally {
       task.control = null;
@@ -849,12 +850,16 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
 
   /**
    * 单任务操作：pause / unpause / remove。
-   * 按相对路径（task.out）定位，面板上点的是哪一行就传哪个。
+   *
+   * 界面上那一行给的是相对 dataDir 的路径（models/files/xxx.safetensors），
+   * 而 gids 是按落盘绝对路径建的：两种都认，否则每次点都会回「找不到这个文件」。
    */
   async function taskAction(taskId, filePath, action) {
     const task = tasks.get(taskId);
     if (!task?.control) return { ok: false, error: "这个任务不在下载中" };
-    const gid = task.control.gids.get(filePath);
+    const direct = task.control.gids.get(filePath);
+    const abs = direct ? null : join(dataDir, ...String(filePath ?? "").split(/[\\/]+/).filter(Boolean));
+    const gid = direct ?? task.control.gids.get(abs);
     if (!gid) return { ok: false, error: "找不到这个文件" };
     const method =
       action === "pause" ? "aria2.pause" : action === "resume" ? "aria2.unpause" : "aria2.forceRemove";
