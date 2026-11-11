@@ -1635,6 +1635,14 @@ nodes.tier.addEventListener("change", async () => {
   const ditFile = ditPath ? ((latest?.files ?? []).find((item) => item.target === ditPath) ?? null) : null;
   const teActive = modelFiles.textEncoder ?? null;
   try {
+    const lite = Boolean(latest?.modelLite?.lite);
+    // 轻量配置包没有自带权重：任何档位都得先有单文件 DiT，否则引擎直接报目录不完整。
+    if (lite && !ditPath) {
+      const back = latest?.settings?.tier ?? "reference";
+      nodes.tier.value = back;
+      say("这个配置包没有 DiT 权重：先在「DiT 权重」里选一个文件", "warn");
+      return;
+    }
     // turbo 要 4-bit 权重：手上没有单文件 DiT 时选它，引擎只会报 invalid_argument。
     if (tier === "turbo" && !ditPath) {
       const back = latest?.settings?.tier ?? "reference";
@@ -1642,10 +1650,28 @@ nodes.tier.addEventListener("change", async () => {
       say("turbo 要 4-bit DiT：先在「DiT 权重」里选一个 INT4 文件", "warn");
       return;
     }
-    // 两处不兼容：单文件 DiT 跟不上这个档位；reference 又不收量化文本编码器。
-    // 两种都退回 bundle 自带权重，而不是把选择框锁住。
-    const dropDit = Boolean(ditFile?.tier) && ditFile.tier !== tier;
+    // 三档对权重的要求：turbo 要 4-bit，reference 要 bf16，high 只要不是 4-bit。
+    const dropDit = ditFile
+      ? tier === "turbo"
+        ? ditFile.tier !== "turbo"
+        : tier === "reference"
+          ? Boolean(ditFile.tier)
+          : ditFile.tier === "turbo"
+      : false;
+    // reference 也不收量化文本编码器。
     const dropTe = tier === "reference" && Boolean(teActive);
+    // 轻量包里没有可退回的权重：不能“清掉不匹配的文件”，只能把档位退回去。
+    if (lite && (dropDit || dropTe)) {
+      const back = latest?.settings?.tier ?? "reference";
+      nodes.tier.value = back;
+      say(
+        dropDit
+          ? `${shortDitName(ditFile.name)} 只能跑 ${ditFile.tier} 档，档位没改`
+          : "reference 不收量化文本编码器，先把「文本编码器」换成 bf16 或 bundle 自带",
+        "warn",
+      );
+      return;
+    }
     if (dropDit || dropTe) {
       const patch = { tier, modelFiles: { ...modelFiles } };
       if (dropDit) patch.modelFiles.dit = null;

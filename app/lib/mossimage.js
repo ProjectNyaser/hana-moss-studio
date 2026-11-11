@@ -124,6 +124,26 @@ export const MOSSIMAGE = {
       bytes: 5413698958,
       tier: "high",
     },
+    // bf16 单文件：与整包里同一份权重，只对轻量配置包有意义
+    // （那个目录没有 transformer/ 权重，reference 或 high 都得靠单文件）。
+    {
+      id: "dit-bf16-sft",
+      role: "dit",
+      name: "DiT bf16（SFT）",
+      note: "与整包同价；轻量配置包要它才跑得了 reference",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "diffusion_models/moss_image_sft_bf16.safetensors",
+      bytes: 10164655808,
+    },
+    {
+      id: "dit-bf16-base",
+      role: "dit",
+      name: "DiT bf16（Base）",
+      note: "与整包同价；轻量配置包要它才跑得了 reference",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "diffusion_models/moss_image_base_bf16.safetensors",
+      bytes: 10164655808,
+    },
     {
       id: "te-int8",
       role: "text_encoder",
@@ -141,6 +161,15 @@ export const MOSSIMAGE = {
       repo: "Comfy-Org/MOSS-Image",
       path: "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
       bytes: 7343591088,
+    },
+    {
+      id: "te-bf16",
+      role: "text_encoder",
+      name: "文本编码器 bf16",
+      note: "reference 档必需；量化编码器会被拒",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "text_encoders/qwen3.5_9b_bf16.safetensors",
+      bytes: 19_306_312_328,
     },
     // VAE 不单独列：两个 bundle 自带的就是同一份 FLUX.2 small VAE
     // （bundle 里 vae/diffusion_pytorch_model.safetensors 249,521,372 字节，
