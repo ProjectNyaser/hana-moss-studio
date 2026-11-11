@@ -923,15 +923,32 @@ function renderVersions(data) {
     ...models.map((item) => {
       const row = manageRow({
         name: item.label,
-        badges: item.active ? ["当前"] : [],
+        badges: [item.active ? "当前" : null, item.lite ? "轻量" : null].filter(Boolean),
         meta: item.installed
-          ? formatSize(item.bytes)
+          ? item.lite
+            ? `${formatSize(item.bytes)} · 缺 DiT 与文本编码器权重`
+            : formatSize(item.bytes)
           : [item.estimate ? `约 ${formatSize(item.estimate)}` : null, item.note].filter(Boolean).join(" · "),
         detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
         on: item.active,
         // 版本页只管增删：选哪个模型、用哪份 DiT 权重都在侧栏。
         actions: [],
         // 删东西放在展开区里，行上不摆按钮。
+        detailActions: item.installed
+          ? item.lite
+            ? [
+                {
+                  label: "补下完整权重",
+                  run: () => startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
+                },
+              ]
+            : []
+          : [
+              {
+                label: "只下配置（约 258 MB）",
+                run: () => startInstall("/install/config", { variant: item.variant }, `配置 ${item.label}`),
+              },
+            ],
         remove: item.installed
           ? {
               label: "卸载",

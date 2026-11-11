@@ -62,6 +62,19 @@ const MODEL_INCLUDES = [
   "tokenizer/*",
 ];
 
+// 轻量包：只拿引擎识别模型必需的配置与分词器，加 VAE 权重（238 MB）。
+// DiT 与文本编码器用单文件时，transformer/ 与 text_encoder/ 的权重根本不会被读
+// （integration.md：a folder with only the configs and the tokenizer serves when all
+// three files are given），保留 VAE 可以省掉第三个选择框。
+const CONFIG_INCLUDES = [
+  "model_index.json",
+  "scheduler/*",
+  "tokenizer/*",
+  "vae/*",
+  "transformer/config.json",
+  "text_encoder/config.json",
+];
+
 /** CUDA 13 需要驱动 R580+；算力 7.5 只有 Windows cu13 的 sm75 包。 */
 const CUDA13_MIN_DRIVER = 580;
 
@@ -545,8 +558,11 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   }
 
   function enqueue(kind, args) {
-    // installWeights 收的是 variant 字符串，installEngine 收的是参数对象。
-    const run = kind === "engine" ? installEngine(args) : installWeights(args?.variant);
+    // installWeights 收 variant 加选项，installEngine 收参数对象。
+    const run =
+      kind === "engine"
+        ? installEngine(args)
+        : installWeights(args?.variant, { configOnly: Boolean(args?.configOnly) });
     run.catch(() => {});
     return { queued: false };
   }
@@ -1271,17 +1287,19 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     return { ok: true, id, target };
   }
 
-  async function installWeights(variant = "base") {
+  async function installWeights(variant = "base", options = {}) {
     const key = MODELS[variant] ? variant : "base";
+    const configOnly = Boolean(options.configOnly);
     const repo = MODELS[key].repo;
     const weightsDir = weightsTarget(key);
-    const task = makeTask("weights", `权重 · ${MODELS[key].label}`);
+    const task = makeTask(configOnly ? "config" : "weights", `${configOnly ? "配置" : "权重"} · ${MODELS[key].label}`);
     try {
       task.patch({ phase: "listing", message: "读取文件清单" });
       const tree = JSON.parse(await fetchText(network, `${MODEL_ENDPOINT}/api/models/${repo}/tree/main?recursive=true`));
+      const patterns = configOnly ? CONFIG_INCLUDES : MODEL_INCLUDES;
       const wanted = (tree ?? []).filter((entry) => {
         if (entry.type !== "file") return false;
-        return MODEL_INCLUDES.some((pattern) =>
+        return patterns.some((pattern) =>
           pattern.endsWith("/*") ? entry.path.startsWith(pattern.slice(0, -1)) : entry.path === pattern,
         );
       });
@@ -1369,10 +1387,41 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
 
       const paths = { ...(getSettings().modelPaths ?? {}), [key]: weightsDir };
       saveSettings({ modelPaths: paths, modelPath: weightsDir });
-      task.finish({ phase: "done", message: `权重就绪：${wanted.length} 个文件`, detail: { modelPath: weightsDir, variant: key } });
-      onInstalled?.("weights", { modelPath: weightsDir, variant: key });
+      task.finish({
+        phase: "done",
+        message: `${configOnly ? "配置" : "权重"}就绪：${wanted.length} 个文件`,
+        detail: { modelPath: weightsDir, variant: key, configOnly },
+      });
+      onInstalled?.("weights", { modelPath: weightsDir, variant: key, configOnly });
     } catch (error) {
       task.fail(error);
+    }
+  }
+
+  /** 这个目录里有没有 DiT 权重：没有就是只下了配置的轻量包。 */
+  function hasDitWeights(dir) {
+    try {
+      return readdirSync(join(dir, "transformer")).some((name) => /^diffusion_pytorch_model.*\.safetensors$/i.test(name));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 当前模型是轻量包（只有配置与分词器/VAE）时缺哪几个单文件权重。
+   * 全部包 try/catch：这只为一个提示服务，读不出来的目录不能把整帧 state 拖挂。
+   */
+  function liteModelGaps(settings) {
+    try {
+      const dir = settings?.modelPath;
+      if (!dir || !existsSync(dir)) return null;
+      if (hasDitWeights(dir)) return null;
+      const missing = [];
+      if (!settings.modelFiles?.dit) missing.push("DiT");
+      if (!settings.modelFiles?.textEncoder) missing.push("文本编码器");
+      return { missing };
+    } catch {
+      return null;
     }
   }
 
@@ -1395,6 +1444,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         // 组件明细：选模型时最常问的就是「这个 27 GB 到底花在哪」。
         components: installed ? modelComponents(dir) : null,
         active: installed && settings.modelPath === dir,
+        // 只下了配置的轻量包：DiT 与文本编码器得靠单文件，界面要说清楚。
+        lite: installed ? !hasDitWeights(dir) : false,
       };
     });
   }
@@ -1475,6 +1526,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     removeFile,
     fileTier,
     reconcileTier,
+    liteModelGaps,
     taskAction,
     listEngines,
     listModels,

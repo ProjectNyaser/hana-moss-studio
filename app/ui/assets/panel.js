@@ -86,6 +86,7 @@ const nodes = {
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
   model: el("pn-model"),
+  modelHint: el("pn-model-hint"),
   dit: el("pn-dit"),
   ditNote: el("pn-dit-note"),
   te: el("pn-te"),
@@ -1257,7 +1258,11 @@ function renderModels(data) {
       nodes.model.replaceChildren(option);
     }
     nodes.model.disabled = !models.length;
-    if (current) nodes.model.value = current.variant;
+    nodes.model.value = models.length && current ? current.variant : nodes.model.value;
+  // 轻量包（只有配置）：说清楚还缺哪个单文件权重，否则引擎只会报目录不完整。
+  const missing = data?.modelLite?.missing ?? [];
+  nodes.modelHint.hidden = !missing.length;
+  nodes.modelHint.textContent = missing.length ? `这个模型只有配置，还缺：${missing.join("、")}` : "";
   }
 
   // DiT 权重：空值就是 bundle 自带。只列装好的，没装的去版本页下载。

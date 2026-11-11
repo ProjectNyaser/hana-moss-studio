@@ -742,6 +742,8 @@ function state() {
       const need = installer.fileTier(settings.modelFiles?.dit ?? "");
       return need && need !== settings.tier ? { need, current: settings.tier } : null;
     })(),
+    // 只下了配置的轻量包：DiT 与文本编码器必须来自单文件，界面要能说清缺什么。
+    modelLite: installer.liteModelGaps(settings),
     // 设置版本：界面靠它决定要不要重新对一遍，不必每帧序列化比较。
     settingsRev: store.settingsRevision(),
     engine: {
@@ -1182,6 +1184,15 @@ function state() {
       const result = installer.enqueue("weights", { variant });
       schedulePush(0);
       return c.json({ ...state(), queued: Boolean(result.queued), queuePosition: result.position ?? null, duplicate: Boolean(result.duplicate) });
+    });
+
+    app.post(`/${APP_ID}/install/config`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const variant = readVariant(body?.variant);
+      if (!variant) return c.json({ ...state(), error: `未知模型 ${String(body?.variant)}` }, 400);
+      installer.enqueue("weights", { variant, configOnly: true });
+      schedulePush(0);
+      return c.json(state());
     });
 
     app.post(`/${APP_ID}/install/cancel`, async (c) => {
