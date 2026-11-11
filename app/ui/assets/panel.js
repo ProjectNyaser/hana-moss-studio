@@ -146,6 +146,12 @@ const nodes = {
   controlLoraStrength: el("pn-control-lora-strength"),
   controlFile: el("pn-control-file"),
   controlImgFile: el("pn-control-img-file"),
+  layout: el("pn-layout"),
+  layoutNote: el("pn-layout-note"),
+  layoutImport: el("pn-layout-import"),
+  layoutTemplate: el("pn-layout-template"),
+  layoutClear: el("pn-layout-clear"),
+  layoutFile: el("pn-layout-file"),
 };
 
 let latest = null;
@@ -897,8 +903,7 @@ async function prepareControlImage(width, height) {
   return controlImage;
 }
 
-async function setControlImage(file) {
-  try {
+async function setControlImage(file) {  try {
     const image = new Image();
     const url = URL.createObjectURL(file);
     await new Promise((resolve, reject) => {
@@ -916,6 +921,93 @@ async function setControlImage(file) {
     say(error instanceof Error ? error.message : String(error), "bad");
   }
 }
+
+// ── 布局（JSON layout）────────────────────────────────────────────────
+/** 读 textarea 里的布局 JSON 并做最基本的结构检查；错误留在 note 里，不阻断输入。 */
+function readLayoutDoc() {
+  const text = nodes.layout.value.trim();
+  if (!text) return { doc: null, items: 0, error: null };
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch (error) {
+    return { doc: null, items: 0, error: `JSON 解析失败：${error.message}` };
+  }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { doc: null, items: 0, error: "要是一个 JSON 对象" };
+  const items = Array.isArray(doc.items) ? doc.items : [];
+  if (!items.length) return { doc, items: 0, error: "items 为空" };
+  for (const [index, item] of items.entries()) {
+    if (!Array.isArray(item?.bbox) || item.bbox.length !== 4) {
+      return { doc, items, error: `第 ${index + 1} 个 item 的 bbox 要四个数（y1,x1,y2,x2）` };
+    }
+  }
+  return { doc, items, error: null };
+}
+
+function renderLayoutNote() {
+  const { items, error } = readLayoutDoc();
+  if (error) {
+    nodes.layoutNote.textContent = error;
+    nodes.layoutNote.style.color = "var(--danger)";
+    return;
+  }
+  nodes.layoutNote.style.color = "";
+  nodes.layoutNote.textContent = items.length ? `${items.length} 个框` : "未使用";
+}
+
+/** 模板按当前尺寸算坐标：画布中心为原点，上负下正、左负右正。 */
+function insertLayoutTemplate() {
+  const width = Number(nodes.width.value) || 768;
+  const height = Number(nodes.height.value) || 768;
+  const halfW = Math.round(width / 2);
+  const halfH = Math.round(height / 2);
+  const template = {
+    summary: {
+      canvas: "single",
+      // 故意留空：空着就用上面那句提示词，不编一个假 caption。
+      caption: nodes.prompt.value.trim(),
+    },
+    items: [
+      {
+        label: "text",
+        caption: "顶部居中的标题",
+        text: "HELLO",
+        bbox: [Math.round(-halfH * 0.9), Math.round(-halfW * 0.6), Math.round(-halfH * 0.45), Math.round(halfW * 0.6)],
+      },
+      {
+        label: "object",
+        caption: "画面下方的主体",
+        bbox: [Math.round(halfH * 0.1), Math.round(-halfW * 0.5), Math.round(halfH * 0.9), Math.round(halfW * 0.5)],
+      },
+    ],
+    bbox_coord_space: "abs_centralized",
+    bbox_format: "yxyx",
+  };
+  nodes.layout.value = JSON.stringify(template, null, 2);
+  renderLayoutNote();
+  say("已按当前尺寸生成模板：改 caption、text 与 bbox 就能用。");
+}
+
+nodes.layout.addEventListener("input", renderLayoutNote);
+nodes.layoutTemplate.addEventListener("click", insertLayoutTemplate);
+nodes.layoutClear.addEventListener("click", () => {
+  nodes.layout.value = "";
+  renderLayoutNote();
+});
+nodes.layoutImport.addEventListener("click", () => nodes.layoutFile.click());
+nodes.layoutFile.addEventListener("change", async () => {
+  const file = nodes.layoutFile.files?.[0];
+  nodes.layoutFile.value = "";
+  if (!file) return;
+  try {
+    nodes.layout.value = await file.text();
+    renderLayoutNote();
+    const { error, items } = readLayoutDoc();
+    say(error ? error : `已载入布局：${items.length} 个框。`, error ? "bad" : "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+});
 
 // 蒙版画布：白色笔触就是「重画这里」。保存时按 alpha 阈值二值化，避免半透明边。
 let maskCtx = null;
@@ -1120,8 +1212,15 @@ async function refresh() {
 // ── 交互 ───────────────────────────────────────────────────────────────
 async function onGenerate() {
   const prompt = nodes.prompt.value.trim();
-  if (!prompt) {
-    say("先写一句提示词。", "bad");
+  const layout = readLayoutDoc();
+  if (layout.error) {
+    say(`布局有问题：${layout.error}`, "bad");
+    nodes.layout.focus();
+    return;
+  }
+  const caption = prompt || String(layout.doc?.summary?.caption ?? "").trim();
+  if (!caption) {
+    say("先写一句提示词，或在布局里给 summary.caption。", "bad");
     nodes.prompt.focus();
     return;
   }
@@ -1132,13 +1231,15 @@ async function onGenerate() {
   const steps = Math.min(80, Math.max(1, Math.round(Number(nodes.steps.value) || 1)));
   nodes.steps.value = steps;
   const payload = {
-    prompt,
+    prompt: caption,
     negativePrompt: nodes.negative.value,
     width: Number(nodes.width.value),
     height: Number(nodes.height.value),
     steps,
     cfg: Number(nodes.cfg.value),
   };
+  // 布局要走整段 JSON：引擎把提示词当文本编码，框就写在那段文本里。
+  if (layout.doc) payload.layout = layout.doc;
   const effectiveScale = Math.min(hiresScale, hiresMax());
   if (effectiveScale > 1.001) {
     payload.hiresScale = Math.round(effectiveScale * 100) / 100;

@@ -3,6 +3,16 @@ import { join } from "node:path";
 import { scanOutputs } from "./outputs.js";
 import { VALUES } from "./params.js";
 
+/** 宿主权限模型会拦掉远处的路径：拦了就当文件不在。 */
+function safeExists(path) {
+  if (!path) return false;
+  try {
+    return existsSync(path);
+  } catch {
+    return false;
+  }
+}
+
 /** 苔室的持久化。
  *
  *  记录跟着文件走：出图目录里的 PNG 自带生成参数，记录由它派生，不落台账。
@@ -107,9 +117,10 @@ export function createStore(dataDir, outputsDir) {
         stepCache: VALUES.stepCache.includes(defaults.stepCache) ? defaults.stepCache : "off",
         stepCacheThreshold:
           defaults.stepCacheThreshold == null ? null : clampFloat(defaults.stepCacheThreshold, 0.0001, 1, 0.03),
-        loras: normalizeLoras(defaults.loras),
+        loras: normalizeLoras(defaults.loras).filter((item) => safeExists(item.path)),
         control: {
-          adapter: typeof defaults.control?.adapter === "string" && defaults.control.adapter ? defaults.control.adapter : null,
+          // 文件已经被删掉的适配器不留在设置里：留着就会让每次生成都报错。
+          adapter: typeof defaults.control?.adapter === "string" && safeExists(defaults.control.adapter) ? defaults.control.adapter : null,
           kind: typeof defaults.control?.kind === "string" && defaults.control.kind ? defaults.control.kind : null,
           loraStrength: clampFloat(defaults.control?.loraStrength, 0, 10, 1),
           strength: clampFloat(defaults.control?.strength, 0, 10, 1),

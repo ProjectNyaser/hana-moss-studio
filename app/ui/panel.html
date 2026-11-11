@@ -71,6 +71,8 @@
     .pn-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
     .pn-grid > .field { min-width: 0; }
     .pn input, .pn select, .pn textarea { min-width: 0; max-width: 100%; }
+    /* 布局 JSON：等宽字体才看得清层级 */
+    #pn-layout { font-family: var(--ui-mono, ui-monospace, "Cascadia Mono", Consolas, monospace); font-size: 11px; line-height: 1.5; }
 
     .pn-presets { display: flex; flex-wrap: wrap; gap: 4px; }
 
@@ -472,6 +474,21 @@
         <p class="hint">需要带 video_embedder 的完整控制适配器；只含 LoRA 的文件拿去做控制图会被引擎拒，拿去做 LoRA 就行。</p>
         <input type="file" id="pn-control-file" accept=".safetensors,.ckpt,.pt" hidden>
         <input type="file" id="pn-control-img-file" accept="image/*" hidden>
+      </div>
+    </details>
+
+    <details class="pn-fold" id="pn-layout-fold">
+      <summary><svg class="ic"><use href="#i-prompt"/></svg>布局<span class="hint" id="pn-layout-note">未使用</span></summary>
+      <div class="fold-body">
+        <textarea id="pn-layout" rows="6" spellcheck="false"
+                  placeholder='{"summary":{"caption":"..."},"items":[{"label":"text","text":"HELLO","bbox":[-200,-100,-120,100]}]}'></textarea>
+        <div class="pn-install-actions">
+          <button class="btn ghost small" id="pn-layout-import" type="button">导入 JSON</button>
+          <button class="btn ghost small" id="pn-layout-template" type="button">模板</button>
+          <button class="btn ghost small" id="pn-layout-clear" type="button">清空</button>
+        </div>
+        <p class="hint">布局就是一段 JSON，直接当提示词交给模型：items 里每个框写清「这块画什么」。坐标以画布中心为原点、单位像素，格式 <code>yxyx</code>（上、左、下、右），所以换尺寸要重算。模板按当前尺寸生成。</p>
+        <input type="file" id="pn-layout-file" accept=".json,application/json" hidden>
       </div>
     </details>
 

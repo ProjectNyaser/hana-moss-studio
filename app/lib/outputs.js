@@ -134,9 +134,24 @@ export function scanOutputs(dir) {
       continue;
     }
     const id = name.replace(/\.png$/i, "");
+    // 布局提示的 prompt 是一段 JSON；画廊要的是 caption，不是一整块坐标。
+    let prompt = meta?.prompt ?? text?.parameters?.split("\n")[0] ?? "";
+    let layoutItems = 0;
+    if (typeof prompt === "string" && prompt.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(prompt);
+        if (parsed?.summary || Array.isArray(parsed?.items)) {
+          layoutItems = Array.isArray(parsed.items) ? parsed.items.length : 0;
+          prompt = String(parsed.summary?.caption ?? prompt).trim();
+        }
+      } catch {
+        /* 不像 JSON 就原样留着 */
+      }
+    }
     records.push({
       id,
-      prompt: meta?.prompt ?? text?.parameters?.split("\n")[0] ?? "",
+      prompt,
+      layoutItems,
       negativePrompt: meta?.negative_prompt ?? "",
       width: meta?.width ?? null,
       height: meta?.height ?? null,

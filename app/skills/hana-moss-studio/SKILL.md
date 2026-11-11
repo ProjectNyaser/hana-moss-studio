@@ -1,6 +1,6 @@
 ---
 name: hana-moss-studio
-description: 苔室（Hana-Moss-Studio，v2 App）——MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、提示词面板与画廊，工具出图在对话里挂实时进度卡。触发场景：用苔室出图、用 MOSS-Image 生图、查看苔室引擎状态、取回生成的图片、启停引擎、图生图、高清修正、放大图片、显存不足、arena overflow、模型未加载、引擎路径没配、工作区打不开、面板读不出数据、苔室进度卡不刷新、给这台机器部署苔室引擎、装 moss-server、下载 mossinfer 包、Linux 上装引擎、chmod 执行位、缺 libcublasLt、cuBLASLt 找不到、驱动版本不够装不了、换显卡重新部署、拉 MOSS-Image 权重。不触发：用 ComfyUI 出图（那是 comfyui-hana）、用云端模型生图（那是 media_generate-image）、只要一张图且不关心本机模型（同样走 media_generate-image）。
+description: 苔室（Hana-Moss-Studio，v2 App）——MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、采样器与加速器、LoRA、图生图与局部重绘、JSON 布局提示（指哪画哪），工具出图在对话里挂实时进度卡。触发场景：用苔室出图、用 MOSS-Image 生图、查看苔室引擎状态、取回生成的图片、启停引擎、释放显存、图生图、局部重绘、蒙版、LoRA、画质调参、采样器与调度器、加速器、JSON 布局、layout 提示、bbox、指哪画哪、框选位置、文字排版控制、高清修正、放大图片、显存不足、arena overflow、模型未加载、引擎路径没配、工作区打不开、面板读不出数据、苔室进度卡不刷新、给这台机器部署苔室引擎、装 moss-server、下载 mossinfer 包、Linux 上装引擎、chmod 执行位、缺 libcublasLt、cuBLASLt 找不到、驱动版本不够装不了、换显卡重新部署、拉 MOSS-Image 权重。不触发：用 ComfyUI 出图（那是 comfyui-hana）、用云端模型生图（那是 media_generate-image）、只要一张图且不关心本机模型（同样走 media_generate-image）。
 ---
 
 # 苔室（Hana-Moss-Studio）
@@ -70,6 +70,8 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 | `controlAdapter` / `controlKind` / `controlImage` | 控制适配器：文件路径、kind（`depth` / `canny` / `pose` 之类，取适配器支持的）、控制图路径 |
 | `controlStrength` / `controlLoraStrength` | 控制图强度（0~10，缺省 1）与适配器自带 LoRA 部分的强度 |
 | `referenceImages` / `referenceMaxEdge` | 编辑适配器的参考图（最多 4 张，第一张是源图）与长边像素（缺省 512） |
+| `layout` / `layoutPath` | 布局提示（JSON layout）：直接给对象，或给一个 JSON 文件的绝对路径 |
+| `boxes` | 指哪画哪的快捷写法：`[{label, caption, text?, box:[x0,y0,x1,y1]}]`，坐标从左上角算、单位像素 |
 
 路径的限制：宿主只允许 App 读写 HANA_HOME 与工作区，桌面上的图直接当 `initImage` 会被权限层拦下。这种图先 `POST .../inputs/upload?kind=init`（或让用户在侧栏选）落到苔室的运行时目录，再拿返回的路径。LoRA 同理，走 `/loras/import` 落在 `app-data/hana-moss-studio/loras/`。
 
@@ -133,6 +135,38 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 - **位置写具体**：「人物在画面左侧三分之一，右侧大片留白」比「构图偏左」有效得多。
 - **别写「雾」「朦胧」又怪它灰**：低饱和、薄雾、莫兰迪这些词会真的把画面压灰。
 - **手容易糊**：贴身小物件、握持动作、手指细节是弱项，16 步也救不回来。要么减少手部戏份，要么换姿势。
+
+## 布局提示（指哪画哪）
+
+MOSS-Image 支持把整张图的排布写成一段 JSON，**这段 JSON 就是提示词**，引擎不需要额外参数。官方格式（实验性，Base 与 SFT 实测都跟）：
+
+```json
+{
+  "summary": { "canvas": "single", "caption": "整张图的描述" },
+  "items": [
+    { "label": "text", "text": "EXPLORE", "caption": "顶部居中的大标题", "bbox": [-240, -200, -120, 200] },
+    { "label": "object", "caption": "下方的蓝山", "bbox": [0, -180, 200, 180] }
+  ],
+  "bbox_coord_space": "abs_centralized",
+  "bbox_format": "yxyx"
+}
+```
+
+两个坐标语义最容易搞错：
+
+- `bbox_format: "yxyx"`：顺序是 `[y_min, x_min, y_max, x_max]`，不是 xyxy。
+- `bbox_coord_space: "abs_centralized"`：以**画布中心**为原点、单位像素，上负下正、左负右正。512×512 的画布范围是 ±256。从左上角坐标转换就是 `x - W/2`、`y - H/2`。
+
+写起来麻烦的是坐标。苔室给了两个省事的入口：
+
+- 工具面用 `boxes`：从左上角算的 `[x0, y0, x1, y1]`，苔室按 `width × height` 换算成模型要的中心坐标，再拼成 layout JSON。给了 `boxes` 就以它为准。
+- 侧栏的「布局」段：直接贴 JSON，或点「模板」按当前尺寸生成一份可改的骨架；JSON 写坏时会当场指出哪一条不合法。
+
+几条实测经验：
+
+- **改尺寸要重算坐标**。bbox 是像素而不是比例，换个画幅原来的框就偏了。
+- 文字要渲染就写成 `label: "text"` 并把内容放在 `text`，`caption` 描述样式（颜色、大小、位置）。
+- 模型对框的服从是「大致就位」而不是像素级：单张图里 2～4 个元素最稳，再多会互相挤。
 
 ## 产物在哪
 

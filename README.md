@@ -92,6 +92,18 @@ git submodule update --init --depth 1
 
 工具面另有三件：`moss_estimate`（空跑 `check`，给「能不能跑、要多久」）、`moss_inspect`（问引擎一个文件是什么）、`moss_engine`（start / stop / release，`release` 把显存还回去但留住引擎）。
 
+## 布局（指哪画哪）
+
+MOSS-Image 支持把排布写成 JSON，**那段 JSON 就是提示词**，不需要额外协议参数：
+
+```json
+{"summary":{"canvas":"single","caption":"整张图的描述"},
+ "items":[{"label":"text","text":"EXPLORE","caption":"顶部大标题","bbox":[-240,-200,-120,200]}],
+ "bbox_coord_space":"abs_centralized","bbox_format":"yxyx"}
+```
+
+坐标是 `yxyx` 顺序，原点在**画布中心**，单位像素（512² 的范围是 ±256）。侧栏有可收起的「布局」段：贴 JSON、或按当前尺寸生成模板，写错时指出哪一条不合法。工具面用 `boxes` 更省事：给左上角的 `[x0,y0,x1,y1]`，苔室按 `width × height` 换算并拼成 layout JSON。画廊里的布局图会把 prompt 显示成 `summary.caption`，旧 PNG 也照这个规则读。
+
 ## 装引擎与权重
 
 用户不需要命令行。左侧面板「引擎与模型」里两个按钮：

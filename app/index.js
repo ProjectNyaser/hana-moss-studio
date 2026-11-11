@@ -4,7 +4,7 @@ import { join, basename, dirname } from "node:path";
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine, buildGenerateParams } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
-import { capabilityMap, menuValues, readGeneration, VALUES } from "./lib/params.js";
+import { capabilityMap, menuValues, readGeneration, readLayout, VALUES } from "./lib/params.js";
 import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
 import { createInstaller, probeGpu, probeGpuDetailed } from "./lib/installer.js";
 import { shrinkToWebp } from "./lib/image.js";
@@ -166,7 +166,7 @@ export default defineApp(async (sdk) => {
     return {
       id: job.id,
       cardId: cardIdOf(job.id),
-      prompt: job.prompt,
+      prompt: job.caption ?? job.prompt,
       negativePrompt: job.negativePrompt,
       width: job.width,
       height: job.height,
@@ -179,6 +179,7 @@ export default defineApp(async (sdk) => {
       stepCache: job.stepCache ?? "off",
       loras: Array.isArray(job.loras) ? job.loras : [],
       control: job.control ?? null,
+      layout: job.layout ?? null,
       references: job.references ?? null,
       initImage: job.initImage ?? null,
       mask: job.mask ?? null,
@@ -451,13 +452,17 @@ export default defineApp(async (sdk) => {
    * 返回的记录不含 id / output，那两样只属于真正入队的那些。
    */
   function buildRecord(input, settings) {
-    const prompt = String(input?.prompt ?? "").trim();
-    if (!prompt) throw new Error("提示词不能为空");
     const box = resolveSize(input, settings.defaults);
+    // 布局先算：它会把 prompt 换成一段 JSON，而 caption 仍当展示用的提示词。
+    const layout = readLayout(input, box.width, box.height);
+    const caption = String(input?.prompt ?? "").trim() || layout?.caption || "";
+    if (!caption) throw new Error("提示词不能为空");
     // 参数面先收敛：认不出的采样器、缺文件的 LoRA 在这里就拒，别让它排进队列才失败。
     const gen = readGeneration(input, settings.defaults);
     const record = {
-      prompt,
+      prompt: layout ? layout.prompt : caption,
+      caption,
+      layout: layout ? { items: layout.items, caption: layout.caption } : null,
       negativePrompt: String(input?.negativePrompt ?? "").trim(),
       width: box.width,
       height: box.height,
@@ -657,7 +662,7 @@ export default defineApp(async (sdk) => {
     return {
       id: job.id,
       cardId: cardIdOf(job.id),
-      prompt: job.prompt,
+      prompt: job.caption ?? job.prompt,
       negativePrompt: job.negativePrompt ?? "",
       width: job.width,
       height: job.height,
@@ -671,6 +676,7 @@ export default defineApp(async (sdk) => {
       stepCache: job.stepCache ?? "off",
       loras: Array.isArray(job.loras) ? job.loras : [],
       control: job.control ? { kind: job.control.kind ?? null, images: job.control.images?.length ?? 0 } : null,
+      layout: job.layout ?? null,
       hasInitImage: Boolean(job.initImage),
       hasMask: Boolean(job.mask),
       seed: job.report?.seedUsed ?? job.seed,
@@ -860,6 +866,7 @@ function state() {
       shift: source.shift ?? null,
       stepCache: source.stepCache ?? "off",
       loras: Array.isArray(source.loras) ? source.loras : [],
+      layout: source.layout ?? null,
       control: source.control ?? null,
       references: source.references ?? null,
       initImage: source.initImage ?? null,
@@ -1431,7 +1438,28 @@ function state() {
     parameters: {
       type: "object",
       properties: {
-        prompt: { type: "string", description: "正向提示词，越具体越好" },
+        prompt: { type: "string", description: "正向提示词，越具体越好。给了 layout / boxes 且其中没写 caption 时可以省，省了就用 JSON 里的 caption" },
+        layout: {
+          type: "object",
+          description:
+            "布局提示（模型面 JSON layout）：{summary:{caption, ...}, items:[{label, caption, text?, bbox:[y_min,x_min,y_max,x_max]}]}。bbox 用画布中心为原点的绝对像素坐标，与官方文档一致；适合已有精确坐标时",
+        },
+        layoutPath: { type: "string", description: "布局 JSON 的绝对路径（与 layout 二选一）" },
+        boxes: {
+          type: "array",
+          description:
+            "指哪画哪的快捷写法：每个框 {label, caption, text?, box:[x0,y0,x1,y1]}，坐标从画布左上角算、单位是像素，按 width×height 换算成模型要的中心坐标。给了它就以它为准",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string", description: "text / object / 其它类别" },
+              caption: { type: "string", description: "这块画什么" },
+              text: { type: "string", description: "label 为 text 时要渲染的字" },
+              box: { type: "array", description: "[x0, y0, x1, y1]，左上角原点", items: { type: "number" } },
+            },
+            required: ["box"],
+          },
+        },
         negativePrompt: { type: "string", description: "反向提示词" },
         width: { type: "integer", description: "宽度，缺省取苔室设置里的默认值。单张最大 4.2 百万像素" },
         height: { type: "integer", description: "高度，与宽度共同受 4.2 百万像素限制" },
@@ -1510,7 +1538,7 @@ function state() {
         strength: { type: "number", description: "图生图的重绘强度，0.05~1，缺省 0.6。越大越偏离原图，0.8 左右会重画背景又保住配色布局" },
         resize: { type: "string", description: "参考图适配方式：crop（居中等比裁剪，缺省）/ fit（留边）/ stretch（拉伸）" },
       },
-      required: ["prompt"],
+      required: [],
     },
     execute: async (args) => {
       const input = args ?? {};
@@ -1535,6 +1563,7 @@ function state() {
           ? `- 编辑参考图：${entry.references.images.length} 张（长边 ${entry.references.maxEdge}）`
           : "",
         `- 提示词：${entry.prompt.slice(0, 120)}${entry.prompt.length > 120 ? "…" : ""}`,
+        entry.layout ? `- 布局：${entry.layout.items} 个框 · 尺寸与 bbox 必须对应，改尺寸要重算坐标` : "",
         `- 进度：下方卡片实时刷新（${position ? `队列第 ${position} 位` : "已开始"}）。`,
         entry.taskId
           ? `- 宿主任务：${entry.taskId}（出图完成后自动回执）`
@@ -1639,7 +1668,9 @@ function state() {
     parameters: {
       type: "object",
       properties: {
-        prompt: { type: "string", description: "正向提示词，必填" },
+        prompt: { type: "string", description: "正向提示词，必填（给布局时可用布局里的 caption）" },
+        layout: { type: "object", description: "布局 JSON，同 moss_generate" },
+        boxes: { type: "array", description: "指哪画哪的框，同 moss_generate", items: { type: "object" } },
         negativePrompt: { type: "string", description: "反向提示词" },
         width: { type: "integer", description: "宽度" },
         height: { type: "integer", description: "高度" },

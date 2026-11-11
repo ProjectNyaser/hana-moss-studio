@@ -11,7 +11,7 @@
  *   3. 布尔/空值语义照协议，`0` 是合法值的地方不能当假值处理。
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { MOSSIMAGE } from "./mossimage.js";
 
@@ -193,6 +193,100 @@ export function readControl(input, base) {
     adapter,
     loraStrength: finite(raw.loraStrength ?? input?.controlLoraStrength ?? fromDefaults.loraStrength ?? 1, 0, 10) ?? 1,
     images,
+  };
+}
+
+/**
+ * 布局提示（model-facing JSON layout，文档里叫 Layout prompts，实验性）。
+ * 模型吃的就是一段 JSON，所以这里只负责把它拼对：
+ *   - bbox_format 固定 yxyx，bbox_coord_space 固定 abs_centralized（画布中心为原点）；
+ *   - 工具侧允许给人看得懂的屏幕坐标 boxes（左上角原点、[x0,y0,x1,y1]），在这里换算；
+ *   - 没给 summary.caption 时拿 prompt 当 caption，两条路都能写出提示。
+ */
+export const LAYOUT_FORMAT = "yxyx";
+export const LAYOUT_SPACE = "abs_centralized";
+
+function readJsonSource(raw, label) {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw === "object") return raw;
+  const text = String(raw).trim();
+  // 路径比 JSON 更便宜判断：以 { 开头的才是内联 JSON。
+  if (!text.startsWith("{") && !text.startsWith("[")) {
+    const path = requireFile(text, label);
+    return JSON.parse(readFileSync(path, "utf8"));
+  }
+  return JSON.parse(text);
+}
+
+function num(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 屏幕坐标（左上原点）→ 画布中心坐标，并按 yxyx 排序。 */
+function boxToCenteredYxyx(box, width, height) {
+  if (!Array.isArray(box) || box.length !== 4) throw new Error("每个 box 要四个数：[x0, y0, x1, y1]");
+  const [x0, y0, x1, y1] = box.map(num);
+  if ([x0, y0, x1, y1].some((value) => value === null)) throw new Error("box 里必须都是数字");
+  const left = Math.min(x0, x1);
+  const right = Math.max(x0, x1);
+  const top = Math.min(y0, y1);
+  const bottom = Math.max(y0, y1);
+  const clampX = (value) => Math.max(-width / 2, Math.min(width / 2, value));
+  const clampY = (value) => Math.max(-height / 2, Math.min(height / 2, value));
+  return [
+    Math.round(clampY(top - height / 2)),
+    Math.round(clampX(left - width / 2)),
+    Math.round(clampY(bottom - height / 2)),
+    Math.round(clampX(right - width / 2)),
+  ];
+}
+
+/**
+ * 返回 { prompt, caption, items } 或 null。prompt 就是交给引擎的那段 JSON。
+ * `boxes` 优先级高于 `layout.items`：两者都给时，以画出来的框为准。
+ */
+export function readLayout(input, width, height) {
+  const doc = readJsonSource(input?.layout ?? input?.layoutJson ?? input?.layoutPath, "布局 JSON");
+  const boxes = Array.isArray(input?.boxes) ? input.boxes : null;
+  if (!doc && !boxes) return null;
+  const layout = doc && typeof doc === "object" ? { ...doc } : {};
+  layout.summary = { ...(layout.summary ?? {}) };
+  // caption 空着就拿 prompt 补：模板故意不编 caption，交给用户写的那句提示词。
+  const caption = String(layout.summary.caption ?? "").trim() || String(input?.prompt ?? "").trim();
+  if (caption) layout.summary.caption = caption;
+
+  if (boxes) {
+    layout.items = boxes.map((item, index) => {
+      const box = Array.isArray(item?.box) ? item.box : [item?.x0, item?.y0, item?.x1, item?.y1];
+      const entry = {
+        label: String(item?.label ?? "object"),
+        caption: String(item?.caption ?? "" ).trim() || String(item?.text ?? "").trim() || "",
+        bbox: boxToCenteredYxyx(box, width, height),
+      };
+      if (item?.text) entry.text = String(item.text);
+      if (!entry.caption && !entry.text) throw new Error(`第 ${index + 1} 个框缺少 caption 或 text`);
+      return entry;
+    });
+  }
+
+  if (!Array.isArray(layout.items) || !layout.items.length) throw new Error("布局里没有 items");
+  layout.items = layout.items.map((item, index) => {
+    const entry = { ...item };
+    if (!Array.isArray(entry.bbox) || entry.bbox.length !== 4) {
+      throw new Error(`第 ${index + 1} 个 item 的 bbox 要四个数`);
+    }
+    entry.bbox = entry.bbox.map((value) => Math.round(num(value) ?? 0));
+    if (!entry.label) entry.label = "object";
+    return entry;
+  });
+  layout.bbox_format = LAYOUT_FORMAT;
+  layout.bbox_coord_space = LAYOUT_SPACE;
+  return {
+    prompt: JSON.stringify(layout),
+    caption: caption || layout.items.length + " 个元素",
+    items: layout.items.length,
+    doc: layout,
   };
 }
 
