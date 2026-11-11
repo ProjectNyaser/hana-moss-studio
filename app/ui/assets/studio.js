@@ -49,7 +49,6 @@ const nodes = {
   modelState: el("versions-model-state"),
   modelList: el("versions-model"),
   configList: el("config-list"),
-  configState: el("config-state"),
   host: el("versions-host"),
   // 下载
   toast: el("toast"),
@@ -1102,7 +1101,6 @@ function renderDownload(data) {
 function renderConfigPack(data) {
   const pack = data?.configPack ?? { installed: false };
   const inUse = Boolean(pack.installed && data?.settings?.modelPath === pack.path);
-  nodes.configState.textContent = pack.installed ? (inUse ? "在用" : "已装") : "未安装";
   const row = manageRow({
     name: "配置、分词器与 VAE",
     meta: pack.installed ? "约 258 MB" : "约 258 MB · DiT 与文本编码器用单文件",
