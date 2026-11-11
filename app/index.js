@@ -737,6 +737,11 @@ function state() {
   const allJobs = store.listJobs();
   return {
     settings,
+    // 档位和当前 DiT 不一致时给界面一句话（启动时已经修过一次，这里是手动改回去的情形）。
+    tierMismatch: (() => {
+      const need = installer.fileTier(settings.modelFiles?.dit ?? "");
+      return need && need !== settings.tier ? { need, current: settings.tier } : null;
+    })(),
     // 设置版本：界面靠它决定要不要重新对一遍，不必每帧序列化比较。
     settingsRev: store.settingsRevision(),
     engine: {
@@ -1819,6 +1824,11 @@ function state() {
       return { content: [{ type: "text", text: text.join("\n") }], details: { moss: snapshot } };
     },
   });
+
+  // 启动时把档位和当前 DiT 对一次：错配的组合引擎要到 generate 才回 invalid_argument。
+  // 放在最后：这会写一次设置，而设置事件要经由 SSE 广播，注册完才安全。
+  const tierFix = installer.reconcileTier();
+  if (tierFix) sdk.logger.info(`档位随 DiT 调整：${tierFix.from} → ${tierFix.to}`);
 
   sdk.logger.info("苔室已加载");
 });

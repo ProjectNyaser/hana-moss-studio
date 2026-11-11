@@ -1098,6 +1098,16 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
   /** 发布页那张表：每个文件在哪、下没下、是不是当前在用的那个。 */
   function listFiles() {
     const settings = getSettings();
+    // 单文件的 DiT / 文本编码器是 bundle 里那两份的量化替代品，
+    // 带上 bundle 里对应组件的体积，界面才说得清「它替掉的是什么」。
+    const activeDir = settings.modelPath && existsSync(settings.modelPath) ? settings.modelPath : null;
+    const parts = activeDir ? modelComponents(activeDir) : [];
+    const bundle = (role) => {
+      const label = role === "dit" ? "DiT" : role === "text_encoder" ? "文本编码器" : role === "vae" ? "VAE" : null;
+      if (!label) return null;
+      const part = parts.find((item) => item.label === label);
+      return part ? { label, bytes: part.bytes } : null;
+    };
     return (MOSSIMAGE.files ?? []).map((entry) => {
       const target = fileTarget(entry);
       let installed = false;
@@ -1117,7 +1127,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
               : entry.role === "text_encoder"
                 ? settings.modelFiles?.textEncoder === target
                 : settings.modelFiles?.vae === target;
-      return { ...entry, target, installed, active };
+      return { ...entry, target, installed, active, bundle: bundle(entry.role) };
     });
   }
 
@@ -1136,7 +1146,31 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       return;
     }
     const key = entry.role === "dit" ? "dit" : entry.role === "text_encoder" ? "textEncoder" : "vae";
-    saveSettings({ modelFiles: { ...(settings.modelFiles ?? {}), [key]: target } });
+    saveSettings({
+      modelFiles: { ...(settings.modelFiles ?? {}), [key]: target },
+      // 单文件 DiT 自带档位要求（INT4 只跑 turbo，INT8 只跑 high），一并切过去。
+      ...(entry.role === "dit" && entry.tier ? { tier: entry.tier } : {}),
+    });
+  }
+
+  /** 这个路径的单文件 DiT 需要哪个档位（不认识就 null）。 */
+  function fileTier(target) {
+    if (!target) return null;
+    const entry = (MOSSIMAGE.files ?? []).find((item) => fileTarget(item) === target);
+    return entry?.tier ?? null;
+  }
+
+  /**
+   * 把档位拉回和当前 DiT 一致。
+   * 引擎对错配的组合不会在 load 时拒绝，而是跑到 generate 才回 invalid_argument，
+   * 所以启动时先对一下，不留一个“看着能用、一按就错”的状态。
+   */
+  function reconcileTier() {
+    const settings = getSettings();
+    const need = fileTier(settings.modelFiles?.dit ?? "");
+    if (!need || settings.tier === need) return null;
+    saveSettings({ tier: need });
+    return { from: settings.tier, to: need };
   }
 
   /** 下一个单文件：aria2 多源、断点续传，完事对一下大小，然后写进设置。 */
@@ -1416,6 +1450,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     listFiles,
     useFile,
     removeFile,
+    fileTier,
+    reconcileTier,
     taskAction,
     listEngines,
     listModels,

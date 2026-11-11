@@ -100,6 +100,9 @@ export const MOSSIMAGE = {
       repo: "toxicdog/MOSS-Image-SFT-INT4-ConvRot-ComfyUI",
       path: "diffusion_models/moss_image_sft_int4_convrot.safetensors",
       bytes: 3035537312,
+      // 档位是引擎定死的：INT4 只跑 turbo，INT8 只跑 high，其它组合会以
+      // invalid_argument 收场。选了这个 DiT 就把档位带过去，不让用户撞上去。
+      tier: "turbo",
     },
     {
       id: "dit-int8-sft",
@@ -109,6 +112,7 @@ export const MOSSIMAGE = {
       repo: "Comfy-Org/MOSS-Image",
       path: "diffusion_models/moss_image_sft_int8_convrot.safetensors",
       bytes: 5413698958,
+      tier: "high",
     },
     {
       id: "dit-int8-base",
@@ -118,6 +122,7 @@ export const MOSSIMAGE = {
       repo: "Comfy-Org/MOSS-Image",
       path: "diffusion_models/moss_image_base_int8_convrot.safetensors",
       bytes: 5413698958,
+      tier: "high",
     },
     {
       id: "te-int8",
@@ -137,15 +142,9 @@ export const MOSSIMAGE = {
       path: "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
       bytes: 7343591088,
     },
-    {
-      id: "vae-small",
-      role: "vae",
-      name: "VAE（FLUX.2 small）",
-      note: "单文件方案用",
-      repo: "Comfy-Org/MOSS-Image",
-      path: "vae/flux2-vae_small.safetensors",
-      bytes: 249521340,
-    },
+    // VAE 不单独列：两个 bundle 自带的就是同一份 FLUX.2 small VAE
+    // （bundle 里 vae/diffusion_pytorch_model.safetensors 249,521,372 字节，
+    // 这里那份 249,521,340），多下一份只是白占 238 MB。
   ],
 };
 

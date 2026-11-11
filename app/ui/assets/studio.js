@@ -1012,11 +1012,20 @@ function renderDownload(data) {
   const groups = [
     { roles: ["control", "lora"], list: nodes.downloadAdapters, state: nodes.filesAdapterState },
     { roles: ["dit"], list: nodes.downloadDits, state: nodes.filesDitState },
-    { roles: ["text_encoder", "vae"], list: nodes.downloadEncoders, state: nodes.filesEncoderState },
+    { roles: ["text_encoder"], list: nodes.downloadEncoders, state: nodes.filesEncoderState },
   ];
   for (const group of groups) {
     const items = files.filter((item) => group.roles.includes(item.role));
-    group.state.textContent = items.length ? `${items.filter((item) => item.installed).length}/${items.length} 已装` : "";
+    // 「替掉 bundle 里哪一份」是整组的事，写在组标题上，不在每行重复三遍。
+    const bundle = items.find((item) => item.bundle)?.bundle ?? null;
+    const mismatch = group.roles.includes("dit") ? data.tierMismatch : null;
+    group.state.textContent = [
+      items.length ? `${items.filter((item) => item.installed).length}/${items.length} 已装` : null,
+      bundle ? `替代 bundle 里的 ${bundle.label}（${formatSize(bundle.bytes)}）` : null,
+      mismatch ? `需要 ${mismatch.need} 档（当前 ${mismatch.current}）` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
     group.list.replaceChildren(
       ...items.map((item) => {
         const row = manageRow({
