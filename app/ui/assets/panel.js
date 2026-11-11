@@ -86,7 +86,8 @@ const nodes = {
   memoryMode: el("pn-memory-mode"),
   tier: el("pn-tier"),
   model: el("pn-model"),
-  modelNote: el("pn-model-note"),
+  dit: el("pn-dit"),
+  ditNote: el("pn-dit-note"),
   errors: el("pn-errors"),
   sampler: el("pn-sampler"),
   scheduler: el("pn-scheduler"),
@@ -1220,48 +1221,59 @@ function renderEngine(data) {
 }
 
 /**
- * 模型选择放在出图的地方。
- *
- * 只有装好的 bundle 才进选项；单文件 DiT 不在这一列（它是「替换掉哪份权重」），
- * 选上了就在标签后面点名一句，否则用户看到的模型名和引擎真在跑的对不上。
+ * 侧侧模型区的两个选择：
+ *   模型 = 哪个 bundle（SFT / Base）；DiT 权重 = 用 bundle 自带的 bf16，还是已装的单文件。
+ * 两件事分开说，所以是两个框；单文件 DiT 不是另一个模型。
  */
 let modelsKey = "";
+let ditsKey = "";
 function renderModels(data) {
   const models = (Array.isArray(data?.models) ? data.models : []).filter((item) => item.installed);
   const current = models.find((item) => item.active) ?? null;
-  const ditPath = data?.settings?.modelFiles?.dit ?? null;
-  // 单文件 DiT 是「替掉 bundle 里那份权重」，不是另一个模型，所以在下面单独说一句，
-  // 不跟模型名挤在同一行——那样看起来像两个模型名。
-  const ditFile = ditPath ? (data?.files ?? []).find((item) => item.target === ditPath) ?? null : null;
-  nodes.modelNote.textContent = ditPath
-    ? [
-        `单文件 DiT：${shortDitName(ditFile?.name ?? basenameOf(ditPath))}`,
-        ditFile?.tier && ditFile.tier !== data?.settings?.tier ? `它只能跑 ${ditFile.tier} 档` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
-  nodes.modelNote.title = ditPath ?? "";
-  nodes.modelNote.hidden = !ditPath;
   const key = models.map((item) => `${item.variant}:${item.label}`).join("|") + `#${current?.variant ?? ""}`;
-  if (key === modelsKey) return;
-  modelsKey = key;
-  nodes.model.replaceChildren(
-    ...models.map((item) => {
+  if (key !== modelsKey) {
+    modelsKey = key;
+    nodes.model.replaceChildren(
+      ...models.map((item) => {
+        const option = document.createElement("option");
+        option.value = item.variant;
+        option.textContent = item.label;
+        return option;
+      }),
+    );
+    if (!models.length) {
       const option = document.createElement("option");
-      option.value = item.variant;
-      option.textContent = item.label;
-      return option;
-    }),
-  );
-  if (!models.length) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = "还没有装模型";
-    nodes.model.replaceChildren(option);
+      option.value = "";
+      option.textContent = "还没有装模型";
+      nodes.model.replaceChildren(option);
+    }
+    nodes.model.disabled = !models.length;
+    if (current) nodes.model.value = current.variant;
   }
-  nodes.model.disabled = !models.length;
-  if (current) nodes.model.value = current.variant;
+
+  // DiT 权重：空值就是 bundle 自带。只列装好的，没装的去版本页下载。
+  const dits = (data?.files ?? []).filter((item) => item.role === "dit" && item.installed);
+  const ditPath = data?.settings?.modelFiles?.dit ?? null;
+  const ditFile = ditPath ? (dits.find((item) => item.target === ditPath) ?? null) : null;
+  const ditKey = dits.map((item) => `${item.id}:${item.target}`).join("|") + `#${ditFile?.id ?? ""}`;
+  if (ditKey !== ditsKey) {
+    ditsKey = ditKey;
+    const options = [];
+    const option = (value, text) => {
+      const node = document.createElement("option");
+      node.value = value;
+      node.textContent = text;
+      return node;
+    };
+    options.push(option("", "bundle 自带（bf16）"));
+    for (const item of dits) options.push(option(item.target, shortDitName(item.name)));
+    nodes.dit.replaceChildren(...options);
+    nodes.dit.disabled = !dits.length;
+  }
+  nodes.dit.value = ditFile?.target ?? "";
+  nodes.ditNote.textContent =
+    ditFile?.tier && ditFile.tier !== data?.settings?.tier ? `它只能跑 ${ditFile.tier} 档` : "";
+  nodes.ditNote.title = ditFile?.path ?? "";
 }
 
 /**
@@ -1467,7 +1479,8 @@ function collectDefaults() {
     stepCacheThreshold: nodes.stepThreshold.value === "" ? null : Number(nodes.stepThreshold.value) || null,
     loras: loras.map((item) => ({ path: item.path, strength: Number(item.strength) || 1, enabled: item.enabled !== false })),
     control: {
-      adapter: controlAdapter?.path ?? base.control?.adapter ?? null,
+      // 不再回退到旧值：控制适配器在面板上是可读可清的，回退会把刚清掉的又写回去。
+      adapter: controlAdapter?.path ?? null,
       kind: nodes.controlKind.value.trim() || null,
       strength: Number(nodes.controlStrength.value) || 1,
       loraStrength: Number(nodes.controlLoraStrength.value) || 1,
@@ -1521,12 +1534,50 @@ for (const node of [nodes.width, nodes.height]) {
   });
 }
 
+// 切 DiT 权重：bundle 自带（bf16）或已装的单文件。单文件自带档位，切它时档位跟着走。
+nodes.dit.addEventListener("change", async () => {
+  const target = nodes.dit.value;
+  const files = Array.isArray(latest?.files) ? latest.files : [];
+  try {
+    if (!target) {
+      // 回到 bundle 的 bf16：turbo 要 4-bit 权重，跑不了时降到 high。
+      const tier = nodes.tier.value === "turbo" ? "high" : nodes.tier.value;
+      await post("/settings", { modelFiles: { ...(latest?.settings?.modelFiles ?? {}), dit: null }, tier });
+      if (tier !== nodes.tier.value) {
+        nodes.tier.value = tier;
+        lastTierEdit = Date.now();
+        say("已改成 bundle 自带权重；turbo 要 4-bit，档位降到 high", "warn");
+      } else {
+        say("DiT 权重：bundle 自带（bf16）", "ok");
+      }
+    } else {
+      const file = files.find((item) => item.target === target);
+      if (!file) throw new Error("这个文件不在清单里");
+      await post("/files/use", { id: file.id });
+      if (file.tier) {
+        nodes.tier.value = file.tier;
+        lastTierEdit = Date.now();
+      }
+      say(`DiT 权重：${shortDitName(file.name)}${file.tier ? `（${file.tier} 档）` : ""}`, "ok");
+    }
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+});
+
 nodes.tier.addEventListener("change", async () => {
   lastTierEdit = Date.now();
   const tier = nodes.tier.value;
   const ditPath = latest?.settings?.modelFiles?.dit ?? null;
   const ditFile = ditPath ? ((latest?.files ?? []).find((item) => item.target === ditPath) ?? null) : null;
   try {
+    // turbo 要 4-bit 权重：手上没有单文件 DiT 时选它，引擎只会报 invalid_argument。
+    if (tier === "turbo" && !ditPath) {
+      const back = latest?.settings?.tier ?? "reference";
+      nodes.tier.value = back;
+      say("turbo 要 4-bit DiT：先在「DiT 权重」里选一个 INT4 文件", "warn");
+      return;
+    }
     // 单文件 DiT 跟不上这个档位（INT4 只能 turbo）：退回 bundle 的 bf16 权重，
     // 而不是把选择框锁住——高精度参考档也是正当需求。
     if (ditFile?.tier && ditFile.tier !== tier) {

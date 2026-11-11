@@ -929,19 +929,9 @@ function renderVersions(data) {
           : [item.estimate ? `约 ${formatSize(item.estimate)}` : null, item.note].filter(Boolean).join(" · "),
         detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
         on: item.active,
-        // 选哪个模型在侧栏选；这张表只管装、校、卸，不再摆一个「切换」。
+        // 版本页只管增删：选哪个模型、用哪份 DiT 权重都在侧栏。
         actions: [],
-        // 校验和卸载都不常用，放进展开区；卸载对当前那个也留着
-        // （删完服务端会把 modelPath 落到另一个或清空）。
-        detailActions: item.installed
-          ? [
-              {
-                label: "校验",
-                run: () =>
-                  startInstall("/install/weights", { variant: item.variant }, `校验 ${item.label}`),
-              },
-            ]
-          : [],
+        // 删东西放在展开区里，行上不摆按钮。
         remove: item.installed
           ? {
               label: "卸载",
@@ -1026,15 +1016,8 @@ function renderDownload(data) {
           meta: formatSize(item.bytes),
           badges: item.active ? ["在用"] : [],
           on: item.active,
-          actions:
-            item.installed && !item.active
-              ? [
-                  {
-                    label: "使用",
-                    run: () => runSafe(() => post("/files/use", { id: item.id }), `启用 ${item.name}`),
-                  },
-                ]
-              : [],
+          // 版本页只管增删；装好就自动用上，用不用、怎么用在它自己的地方选。
+          actions: [],
           remove: item.installed
             ? {
                 label: "卸载",
