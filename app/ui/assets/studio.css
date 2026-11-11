@@ -755,6 +755,31 @@ body {
 /* 错误与排队占位没有图，给个正方块保持节奏。 */
 .gallery-grid .thumb.placeholder { aspect-ratio: 1 / 1; }
 
+    /* 采样面小标：只在非缺省时出现，不挤占底部的元信息行 */
+.thumb-badges {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 1;
+  display: flex;
+  gap: 4px;
+  max-width: calc(100% - 12px);
+  overflow: hidden;
+  pointer-events: none;
+}
+.thumb-badge {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 16px;
+  color: var(--ui-text);
+  background: var(--ui-overlay-strong);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+}
+
 /* ── 图片查看器 ────────────────────────────────────────────────────
    与宿主那个 .lightbox 无关：这里是自己的，默认适应窗口，可缩放与翻页。 */
 .viewer {

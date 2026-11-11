@@ -107,7 +107,9 @@ export default defineApp(async (sdk) => {
   const inputsDir = join(runtimeDir, "inputs");
   /** 导入的 LoRA：放 app-data 里，路径稳定，换工作区也找得到。 */
   const lorasDir = join(dataDir, "loras");
-  for (const dir of [outputsDir, engineCacheDir, previewDir, thumbsDir, downloadsDir, inputsDir, lorasDir]) {
+  /** 控制适配器（depth / canny 那一类）：单独一堆，别跟 LoRA 混。 */
+  const controlDir = join(dataDir, "control");
+  for (const dir of [outputsDir, engineCacheDir, previewDir, thumbsDir, downloadsDir, inputsDir, lorasDir, controlDir]) {
     mkdirSync(dir, { recursive: true });
   }
   migrateRuntimeDirs(dataDir, { engineCacheDir, previewDir, thumbsDir, runtimeDir });
@@ -1269,7 +1271,7 @@ function state() {
     /** 参考图与蒙版：界面在浏览器里按目标尺寸画好，把 PNG 传上来落盘。 */
     app.post(`/${APP_ID}/inputs/upload`, async (c) => {
       const raw = c.req.query("kind");
-      const kind = ["init", "mask", "ref"].includes(raw) ? raw : "init";
+      const kind = ["init", "mask", "ref", "control"].includes(raw) ? raw : "init";
       try {
         const data = Buffer.from(await c.req.arrayBuffer());
         if (!data.length) return c.json({ error: "空文件" }, 400);
@@ -1302,6 +1304,23 @@ function state() {
         if (!data.length) return c.json({ error: "空文件" }, 400);
         if (data.length > 4 * 1024 * 1024 * 1024) return c.json({ error: "文件太大（上限 4 GB）" }, 413);
         const target = join(lorasDir, name);
+        writeFileSync(target, data);
+        return c.json({ ok: true, name, path: target, bytes: data.length });
+      } catch (error) {
+        return c.json({ error: message(error) }, 400);
+      }
+    });
+
+    /** 控制适配器导入：与 LoRA 同一条路，只是落在 control/ 下。 */
+    app.post(`/${APP_ID}/control/import`, async (c) => {
+      const raw = String(c.req.query("name") ?? "control.safetensors");
+      const name = basename(raw).replace(/[^A-Za-z0-9._-]/g, "_") || "control.safetensors";
+      if (!/\.(safetensors|ckpt|pt)$/i.test(name)) return c.json({ error: "只接受 safetensors / ckpt / pt" }, 415);
+      try {
+        const data = Buffer.from(await c.req.arrayBuffer());
+        if (!data.length) return c.json({ error: "空文件" }, 400);
+        if (data.length > 4 * 1024 * 1024 * 1024) return c.json({ error: "文件太大（上限 4 GB）" }, 413);
+        const target = join(controlDir, name);
         writeFileSync(target, data);
         return c.json({ ok: true, name, path: target, bytes: data.length });
       } catch (error) {

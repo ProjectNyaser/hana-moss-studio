@@ -446,6 +446,35 @@
       <input type="file" id="pn-ref-file" accept="image/*" hidden>
     </div>
 
+    <details class="pn-fold" id="pn-control-fold">
+      <summary><svg class="ic"><use href="#i-sliders"/></svg>控制图<span class="hint" id="pn-control-note">未开启</span></summary>
+      <div class="fold-body">
+        <div class="pn-editref" id="pn-control-adapter" hidden>
+          <span class="name" id="pn-control-adapter-name"></span>
+          <button class="drop" id="pn-control-clear" type="button" title="移除控制适配器">×</button>
+        </div>
+        <div class="pn-ref" id="pn-control-thumb" hidden>
+          <img id="pn-control-img" alt="控制图">
+          <button class="pn-ref-x" id="pn-control-img-clear" type="button" title="移除控制图">×</button>
+        </div>
+        <div class="pn-install-actions">
+          <button class="btn ghost small" id="pn-control-import" type="button">导入适配器</button>
+          <button class="btn ghost small" id="pn-control-pick" type="button">选控制图</button>
+        </div>
+        <div class="pn-grid">
+          <label class="field"><span class="label">图类型 kind</span><input id="pn-control-kind" type="text" placeholder="depth"></label>
+          <label class="field"><span class="label">控制强度</span><input id="pn-control-strength" type="number" min="0" max="10" step="0.1" value="1"></label>
+        </div>
+        <label class="field">
+          <span class="label">适配器 LoRA 强度</span>
+          <input id="pn-control-lora-strength" type="number" min="0" max="10" step="0.1" value="1">
+        </label>
+        <p class="hint">需要带 video_embedder 的完整控制适配器；只含 LoRA 的文件拿去做控制图会被引擎拒，拿去做 LoRA 就行。</p>
+        <input type="file" id="pn-control-file" accept=".safetensors,.ckpt,.pt" hidden>
+        <input type="file" id="pn-control-img-file" accept="image/*" hidden>
+      </div>
+    </details>
+
     <div class="pn-row" id="pn-actions">
       <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
       <button class="btn ghost" id="pn-cancel" type="button" hidden>取消</button>

@@ -86,7 +86,7 @@ git submodule update --init --depth 1
 | `controlAdapter` / `controlKind` | 空 | 控制适配器（需带 `video_embedder` 的完整文件）+ 图类型 |
 | `referenceImages` | 空 | 编辑适配器的参考图，最多 4 张，第一张是源图 |
 
-侧栏的「参考图」除了图生图与蒙版，还承接编辑参考图：工作区里右键一张图选「用这张做编辑参考」，它就会作为 `references` 的第一张送进下一次生成（需要 LoRA 列表里有编辑适配器）。控制适配器目前只在工具面开放。
+侧栏的「参考图」除了图生图与蒙版，还承接编辑参考图：工作区里右键一张图选「用这张做编辑参考」，它就会作为 `references` 的第一张送进下一次生成（需要 LoRA 列表里有编辑适配器）。控制适配器放在可收起的「控制图」里：导入的文件落在 `app-data/hana-moss-studio/control/`，导入后直接问引擎要 kind 清单，不是控制适配器的文件会被当场清掉。
 
 侧栏里 LoRA 是「库」：导入的 safetensors 落在 `app-data/hana-moss-studio/loras/`，勾选与强度跟着设置存下来。参考图在浏览器里按目标尺寸裁好（crop / fit / stretch）再上传，蒙版就在这张裁好的图上画，所以引擎拿到的 `init_image` 与蒙版天然同尺寸。
 

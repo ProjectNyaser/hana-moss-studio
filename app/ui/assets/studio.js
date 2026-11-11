@@ -420,6 +420,25 @@ async function renderGallery(data) {
         // 单行，装不下就省略号。完整写法与耗时在查看器底部那行。
         meta.textContent = `${job.width}×${job.height} · ${job.steps}步 · CFG${job.cfg} · #${job.report?.seedUsed ?? job.seed ?? "?"}`;
         tile.appendChild(meta);
+        // 非缺省的采样面才打标：缺省的 euler + moss 不占地方的标签。
+        const badges = [];
+        if (job.sampler && job.sampler !== "euler") badges.push(job.sampler);
+        if (job.scheduler && job.scheduler !== "moss") badges.push(job.scheduler);
+        if (job.stepCache && job.stepCache !== "off") badges.push("加速");
+        if (Array.isArray(job.loras) && job.loras.length) badges.push(`LoRA ${job.loras.length}`);
+        if (job.hasMask) badges.push("重绘");
+        else if (job.hasInitImage) badges.push("图生图");
+        if (badges.length) {
+          const wrap = document.createElement("div");
+          wrap.className = "thumb-badges";
+          for (const text of badges.slice(0, 3)) {
+            const badge = document.createElement("i");
+            badge.className = "thumb-badge";
+            badge.textContent = text;
+            wrap.appendChild(badge);
+          }
+          tile.appendChild(wrap);
+        }
       } else {
         // 记录还在但图不在了（手动删了 outputs 里的文件）：占位说明，不留空白。
         tile.classList.add("placeholder");
@@ -1151,8 +1170,19 @@ function applyViewer() {
   nodes.viewerImage.src = loadImage(job.output) ?? "";
   const seed = job.report?.seedUsed ?? job.seed;
   const parts = [`${job.width}×${job.height}`, `${job.steps} 步`, `CFG ${job.cfg}`, `种子 ${seed}`];
+  if (job.sampler) parts.push(job.scheduler ? `${job.sampler} + ${job.scheduler}` : job.sampler);
+  if (job.shift != null && Number(job.shift) !== 5) parts.push(`shift ${job.shift}`);
+  if (Array.isArray(job.loras) && job.loras.length) {
+    const names = job.loras.map((item) => String(item.path ?? item.name ?? "").split(/[\\/]/).pop() || "LoRA");
+    parts.push(names.length > 2 ? `${names.slice(0, 2).join("+")}+${names.length - 2}` : names.join("+"));
+  }
+  if (job.stepCache && job.stepCache !== "off") parts.push(job.stepCache);
+  if (job.hasMask) parts.push("局部重绘");
+  else if (job.hasInitImage) parts.push("图生图");
   if (job.elapsedMs) parts.push(formatDuration(job.elapsedMs));
   nodes.viewerInfo.textContent = parts.join(" · ");
+  // 完整提示词放 title：这一行再塞下去就看不完了。
+  nodes.viewerInfo.title = [job.prompt, job.negativePrompt ? `反向：${job.negativePrompt}` : ""].filter(Boolean).join("\n");
   nodes.viewerPrev.hidden = viewerList.length < 2;
   nodes.viewerNext.hidden = viewerList.length < 2;
   if (nodes.viewerImage.complete) layoutViewerImage();

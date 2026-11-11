@@ -131,6 +131,21 @@ const nodes = {
   refControls: el("pn-ref-controls"),
   release: el("pn-release"),
   start: el("pn-start"),
+  controlFold: el("pn-control-fold"),
+  controlNote: el("pn-control-note"),
+  controlAdapter: el("pn-control-adapter"),
+  controlAdapterName: el("pn-control-adapter-name"),
+  controlClear: el("pn-control-clear"),
+  controlThumb: el("pn-control-thumb"),
+  controlImg: el("pn-control-img"),
+  controlImgClear: el("pn-control-img-clear"),
+  controlImport: el("pn-control-import"),
+  controlPick: el("pn-control-pick"),
+  controlKind: el("pn-control-kind"),
+  controlStrength: el("pn-control-strength"),
+  controlLoraStrength: el("pn-control-lora-strength"),
+  controlFile: el("pn-control-file"),
+  controlImgFile: el("pn-control-img-file"),
 };
 
 let latest = null;
@@ -216,6 +231,13 @@ function setSettings(settings) {
   fillMenus(settings.defaults);
   loras = Array.isArray(settings.defaults.loras) ? settings.defaults.loras.map((item) => ({ ...item })) : [];
   renderLoras();
+  // 控制适配器是设置里的长期选择：上次用的那个接着用，直到用户清掉。
+  const control = settings.defaults.control ?? {};
+  if (control.adapter) setControlAdapter(control.adapter);
+  if (control.kind) nodes.controlKind.value = control.kind;
+  if (Number.isFinite(control.strength)) nodes.controlStrength.value = control.strength;
+  if (Number.isFinite(control.loraStrength)) nodes.controlLoraStrength.value = control.loraStrength;
+  updateControlNote();
   syncNotchFromSize();
   renderSize();
 }
@@ -572,6 +594,10 @@ let maskPath = null;
 /** 编辑适配器的源图与已准备好的参考图。 */
 let editSource = null;
 let editRef = null;
+/** 控制适配器与它的控制图。 */
+let controlAdapter = null;
+let controlSource = null;
+let controlImage = null;
 
 function setOptions(select, values, labelOf, current) {
   select.replaceChildren(
@@ -830,6 +856,65 @@ function clearEditReference() {
   editRef = null;
   nodes.editRef.hidden = true;
   nodes.editRefName.textContent = "";
+}
+
+// ── 控制适配器 ───────────────────────────────────────────────────────
+function controlName(path) {
+  return String(path).split(/[\\/]/).pop() || String(path);
+}
+
+function updateControlNote() {
+  if (!controlAdapter) {
+    nodes.controlNote.textContent = controlSource ? "有控制图 · 未选适配器" : "未开启";
+    return;
+  }
+  const kind = nodes.controlKind.value.trim();
+  nodes.controlNote.textContent = `${controlName(controlAdapter.path)}${kind ? ` · ${kind}` : ""}${controlSource ? " · 有图" : ""}`;
+}
+
+function setControlAdapter(path) {
+  controlAdapter = { path };
+  nodes.controlAdapter.hidden = false;
+  nodes.controlAdapterName.textContent = `适配器：${controlName(path)}`;
+  nodes.controlAdapterName.title = path;
+  updateControlNote();
+}
+
+function clearControlAdapter() {
+  controlAdapter = null;
+  nodes.controlAdapter.hidden = true;
+  nodes.controlAdapterName.textContent = "";
+  updateControlNote();
+}
+
+/** 控制图按目标尺寸裁好再上传：引擎那张图会缩到 pass 尺寸，先对齐省一次脏猜。 */
+async function prepareControlImage(width, height) {
+  if (!controlSource) return null;
+  if (controlImage && controlImage.width === width && controlImage.height === height) return controlImage;
+  const blob = await canvasBlob(drawFitted(controlSource, width, height, "fit"));
+  const result = await uploadBinary("/inputs/upload?kind=control", blob);
+  controlImage = { path: result.path, url: inputUrl(result.name), width, height };
+  return controlImage;
+}
+
+async function setControlImage(file) {
+  try {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("这张图读不出来"));
+      image.src = url;
+    });
+    controlSource = image;
+    controlImage = null;
+    nodes.controlThumb.hidden = false;
+    nodes.controlImg.src = url;
+    updateControlNote();
+    say("控制图已就绪，出图时按当时尺寸准备。", "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
 }
 
 // 蒙版画布：白色笔触就是「重画这里」。保存时按 alpha 阈值二值化，避免半透明边。
@@ -1095,6 +1180,17 @@ async function onGenerate() {
         payload.referenceMaxEdge = 512;
       }
     }
+    if (controlAdapter) {
+      payload.controlAdapter = controlAdapter.path;
+      const kind = nodes.controlKind.value.trim();
+      if (kind) payload.controlKind = kind;
+      payload.controlStrength = Number(nodes.controlStrength.value) || 1;
+      payload.controlLoraStrength = Number(nodes.controlLoraStrength.value) || 1;
+      if (controlSource) {
+        const prepared = await prepareControlImage(Number(nodes.width.value), Number(nodes.height.value));
+        if (prepared) payload.controlImage = prepared.path;
+      }
+    }
   } catch (error) {
     submitting = false;
     nodes.generate.disabled = false;
@@ -1147,6 +1243,12 @@ function collectDefaults() {
     stepCache: nodes.stepCache.value,
     stepCacheThreshold: nodes.stepThreshold.value === "" ? null : Number(nodes.stepThreshold.value) || null,
     loras: loras.map((item) => ({ path: item.path, strength: Number(item.strength) || 1, enabled: item.enabled !== false })),
+    control: {
+      adapter: controlAdapter?.path ?? base.control?.adapter ?? null,
+      kind: nodes.controlKind.value.trim() || null,
+      strength: Number(nodes.controlStrength.value) || 1,
+      loraStrength: Number(nodes.controlLoraStrength.value) || 1,
+    },
   };
 }
 
@@ -1176,6 +1278,8 @@ for (const node of [
   nodes.shift,
   nodes.stepCache,
   nodes.stepThreshold,
+  nodes.controlStrength,
+  nodes.controlLoraStrength,
 ]) {
   node.addEventListener("input", scheduleSave);
   node.addEventListener("change", scheduleSave);
@@ -1234,6 +1338,58 @@ nodes.loraPath.addEventListener("keydown", (event) => {
   event.preventDefault();
   addLora(nodes.loraPath.value);
   nodes.loraPath.value = "";
+});
+
+// 控制适配器：导入后先问引擎一句它是什么，kind 直接填进去。
+nodes.controlImport.addEventListener("click", () => nodes.controlFile.click());
+nodes.controlFile.addEventListener("change", async () => {
+  const file = nodes.controlFile.files?.[0];
+  nodes.controlFile.value = "";
+  if (!file) return;
+  try {
+    nodes.controlImport.disabled = true;
+    say(`正在导入 ${file.name}…`);
+    const result = await uploadBinary(`/control/import?name=${encodeURIComponent(file.name)}`, file);
+    setControlAdapter(result.path);
+    const info = await post("/inspect", { path: result.path }).catch(() => null);
+    if (info?.control_kinds?.length) {
+      if (!nodes.controlKind.value.trim()) nodes.controlKind.value = info.control_kinds[0];
+      say(`已导入控制适配器（${info.control_kinds.join(" / ")}）。`, "ok");
+    } else if (info) {
+      // 引擎认了它、但说它不是控制适配器：别留一个每次都要报错的设置。
+      clearControlAdapter();
+      say(`这个文件不是控制适配器（${info.kind ?? "未知"}）：换带 video_embedder 的完整适配器，或把它放进 LoRA。`, "bad");
+    } else {
+      say(`已导入 ${file.name}，但没能向引擎校验（引擎未启动？）。`, "warn");
+    }
+    updateControlNote();
+    scheduleSave();
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    nodes.controlImport.disabled = false;
+  }
+});
+nodes.controlClear.addEventListener("click", () => {
+  clearControlAdapter();
+  scheduleSave();
+});
+nodes.controlPick.addEventListener("click", () => nodes.controlImgFile.click());
+nodes.controlImgFile.addEventListener("change", async () => {
+  const file = nodes.controlImgFile.files?.[0];
+  nodes.controlImgFile.value = "";
+  if (file) await setControlImage(file);
+});
+nodes.controlImgClear.addEventListener("click", () => {
+  controlSource = null;
+  controlImage = null;
+  nodes.controlThumb.hidden = true;
+  nodes.controlImg.removeAttribute("src");
+  updateControlNote();
+});
+nodes.controlKind.addEventListener("input", () => {
+  updateControlNote();
+  scheduleSave();
 });
 
 // 参考图

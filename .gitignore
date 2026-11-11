@@ -14,3 +14,6 @@ app/ui/assets/THIRD_PARTY_NOTICES.txt
 
 # 构建期按 vendor/aria2-bin.json 取的 aria2c.exe（随包分发，不入库）
 app/vendor-bin/
+
+# 临时脚本与截图：UI 试跑、CDP 驱动、探针，不进仓库
+.tmp/

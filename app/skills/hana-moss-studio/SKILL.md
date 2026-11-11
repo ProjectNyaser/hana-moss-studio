@@ -75,7 +75,7 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 
 两类适配器要分清：
 
-- **控制适配器**（`controlAdapter`）必须是一个带 `video_embedder` 的完整适配器文件。HuggingFace 上 `thedeoxen/MOSS-Image-*-controlnet` 那一批只有 LoRA 部分，`moss_inspect` 会把它们判成 `lora`，拿去当 `control` 会被引擎拒（`no video_embedder.weight`）。
+- **控制适配器**（`controlAdapter`）必须是一个带 `video_embedder` 的完整适配器文件。侧栏可收起的「控制图」里能导入与选图，导入后会先用 `inspect` 问引擎要 kind，不是控制适配器的文件会被当场清掉。HuggingFace 上 `thedeoxen/MOSS-Image-*-controlnet` 那一批只有 LoRA 部分，`moss_inspect` 会把它们判成 `lora`，拿去当 `control` 会被引擎拒（`no video_embedder.weight`）。
 - **编辑适配器**（`referenceImages`）是一个 LoRA：先放进 `loras`，再给参考图。`chinoll/Moss-Image-Edit` 这类文件实测能在 `rank 64` 下加载并跑通编辑。
 
 ### `moss_estimate`
