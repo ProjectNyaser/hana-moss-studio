@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS = {
   memoryMode: "min_memory",
   tier: "reference",
   device: 0,
+  // 单文件组件：给了就覆盖 bundle 里对应的那一个（turbo 就靠 dit 用 INT4）。
+  modelFiles: { dit: null, textEncoder: null, vae: null },
   defaults: {
     width: 768,
     height: 768,
@@ -103,6 +105,12 @@ export function createStore(dataDir, outputsDir) {
       memoryMode: MEMORY_MODES.includes(merged.memoryMode) ? merged.memoryMode : DEFAULT_SETTINGS.memoryMode,
       tier: TIERS.includes(merged.tier) ? merged.tier : DEFAULT_SETTINGS.tier,
       device: Number.isInteger(merged.device) && merged.device >= 0 ? merged.device : 0,
+      // 文件已经不在了就不留：留着下次 load 直接失败。
+      modelFiles: {
+        dit: safeExists(merged.modelFiles?.dit) ? merged.modelFiles.dit : null,
+        textEncoder: safeExists(merged.modelFiles?.textEncoder) ? merged.modelFiles.textEncoder : null,
+        vae: safeExists(merged.modelFiles?.vae) ? merged.modelFiles.vae : null,
+      },
       defaults: {
         width: clamp(defaults.width, 256, 4096, DEFAULT_SETTINGS.defaults.width),
         height: clamp(defaults.height, 256, 4096, DEFAULT_SETTINGS.defaults.height),

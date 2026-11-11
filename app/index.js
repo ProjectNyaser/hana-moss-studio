@@ -784,6 +784,7 @@ function state() {
     installs: installer.snapshot(),
     engines: installer.listEngines(),
     models: installer.listModels(),
+    files: installer.listFiles(),
     gpu: gpuCache,
   };
 }
@@ -1083,12 +1084,45 @@ function state() {
       store.saveSettings(body ?? {});
       if (
         engine.snapshot().running &&
-        (body?.modelPath !== undefined || body?.tier !== undefined || body?.memoryMode !== undefined)
+        (body?.modelPath !== undefined ||
+          body?.tier !== undefined ||
+          body?.memoryMode !== undefined ||
+          body?.modelFiles !== undefined)
       ) {
         engine.loadedKey = null;
       }
       schedulePush(0);
       return c.json(state());
+    });
+
+    // 单文件权重与控制/编辑适配器：下载走 aria2（与引擎、权重同一条通道），
+    // 装完自动写进设置；已下好的可以再用 /files/use 切回来。
+    app.post(`/${APP_ID}/files/install`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const id = String(body?.id ?? "");
+      if (!id) return c.json({ ...state(), error: "缺少文件 id" }, 400);
+      const found = installer.listFiles().find((item) => item.id === id);
+      if (!found) return c.json({ ...state(), error: `没有这个文件：${id}` }, 404);
+      if (found.installed && !body?.force) {
+        installer.useFile(id);
+        schedulePush(0);
+        return c.json(state());
+      }
+      installer.installFile(id);
+      schedulePush(0);
+      return c.json(state());
+    });
+
+    app.post(`/${APP_ID}/files/use`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      try {
+        installer.useFile(String(body?.id ?? ""));
+        engine.loadedKey = null;
+        schedulePush(0);
+        return c.json(state());
+      } catch (error) {
+        return c.json({ ...state(), error: message(error) }, 400);
+      }
     });
 
     app.post(`/${APP_ID}/engine/start`, async (c) => {
@@ -1615,6 +1649,11 @@ function state() {
         // 出图缺省值：moss_generate 不传参数时就按这套跑，调参前先看这里。
         `缺省：${current.settings.defaults.width}×${current.settings.defaults.height}，${current.settings.defaults.steps} 步，CFG ${current.settings.defaults.cfg}，${current.settings.defaults.sampler} + ${current.settings.defaults.scheduler}，shift ${current.settings.defaults.shift}`,
         `精度档：${current.settings.tier} · 显存策略：${current.settings.memoryMode} · 加速：${current.settings.defaults.stepCache ?? "off"}${current.settings.defaults.loras?.length ? ` · LoRA ${current.settings.defaults.loras.filter((item) => item.enabled !== false).length}/${current.settings.defaults.loras.length}` : ""}`,
+        current.settings.modelFiles?.dit
+          ? `单文件 DiT：${basename(current.settings.modelFiles.dit)}`
+          : current.settings.tier === "turbo"
+            ? "单文件 DiT：未启用 —— turbo 档需要 INT4 ConvRot 的 DiT，bundle 里是 bf16，现在这个组合跑不出图"
+            : "",
         active
           ? `当前任务：${active.id} · ${taskProgress(active).phase}${active.total ? ` ${active.step}/${active.total}` : ""}（${active.percent}%）`
           : "当前任务：空闲",

@@ -68,6 +68,85 @@ export const MOSSIMAGE = {
       "fileCount": 3
     }
   ],
+  /**
+   * 单文件权重与控制/编辑适配器。ComfyUI 发布页把它们按用途分好了，
+   * 苔室只负责拉下来并填进 load 的 dit_file / text_encoder_file / vae_file。
+   * role 决定落盘目录与怎么被引用：control → 控制适配器，lora → LoRA 库，其它 → 单文件权重。
+   */
+  files: [
+    {
+      id: "control-color-depth",
+      role: "control",
+      name: "控制适配器（color + depth）",
+      note: "控制图要的就是它；约 0.29 GB",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "loras/moss_image_color_depth_control.safetensors",
+      bytes: 313063368,
+    },
+    {
+      id: "lora-edit",
+      role: "lora",
+      name: "编辑适配器 Moss-Image-Edit（rank 64）",
+      note: "配 references 用来改图；约 0.28 GB",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "loras/moss_image_edit_lora_rank_64_bf16.safetensors",
+      bytes: 297382216,
+    },
+    {
+      id: "dit-int4",
+      role: "dit",
+      name: "DiT INT4 ConvRot（turbo 档）",
+      note: "约 2.83 GB；turbo 档只能用它",
+      repo: "toxicdog/MOSS-Image-SFT-INT4-ConvRot-ComfyUI",
+      path: "diffusion_models/moss_image_sft_int4_convrot.safetensors",
+      bytes: 3035537312,
+    },
+    {
+      id: "dit-int8-sft",
+      role: "dit",
+      name: "DiT INT8 ConvRot（SFT · high 档）",
+      note: "约 5.04 GB",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "diffusion_models/moss_image_sft_int8_convrot.safetensors",
+      bytes: 5413698958,
+    },
+    {
+      id: "dit-int8-base",
+      role: "dit",
+      name: "DiT INT8 ConvRot（Base · high 档）",
+      note: "约 5.04 GB",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "diffusion_models/moss_image_base_int8_convrot.safetensors",
+      bytes: 5413698958,
+    },
+    {
+      id: "te-int8",
+      role: "text_encoder",
+      name: "文本编码器 INT8 ConvRot",
+      note: "约 9.08 GB，比 bundle 里的 bf16 省一半内存",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "text_encoders/qwen3.5_9b_int8_convrot.safetensors",
+      bytes: 9748121532,
+    },
+    {
+      id: "te-w4a8",
+      role: "text_encoder",
+      name: "文本编码器 W4A8（GPTQ）",
+      note: "约 6.84 GB，最省内存的文本编码器",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+      bytes: 7343591088,
+    },
+    {
+      id: "vae-small",
+      role: "vae",
+      name: "VAE（FLUX.2 small）",
+      note: "约 0.23 GB，单文件方案用",
+      repo: "Comfy-Org/MOSS-Image",
+      path: "vae/flux2-vae_small.safetensors",
+      bytes: 249521340,
+    },
+  ],
 };
 
 /** 整套权重的字节数，用于下载前估空间。 */

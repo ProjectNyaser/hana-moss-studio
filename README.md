@@ -110,6 +110,7 @@ MOSS-Image 支持把排布写成 JSON，**那段 JSON 就是提示词**，不需
 
 - **装引擎**：读 `nvidia-smi` 拿驱动与算力 → 定 cuda 版本与 sm75 → 在 Release 里挑 bundled 包 → aria2c 下载（不通就换 curl）→ 对 `SHA256SUMS` 校 sha256 → `tar` 解压 → 把 `bin\moss-server.exe` 写进设置。
 - **下权重**：列 HF 镜像的文件树 → 过滤出六个部分 → 已完整的跳过 → aria2c 批量下 → 逐个对大小。已有可用模型时直接装在原处，不另开一份 25 GiB 的副本。
+- **单文件权重与适配器**：「下载」页还把 ComfyUI 发布页那套列了出来（DiT INT4/INT8、文本编码器 INT8/W4A8、VAE small、控制适配器、编辑 LoRA），每个一行，下完直接写进设置。单文件组件以 `dit_file` / `text_encoder_file` / `vae_file` 覆盖 bundle 里对应的那一个，bundle 仍然提供 tokenizer 与配置。
 - **用本地包**：网络不行时 `POST .../install/engine` 带 `{"zipPath": "..."}`，跳过下载，只校验与解压。
 
 两个都能中途取消。进度不解析 aria2 输出（那是无换行的动态行），而是定期扫目标目录的体积。

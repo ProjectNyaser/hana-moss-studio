@@ -29,6 +29,10 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 
 **首选让用户自己点**：左侧面板「引擎与模型」里有「装引擎」与「下权重」两个按钮。App 会自己探测显卡与驱动、选对包、下载、校验 sha256、解压、写设置；权重走同一套下载器，已完整的文件跳过。这条路不需要 Agent 介入，也适合用户不在对话里的场景。
 
+「下载」页除了两个 bundle 仓库，还列了单文件权重与适配器（与 ComfyUI 发布页同源）：DiT INT4 ConvRot（2.83 GB）、DiT INT8 ConvRot（5.04 GB）、文本编码器 INT8（9.08 GB）/ W4A8（6.84 GB）、VAE small、控制适配器 color+depth（0.29 GB）、编辑 LoRA rank 64（0.28 GB）。下载完自动写进设置：适配器进库，权重进 `modelFiles` 并作为 `load` 的 `dit_file` / `text_encoder_file` / `vae_file` 覆盖 bundle 里对应的那一个。
+
+**turbo 档只有配了 INT4 ConvRot 的 DiT 才能跑**。bundle 里的 DiT 是 bf16，直接选 turbo 会被引擎以 `invalid_argument` 拒；先下 `dit-int4` 再选 turbo。
+
 只有按钮走不通（要装到自定义目录、要补 cuBLASLt、包不匹配）时才掀命令行：`references/platform.md`。
 
 装哪个包由驱动与算力决定：

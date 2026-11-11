@@ -985,7 +985,31 @@ function renderDownload(data) {
     }),
   );
 
-  // 下载任务已经并进队列页，这里只管版本页的模型下载入口。
+  // 单文件权重与适配器：ComfyUI 发布页那套，下完自动写进设置。
+  const files = Array.isArray(data.files) ? data.files : [];
+  const roleLabel = { dit: "DiT", text_encoder: "文本编码器", vae: "VAE", control: "控制适配器", lora: "LoRA" };
+  for (const item of files) {
+    const row = manageRow({
+      name: item.name,
+      meta: item.installed
+        ? `${formatSize(item.bytes)}${item.active ? " · 在用" : ""}`
+        : `${roleLabel[item.role] ?? item.role} · ${formatSize(item.bytes)} · ${item.note ?? ""}`,
+    });
+    const button = document.createElement("button");
+    button.className = "btn ghost small";
+    button.type = "button";
+    button.textContent = item.active ? "已启用" : item.installed ? "使用" : "下载";
+    button.disabled = Boolean(item.active);
+    button.addEventListener("click", () => {
+      if (item.installed) {
+        void runSafe(() => post("/files/use", { id: item.id }), `启用 ${item.name}`);
+        return;
+      }
+      void startInstall("/files/install", { id: item.id }, `下载 ${item.name}`);
+    });
+    row.appendChild(button);
+    nodes.downloadModels.appendChild(row);
+  }
 }
 
 /**

@@ -433,18 +433,32 @@ export class Engine {
   /** 模型、设备、性能档任一变化都需要重新 load。 */
   loadParams(job = {}) {
     const settings = this.getSettings();
-    return {
+    const params = {
       model: settings.modelPath,
       mode: settings.memoryMode,
       device: job.device ?? 0,
       tier: settings.tier,
       cache_dir: this.cacheDir,
     };
+    // 单文件组件：bundle 照旧提供 tokenizer 与配置，只把对应的权重换成这个文件。
+    const files = settings.modelFiles ?? {};
+    if (files.dit) params.dit_file = files.dit;
+    if (files.textEncoder) params.text_encoder_file = files.textEncoder;
+    if (files.vae) params.vae_file = files.vae;
+    return params;
   }
 
   async ensureLoaded(job) {
     const settings = this.getSettings();
-    const key = JSON.stringify([settings.modelPath, job.device ?? 0, settings.memoryMode, settings.tier]);
+    const key = JSON.stringify([
+      settings.modelPath,
+      job.device ?? 0,
+      settings.memoryMode,
+      settings.tier,
+      settings.modelFiles?.dit ?? null,
+      settings.modelFiles?.textEncoder ?? null,
+      settings.modelFiles?.vae ?? null,
+    ]);
     if (key === this.loadedKey) return;
     if (!settings.modelPath || !existsSync(settings.modelPath)) {
       throw new Error("模型目录不存在，请先在「设置」里指向 MOSS-Image 的 diffusers 目录");

@@ -1084,6 +1084,118 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     };
   }
 
+  /** 单文件权重与适配器的落盘位置：按 role 分开，文件名照发布包里的名字。 */
+  function fileTarget(entry) {
+    const base =
+      entry.role === "control"
+        ? join(dataDir, "control")
+        : entry.role === "lora"
+          ? join(dataDir, "loras")
+          : join(dataDir, "models", "files");
+    return join(base, entry.path.split("/").pop());
+  }
+
+  /** 发布页那张表：每个文件在哪、下没下、是不是当前在用的那个。 */
+  function listFiles() {
+    const settings = getSettings();
+    return (MOSSIMAGE.files ?? []).map((entry) => {
+      const target = fileTarget(entry);
+      let installed = false;
+      try {
+        // aria2 会先预分配：文件大小对不代表下完了，旁边还挂着 .aria2 控制文件就是没完。
+        installed = existsSync(target) && (!entry.bytes || statSync(target).size === entry.bytes) && !existsSync(`${target}.aria2`);
+      } catch {
+        installed = false;
+      }
+      const active =
+        entry.role === "control"
+          ? settings.defaults?.control?.adapter === target
+          : entry.role === "lora"
+            ? (settings.defaults?.loras ?? []).some((item) => item.path === target)
+            : entry.role === "dit"
+              ? settings.modelFiles?.dit === target
+              : entry.role === "text_encoder"
+                ? settings.modelFiles?.textEncoder === target
+                : settings.modelFiles?.vae === target;
+      return { ...entry, target, installed, active };
+    });
+  }
+
+  /** 下来的文件怎么生效：适配器进库，权重进 modelFiles。 */
+  function applyFile(entry, target) {
+    const settings = getSettings();
+    const defaults = settings.defaults ?? {};
+    if (entry.role === "control") {
+      saveSettings({ defaults: { ...defaults, control: { ...(defaults.control ?? {}), adapter: target } } });
+      return;
+    }
+    if (entry.role === "lora") {
+      const loras = [...(defaults.loras ?? [])];
+      if (!loras.some((item) => item.path === target)) loras.push({ path: target, strength: 1, enabled: true });
+      saveSettings({ defaults: { ...defaults, loras } });
+      return;
+    }
+    const key = entry.role === "dit" ? "dit" : entry.role === "text_encoder" ? "textEncoder" : "vae";
+    saveSettings({ modelFiles: { ...(settings.modelFiles ?? {}), [key]: target } });
+  }
+
+  /** 下一个单文件：aria2 多源、断点续传，完事对一下大小，然后写进设置。 */
+  async function installFile(id) {
+    const entry = (MOSSIMAGE.files ?? []).find((item) => item.id === id);
+    if (!entry) throw new Error(`没有这个文件：${id}`);
+    const task = makeTask("file", entry.name);
+    try {
+      const target = fileTarget(entry);
+      mkdirSync(dirname(target), { recursive: true });
+      const out = target.split(path.sep).pop();
+      task.patch({ phase: "download", message: entry.note ?? "", totalBytes: entry.bytes ?? 0, bytes: 0 });
+      await downloadViaRpc(
+        task,
+        [
+          {
+            urls: MODEL_ENDPOINTS.map((endpoint) => `${endpoint}/${entry.repo}/resolve/main/${entry.path}`),
+            out,
+            size: entry.bytes ?? 0,
+          },
+        ],
+        {
+          dir: dirname(target),
+          concurrency: 4,
+          totalBytes: entry.bytes ?? 0,
+          onTick: ({ bytes, totalBytes, speed, connections, files, done, total }) =>
+            task.patch({
+              bytes,
+              totalBytes: totalBytes || entry.bytes || 0,
+              percent: entry.bytes ? Math.min(99, Math.floor((bytes / entry.bytes) * 100)) : 0,
+              speed,
+              connections,
+              tasks: files.map((file) => ({ ...file, ...where(dirname(target), file.out) })),
+              files: [done, total],
+            }),
+        },
+      );
+      if (task.cancelled) throw new Error("已取消");
+      const size = statSync(target).size;
+      if (entry.bytes && size !== entry.bytes) {
+        throw new Error(`大小不对：${size} ≠ ${entry.bytes}，重新下载会续传`);
+      }
+      applyFile(entry, target);
+      task.finish({ phase: "done", message: "已装好并启用", bytes: size, totalBytes: size });
+    } catch (error) {
+      task.fail(error);
+    }
+  }
+
+  /** 已下好的单文件切成当前在用：适配器进库、权重进 modelFiles。 */
+  function useFile(id) {
+    const entry = (MOSSIMAGE.files ?? []).find((item) => item.id === id);
+    if (!entry) throw new Error(`没有这个文件：${id}`);
+    const target = fileTarget(entry);
+    if (!existsSync(target)) throw new Error("这个文件还没下载");
+    applyFile(entry, target);
+    return { ok: true, id, target };
+  }
+
   async function installWeights(variant = "base") {
     const key = MODELS[variant] ? variant : "base";
     const repo = MODELS[key].repo;
@@ -1280,6 +1392,9 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     },
     installEngine,
     installWeights,
+    installFile,
+    listFiles,
+    useFile,
     taskAction,
     listEngines,
     listModels,
