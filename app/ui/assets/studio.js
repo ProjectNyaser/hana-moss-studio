@@ -52,7 +52,6 @@ const nodes = {
   // 下载
   toast: el("toast"),
   downloadEngine: el("download-engine"),
-  downloadModels: el("download-models"),
   downloadAdapters: el("download-adapters"),
   downloadDits: el("download-dits"),
   downloadEncoders: el("download-encoders"),
@@ -523,7 +522,7 @@ function askConfirm(row, { label, question, run, yesText }) {
   yes.focus({ preventScroll: true });
 }
 
-function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], remove }) {
+function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], detailActions = [], remove }) {
   const row = document.createElement("div");
   row.className = on ? "manage-row on" : dim ? "manage-row dim" : "manage-row";
   const nameNode = document.createElement("span");
@@ -554,7 +553,7 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
   }
   // 有明细的行可以点开：组件体积这类信息平时收着，需要时才展开。
   // 低频动作（卸载）也放在展开区里，行上不多一个按钮。
-  if (detail?.length || remove) {
+  if (detail?.length || detailActions?.length || remove) {
     row.classList.add("expandable");
     const box = document.createElement("div");
     box.className = "manage-detail";
@@ -569,18 +568,31 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
       line.append(label, value);
       box.appendChild(line);
     }
-    if (remove) {
+    if (detailActions?.length || remove) {
       const line = document.createElement("div");
       line.className = "manage-detail-line actions";
-      const button = document.createElement("button");
-      button.className = "btn ghost small danger";
-      button.type = "button";
-      button.textContent = remove.label;
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        askConfirm(row, remove);
-      });
-      line.appendChild(button);
+      for (const action of detailActions ?? []) {
+        const button = document.createElement("button");
+        button.className = "btn ghost small";
+        button.type = "button";
+        button.textContent = action.label;
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          void action.run();
+        });
+        line.appendChild(button);
+      }
+      if (remove) {
+        const button = document.createElement("button");
+        button.className = "btn ghost small danger";
+        button.type = "button";
+        button.textContent = remove.label;
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          askConfirm(row, remove);
+        });
+        line.appendChild(button);
+      }
       box.appendChild(line);
     }
     row.addEventListener("click", (event) => {
@@ -901,39 +913,63 @@ function renderVersions(data) {
       : [manageRow({ name: "还没有装引擎，去「下载」页装一个" })]),
   );
 
-  // 模型：上面这块只列已装的（标题写的就是「N 个已装」，每行再标一遍是废话）。
-  // 未装的在下面「可下载」那块。
+  // 模型：一张表列完整仓库。装了就看体积与当前状态，没装的直接下载——
+  // 同一个仓库不再在「模型」和「全部仓库」各出现一次。
   const models = Array.isArray(data.models) ? data.models : [];
-  const installedModels = models.filter((item) => item.installed);
-  nodes.modelState.textContent = installedModels.length ? `${installedModels.length} 个已装` : "未安装";
+  nodes.modelState.textContent = models.length
+    ? `${models.filter((item) => item.installed).length}/${models.length} 已装`
+    : "";
   nodes.modelList.replaceChildren(
-    ...(installedModels.length
-      ? installedModels.map((item) =>
-          manageRow({
-            name: item.label,
-            badges: item.active ? ["当前"] : [],
-            meta: formatSize(item.bytes),
-            detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
-            on: item.active,
-            actions: item.active
-              ? []
-              : [
-                  {
-                    label: "切换",
-                    run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
-                  },
-                ],
-            // 卸载对当前那个也留着（删完服务端会把 modelPath 落到另一个或清空），
-            // 放在展开区里，行上不摆第二个按钮。
-            remove: {
+    ...models.map((item) => {
+      const row = manageRow({
+        name: item.label,
+        badges: item.active ? ["当前"] : [],
+        meta: item.installed
+          ? formatSize(item.bytes)
+          : [item.estimate ? `约 ${formatSize(item.estimate)}` : null, item.note].filter(Boolean).join(" · "),
+        detail: item.components?.map((part) => ({ label: part.label, value: formatSize(part.bytes) })) ?? null,
+        on: item.active,
+        actions:
+          item.installed && !item.active
+            ? [
+                {
+                  label: "切换",
+                  run: () => runSafe(() => post("/weights/use", { variant: item.variant }), "切换模型"),
+                },
+              ]
+            : [],
+        // 校验和卸载都不常用，放进展开区；卸载对当前那个也留着
+        // （删完服务端会把 modelPath 落到另一个或清空）。
+        detailActions: item.installed
+          ? [
+              {
+                label: "校验",
+                run: () =>
+                  startInstall("/install/weights", { variant: item.variant }, `校验 ${item.label}`),
+              },
+            ]
+          : [],
+        remove: item.installed
+          ? {
               label: "卸载",
               question: `卸载 ${item.label}？（${formatSize(item.bytes)}）`,
               run: () =>
                 runSafe(() => post("/models/remove", { confirm: true, variant: item.variant }), "卸载模型"),
-            },
-          }),
-        )
-      : [manageRow({ name: "还没有装模型，去下面下载" })]),
+            }
+          : null,
+      });
+      if (!item.installed) {
+        const button = document.createElement("button");
+        button.className = "btn ghost small";
+        button.type = "button";
+        button.textContent = "下载";
+        button.addEventListener("click", () =>
+          startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
+        );
+        row.appendChild(button);
+      }
+      return row;
+    }),
   );
 
   const hostRows = [];
@@ -971,36 +1007,7 @@ function renderDownload(data) {
   nodes.downloadEngine.disabled = false;
 
   // 模型：下面这块列全部两个仓库，和引擎那块一致——上面是已装的（能切、能卸），
-  // 这里是完整清单。
-  const models = Array.isArray(data.models) ? data.models : [];
-  const perRepo = data.plan?.totalBytes ? `约 ${formatSize(data.plan.totalBytes)}` : "约 25 GiB";
-  nodes.downloadModels.replaceChildren(
-    ...models.map((item) => {
-      const row = manageRow({
-        name: item.label,
-        // 不标「已装」：按钮本身已经说了——「校验」就是已装，「下载」就是没装，
-        // 上面那块标题又写了一遍「N 个已装」。
-        // 也不传 on：当前生效的强调只留在上面那张已装清单里。
-        meta: item.installed ? formatSize(item.bytes) : `${perRepo} · ${item.note}`,
-      });
-      const button = document.createElement("button");
-      button.className = "btn ghost small";
-      button.type = "button";
-      // 文案不随任务状态变。点下去就是进安装队列，排上了去队列页看，
-      // 按钮自己不需要再说一遍「排队」。
-      button.textContent = item.installed ? "校验" : "下载";
-      if (item.installed) button.title = "重新比对每个文件的 sha256，不一致的会重下";
-      button.addEventListener("click", () =>
-        void startInstall(
-          "/install/weights",
-          { variant: item.variant },
-          `${item.installed ? "校验" : "下载"} ${item.label}`,
-        ),
-      );
-      row.appendChild(button);
-      return row;
-    }),
-  );
+  // 模型那一张表已经列了完整仓库，这里只接单文件。
 
   // 单文件按用途分三组：适配器 / DiT / 文本编码器与 VAE。
   const files = Array.isArray(data.files) ? data.files : [];

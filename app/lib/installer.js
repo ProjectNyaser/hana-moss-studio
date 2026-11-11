@@ -46,8 +46,8 @@ const ENGINE_API = `https://api.github.com/repos/${ENGINE_REPO}/releases/latest`
 const MODEL_REPO = "OpenMOSS-Team/MOSS-Image-SFT";
 /** 两个可选的权重仓库：SFT 是官方微调版，Base 是基座模型。 */
 const MODELS = {
-  sft: { repo: "OpenMOSS-Team/MOSS-Image-SFT", dir: "moss-image-sft", label: "MOSS-Image-SFT", note: "官方微调版，提示词响应更准" },
-  base: { repo: "OpenMOSS-Team/MOSS-Image-Base", dir: "moss-image-base", label: "MOSS-Image-Base", note: "基座模型，适合自己微调" },
+  sft: { repo: "OpenMOSS-Team/MOSS-Image-SFT", dir: "moss-image-sft", label: "MOSS-Image-SFT", note: "官方微调版，提示词响应更准", estimateBytes: 29_510_000_000 },
+  base: { repo: "OpenMOSS-Team/MOSS-Image-Base", dir: "moss-image-base", label: "MOSS-Image-Base", note: "基座模型，适合自己微调", estimateBytes: 27_220_000_000 },
 };
 // 多个源同时交给 aria2：它会自己试哪个快。实测这台机器到 HF 直连比镜像快五倍，
 // 但网络状况因人而异，所以两个都给，不写死。
@@ -1315,6 +1315,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
         installed,
         path: installed ? dir : null,
         bytes: installed ? cachedBytes(dir) : null,
+        // 没装时也要说个大概：两个仓库体积不同，不能拿同一个数糊弄。
+        estimate: meta.estimateBytes ?? null,
         // 组件明细：选模型时最常问的就是「这个 27 GB 到底花在哪」。
         components: installed ? modelComponents(dir) : null,
         active: installed && settings.modelPath === dir,
