@@ -1601,6 +1601,15 @@ nodes.te.addEventListener("change", async () => {
       const file = files.find((item) => item.target === target);
       if (!file) throw new Error("这个文件不在清单里");
       await post("/files/use", { id: file.id });
+      // reference 拒绝量化文本编码器（引擎原话：refused for a quantized text encoder file），
+      // 选了就把它带到 high。
+      if (nodes.tier.value === "reference") {
+        nodes.tier.value = "high";
+        lastTierEdit = Date.now();
+        await post("/settings", { tier: "high" });
+        say(`文本编码器：${file.name}；reference 不收量化文本编码器，档位已改成 high`, "warn");
+        return;
+      }
       say(`文本编码器：${file.name}`, "ok");
     }
   } catch (error) {
@@ -1611,8 +1620,10 @@ nodes.te.addEventListener("change", async () => {
 nodes.tier.addEventListener("change", async () => {
   lastTierEdit = Date.now();
   const tier = nodes.tier.value;
-  const ditPath = latest?.settings?.modelFiles?.dit ?? null;
+  const modelFiles = latest?.settings?.modelFiles ?? {};
+  const ditPath = modelFiles.dit ?? null;
   const ditFile = ditPath ? ((latest?.files ?? []).find((item) => item.target === ditPath) ?? null) : null;
+  const teActive = modelFiles.textEncoder ?? null;
   try {
     // turbo 要 4-bit 权重：手上没有单文件 DiT 时选它，引擎只会报 invalid_argument。
     if (tier === "turbo" && !ditPath) {
@@ -1621,11 +1632,22 @@ nodes.tier.addEventListener("change", async () => {
       say("turbo 要 4-bit DiT：先在「DiT 权重」里选一个 INT4 文件", "warn");
       return;
     }
-    // 单文件 DiT 跟不上这个档位（INT4 只能 turbo）：退回 bundle 的 bf16 权重，
-    // 而不是把选择框锁住——高精度参考档也是正当需求。
-    if (ditFile?.tier && ditFile.tier !== tier) {
-      await post("/settings", { tier, modelFiles: { ...(latest.settings.modelFiles ?? {}), dit: null } });
-      say(`已切回 bundle 的 bf16 权重：${shortDitName(ditFile.name)} 只能跑 ${ditFile.tier} 档`, "warn");
+    // 两处不兼容：单文件 DiT 跟不上这个档位；reference 又不收量化文本编码器。
+    // 两种都退回 bundle 自带权重，而不是把选择框锁住。
+    const dropDit = Boolean(ditFile?.tier) && ditFile.tier !== tier;
+    const dropTe = tier === "reference" && Boolean(teActive);
+    if (dropDit || dropTe) {
+      const patch = { tier, modelFiles: { ...modelFiles } };
+      if (dropDit) patch.modelFiles.dit = null;
+      if (dropTe) patch.modelFiles.textEncoder = null;
+      await post("/settings", patch);
+      const why = [
+        dropDit ? `${shortDitName(ditFile.name)} 只能跑 ${ditFile.tier} 档` : null,
+        dropTe ? "reference 不收量化文本编码器" : null,
+      ]
+        .filter(Boolean)
+        .join("；");
+      say(`已退回 bundle 自带权重：${why}`, "warn");
     } else {
       await post("/settings", { tier });
       say(`档位：${tier}`);
