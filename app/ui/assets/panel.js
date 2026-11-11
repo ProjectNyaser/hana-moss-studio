@@ -1233,7 +1233,14 @@ function renderModels(data) {
   // 单文件 DiT 是「替掉 bundle 里那份权重」，不是另一个模型，所以在下面单独说一句，
   // 不跟模型名挤在同一行——那样看起来像两个模型名。
   const ditFile = ditPath ? (data?.files ?? []).find((item) => item.target === ditPath) ?? null : null;
-  nodes.modelNote.textContent = ditPath ? `单文件 DiT：${shortDitName(ditFile?.name ?? basenameOf(ditPath))}` : "";
+  nodes.modelNote.textContent = ditPath
+    ? [
+        `单文件 DiT：${shortDitName(ditFile?.name ?? basenameOf(ditPath))}`,
+        ditFile?.tier && ditFile.tier !== data?.settings?.tier ? `它只能跑 ${ditFile.tier} 档` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
   nodes.modelNote.title = ditPath ?? "";
   nodes.modelNote.hidden = !ditPath;
   const key = models.map((item) => `${item.variant}:${item.label}`).join("|") + `#${current?.variant ?? ""}`;
@@ -1258,27 +1265,13 @@ function renderModels(data) {
 }
 
 /**
- * 档位跟着 DiT 走：单文件 INT4 只跑 turbo、INT8 只跑 high，引擎没有第二个选择。
- * 没装单文件 DiT 时就看设置里的值（服务端可能因为卸载而改过它）。
+ * 档位是用户的选择，但不一定和当前单文件 DiT 合得上：INT4 只能跑 turbo。
+ * 选了别的档位就把 DiT 退回 bundle 自带权重（bf16），不去锁选择框。
  */
 let lastTierEdit = 0;
-let tierDirty = false;
 function syncTier(data) {
-  const ditPath = data?.settings?.modelFiles?.dit ?? null;
-  const ditFile = ditPath ? ((data?.files ?? []).find((item) => item.target === ditPath) ?? null) : null;
-  if (ditFile?.tier) {
-    if (nodes.tier.value !== ditFile.tier) nodes.tier.value = ditFile.tier;
-    nodes.tier.disabled = true;
-    nodes.tier.title = `它只能跑 ${ditFile.tier} 档`;
-    return;
-  }
-  if (nodes.tier.disabled) {
-    nodes.tier.disabled = false;
-    nodes.tier.title = "";
-  }
   const tier = data?.settings?.tier;
   if (!tier || tier === nodes.tier.value) return;
-  if (tierDirty) return;
   if (document.activeElement === nodes.tier) return;
   if (Date.now() - lastTierEdit < 2000) return;
   nodes.tier.value = tier;
@@ -1485,13 +1478,9 @@ function collectDefaults() {
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    // 档位不在这里提：它有自己的 change 处理器（可能要连 DiT 一起换），
+    // 也不再拿旧值把服务端的修正盖回去。
     const patch = { memoryMode: nodes.memoryMode.value, defaults: collectDefaults() };
-    // 档位只在用户真的动过它时才写回去：服务端会因为单文件 DiT 自己改档位，
-    // 面板不能拿一个旧值把它盖回去。
-    if (tierDirty) {
-      patch.tier = nodes.tier.value;
-      tierDirty = false;
-    }
     void post("/settings", patch).catch(() => {
       /* 存不进去也不打断手头的操作 */
     });
@@ -1532,9 +1521,24 @@ for (const node of [nodes.width, nodes.height]) {
   });
 }
 
-nodes.tier.addEventListener("change", () => {
+nodes.tier.addEventListener("change", async () => {
   lastTierEdit = Date.now();
-  tierDirty = true;
+  const tier = nodes.tier.value;
+  const ditPath = latest?.settings?.modelFiles?.dit ?? null;
+  const ditFile = ditPath ? ((latest?.files ?? []).find((item) => item.target === ditPath) ?? null) : null;
+  try {
+    // 单文件 DiT 跟不上这个档位（INT4 只能 turbo）：退回 bundle 的 bf16 权重，
+    // 而不是把选择框锁住——高精度参考档也是正当需求。
+    if (ditFile?.tier && ditFile.tier !== tier) {
+      await post("/settings", { tier, modelFiles: { ...(latest.settings.modelFiles ?? {}), dit: null } });
+      say(`已切回 bundle 的 bf16 权重：${shortDitName(ditFile.name)} 只能跑 ${ditFile.tier} 档`, "warn");
+    } else {
+      await post("/settings", { tier });
+      say(`档位：${tier}`);
+    }
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
 });
 
 // 切模型：只改设置，引擎下次 load 时按新目录读；已加载的缓存由服务端作废。
