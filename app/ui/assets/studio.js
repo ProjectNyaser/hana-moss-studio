@@ -523,7 +523,7 @@ function askConfirm(row, { label, question, run, yesText }) {
   yes.focus({ preventScroll: true });
 }
 
-function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], remove, menu = [] }) {
+function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], remove }) {
   const row = document.createElement("div");
   row.className = on ? "manage-row on" : dim ? "manage-row dim" : "manage-row";
   const nameNode = document.createElement("span");
@@ -552,55 +552,14 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
     button.addEventListener("click", () => void action.run());
     row.append(button);
   }
-  if (remove) {
-    const button = document.createElement("button");
-    button.className = "btn ghost small";
-    button.type = "button";
-    button.textContent = remove.label;
-    button.addEventListener("click", () => askConfirm(row, remove));
-    row.append(button);
-  }
-  // 低频动作收进「⋯」：行里只留真正会用到的那个按钮。
-  if (menu.length) {
-    const wrap = document.createElement("div");
-    wrap.className = "row-menu";
-    const trigger = document.createElement("button");
-    trigger.type = "button";
-    trigger.className = "row-menu-trigger";
-    trigger.textContent = "⋯";
-    trigger.title = "更多";
-    trigger.setAttribute("aria-label", "更多操作");
-    const pop = document.createElement("div");
-    pop.className = "row-menu-pop";
-    pop.hidden = true;
-    for (const item of menu) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = item.danger ? "row-menu-item danger" : "row-menu-item";
-      button.textContent = item.label;
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        pop.hidden = true;
-        if (item.question) askConfirm(row, item);
-        else void item.run();
-      });
-      pop.appendChild(button);
-    }
-    trigger.addEventListener("click", (event) => {
-      event.stopPropagation();
-      pop.hidden = !pop.hidden;
-    });
-    wrap.append(trigger, pop);
-    row.append(wrap);
-  }
-
   // 有明细的行可以点开：组件体积这类信息平时收着，需要时才展开。
-  if (detail?.length) {
+  // 低频动作（卸载）也放在展开区里，行上不多一个按钮。
+  if (detail?.length || remove) {
     row.classList.add("expandable");
     const box = document.createElement("div");
     box.className = "manage-detail";
     box.hidden = true;
-    for (const item of detail) {
+    for (const item of detail ?? []) {
       const line = document.createElement("div");
       line.className = "manage-detail-line";
       const label = document.createElement("span");
@@ -608,6 +567,20 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], rem
       const value = document.createElement("span");
       value.textContent = item.value;
       line.append(label, value);
+      box.appendChild(line);
+    }
+    if (remove) {
+      const line = document.createElement("div");
+      line.className = "manage-detail-line actions";
+      const button = document.createElement("button");
+      button.className = "btn ghost small danger";
+      button.type = "button";
+      button.textContent = remove.label;
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        askConfirm(row, remove);
+      });
+      line.appendChild(button);
       box.appendChild(line);
     }
     row.addEventListener("click", (event) => {
@@ -910,18 +883,19 @@ function renderVersions(data) {
               Boolean,
             ),
             meta: formatSize(item.bytes),
+            detail: [
+              { label: "变体", value: item.variant === "system-cuda" ? "system-cuda" : "bundled" },
+              { label: "CUDA", value: item.cuda ?? "—" },
+            ],
             on: item.current,
             actions: item.current
               ? []
               : [{ label: "切换", run: () => runSafe(() => post("/engine/use", { name: item.name }), "切换") }],
-            menu: [
-              {
-                label: "卸载",
-                danger: true,
-                question: `卸载 ${item.version}？`,
-                run: () => runSafe(() => post("/engines/remove", { name: item.name }), "卸载"),
-              },
-            ],
+            remove: {
+              label: "卸载",
+              question: `卸载 ${item.version}？`,
+              run: () => runSafe(() => post("/engines/remove", { name: item.name }), "卸载"),
+            },
           }),
         )
       : [manageRow({ name: "还没有装引擎，去「下载」页装一个" })]),
@@ -950,16 +924,13 @@ function renderVersions(data) {
                   },
                 ],
             // 卸载对当前那个也留着（删完服务端会把 modelPath 落到另一个或清空），
-            // 只是收进「⋯」，行里不摆第二个按钮。
-            menu: [
-              {
-                label: "卸载",
-                danger: true,
-                question: `卸载 ${item.label}？（${formatSize(item.bytes)}）`,
-                run: () =>
-                  runSafe(() => post("/models/remove", { confirm: true, variant: item.variant }), "卸载模型"),
-              },
-            ],
+            // 放在展开区里，行上不摆第二个按钮。
+            remove: {
+              label: "卸载",
+              question: `卸载 ${item.label}？（${formatSize(item.bytes)}）`,
+              run: () =>
+                runSafe(() => post("/models/remove", { confirm: true, variant: item.variant }), "卸载模型"),
+            },
           }),
         )
       : [manageRow({ name: "还没有装模型，去下面下载" })]),
@@ -1647,12 +1618,6 @@ nodes.stageCancel.addEventListener("click", () => {
   const active = latest?.engine?.active;
   if (!active) return;
   void post("/cancel", { id: active.jobId });
-});
-document.addEventListener("click", () => {
-  // 点别处就把行尾菜单收起来；触发按钮与菜单项自己 stopPropagation。
-  for (const pop of document.querySelectorAll(".row-menu-pop")) {
-    if (!pop.hidden) pop.hidden = true;
-  }
 });
 document.addEventListener("contextmenu", (event) => {
   // 图上右键已自己处理；空白处的右键只负责把菜单关掉。
