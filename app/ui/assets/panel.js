@@ -840,18 +840,36 @@ function clearReference() {
 /** 设置里由别处（下载页、工具）改的部分：LoRA 库与控制适配器。
  *  面板自己只加载一次设置（否则用户输到一半会被服务端回包覆盖），
  *  但下载页刚装好的适配器得能同步下来。 */
-let loraSig = "";
+/**
+ * 设置里由别处（下载页、工具）改的部分：LoRA 库与控制适配器。
+ * 只由 settings 事件触发（同一源广播），不在每帧里比对。
+ */
 let lastControlEdit = 0;
+/** 已经应用过的设置版本；只用来补漏掉的事件。 */
+let seenSettingsRev = -1;
 
-function syncSharedSettings(settings) {
-  const defaults = settings?.defaults ?? {};
+function catchUpSettings(state) {
+  const rev = state?.settingsRev;
+  if (rev == null || rev === seenSettingsRev) return;
+  seenSettingsRev = rev;
+  applySharedSettings(state.settings);
+}
+
+function applySharedSettings(settings) {
+  if (!settings) return;
+  const defaults = settings.defaults ?? {};
   const list = Array.isArray(defaults.loras) ? defaults.loras : [];
-  const sig = JSON.stringify(list.map((item) => [item.path, item.strength, item.enabled !== false]));
-  if (loraSig && sig !== loraSig) {
+  const same =
+    list.length === loras.length &&
+    list.every((item, index) =>
+      item.path === loras[index]?.path &&
+      Number(item.strength) === Number(loras[index]?.strength) &&
+      (item.enabled !== false) === (loras[index]?.enabled !== false),
+    );
+  if (!same) {
     loras = list.map((item) => ({ ...item }));
     renderLoras();
   }
-  loraSig = sig;
 
   const adapter = defaults.control?.adapter ?? null;
   const local = controlAdapter?.path ?? null;
@@ -1218,7 +1236,8 @@ function render(data) {
   latest = data;
   facets = data.facets ?? facets;
   setSettings(data.settings);
-  syncSharedSettings(data.settings);
+  // 事件是主路（studio 转发 settings）；这一句只做补课：漏了事件也能对上。
+  catchUpSettings(data);
   renderEngine(data);
   nodes.generate.disabled = submitting;
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。
@@ -1671,6 +1690,11 @@ function applyReuse(job) {
 reuseChannel?.addEventListener("message", (event) => {
   const data = event.data;
   if (data?.type === "reuse" && data.job) applyReuse(data.job);
+  // 下载页或工具改了设置：主界面把它当事件转过来。
+  if (data?.type === "settings") {
+    applySharedSettings(data.settings);
+    return;
+  }
   // 作品区的右键菜单：把这图当参考图送进来。
   if (data?.type === "reference" && typeof data.name === "string") {
     void setReference(outputUrl(data.name));

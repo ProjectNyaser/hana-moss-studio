@@ -115,9 +115,15 @@ export default defineApp(async (sdk) => {
   migrateRuntimeDirs(dataDir, { engineCacheDir, previewDir, thumbsDir, runtimeDir });
 
   const store = createStore(dataDir, outputsDir);
+  /** 设置改成一条事件推出去：侧栏不必自己轮询式比对。 */
+  const saveSettings = (patch) => {
+    const next = store.saveSettings(patch);
+    pushEvent("settings", { settings: next, rev: store.settingsRevision() });
+    return next;
+  };
   /** 改设置的后置动作：路径变了就停引擎，模型下次生成重新 load。装完与切换版本都走这里。 */
   const applySettings = (patch) => {
-    store.saveSettings(patch);
+    saveSettings(patch);
     // 动了 serverPath 就把旧引擎停掉，但任务在跑时不动：停引擎会把正在采样的
     // 那张打断，任务就卡在运行中。新路径下次启动时自然生效。
     if (Object.prototype.hasOwnProperty.call(patch, "serverPath")) {
@@ -731,6 +737,8 @@ function state() {
   const allJobs = store.listJobs();
   return {
     settings,
+    // 设置版本：界面靠它决定要不要重新对一遍，不必每帧序列化比较。
+    settingsRev: store.settingsRevision(),
     engine: {
       ...snapshot,
       serverFound: Boolean(engine.serverPath()),
@@ -1081,7 +1089,7 @@ function state() {
 
     app.post(`/${APP_ID}/settings`, async (c) => {
       const body = await c.req.json().catch(() => ({}));
-      store.saveSettings(body ?? {});
+      saveSettings(body ?? {});
       if (
         engine.snapshot().running &&
         (body?.modelPath !== undefined ||

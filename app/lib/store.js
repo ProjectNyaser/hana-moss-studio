@@ -62,6 +62,8 @@ export function createStore(dataDir, outputsDir) {
   const settingsFile = join(dataDir, "settings.json");
 
   let settings = null;
+  /** 设置改一次的版本号：界面靠它判断要不要重新对一遍，比每帧序列化便宜。 */
+  let settingsRev = 0;
   // 内存里的运行态：排队、运行中、失败，以及完成记录的耗时与 report。
   let runtime = [];
   let scanCache = { at: 0, list: [] };
@@ -142,9 +144,13 @@ export function createStore(dataDir, outputsDir) {
       if (!settings) settings = normalize(readJson(settingsFile, {}));
       return settings;
     },
+    settingsRevision() {
+      return settingsRev;
+    },
     saveSettings(patch) {
       settings = normalize({ ...this.getSettings(), ...patch });
       writeFileSync(settingsFile, JSON.stringify(settings, null, 2), "utf8");
+      settingsRev += 1;
       return settings;
     },
 

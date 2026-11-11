@@ -1660,6 +1660,15 @@ async function boot() {
     },
     onEvent: (name, payload) => {
       if (!latest) return;
+      // 设置变了：直接把新设置转给侧栏（同一源广播），不靠它自己比对。
+      if (name === "settings") {
+        if (!payload?.settings) return;
+        latest.settings = payload.settings;
+        if (payload.rev != null) latest.settingsRev = payload.rev;
+        channel?.postMessage({ type: "settings", settings: payload.settings });
+        broadcastState(latest);
+        return;
+      }
       // 进度与下载都走小帧，不再为每一步重推整份 state。
       if (name === "progress") {
         const active = latest.engine?.active;
