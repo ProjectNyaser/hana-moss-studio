@@ -133,6 +133,22 @@ body {
 .manage-detail-line.actions { justify-content: flex-end; margin-top: 4px; }
 .manage-detail-line.actions .danger { color: var(--danger); }
 .manage-row:first-child { border-top: 0; }
+/* 状态与动作各占一个固定宽的槽：行尾三列对齐，不随“有没有标记”一路平移 */
+.manage-row .status {
+  flex: none;
+  width: 84px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  overflow: hidden;
+}
+.manage-row .manage-actions {
+  flex: none;
+  width: 112px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
 .manage-row .name {
   flex: 1;
   min-width: 0;

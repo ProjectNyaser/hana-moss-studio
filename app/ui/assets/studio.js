@@ -538,20 +538,25 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], det
     metaNode.textContent = meta;
     row.append(metaNode);
   }
-  // 标记靠右、紧贴操作按钮：状态和能做的事在同一头，不再一端一个。
+  // 标记与动作各占一个固定宽的槽：每行右侧对齐，不会因为有没有标记而一路平移。
+  const statusBox = document.createElement("span");
+  statusBox.className = "status";
   for (const badge of badges) {
     const tag = document.createElement("span");
     tag.className = "badge";
     tag.textContent = badge;
-    row.append(tag);
+    statusBox.appendChild(tag);
   }
+  row.append(statusBox);
+  const actionsBox = document.createElement("span");
+  actionsBox.className = "manage-actions";
   for (const action of actions) {
     const button = document.createElement("button");
     button.className = "btn ghost small";
     button.type = "button";
     button.textContent = action.label;
     button.addEventListener("click", () => void action.run());
-    row.append(button);
+    actionsBox.appendChild(button);
   }
   for (const action of [...(detailActions ?? [])]) {
     const button = document.createElement("button");
@@ -559,7 +564,7 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], det
     button.type = "button";
     button.textContent = action.label;
     button.addEventListener("click", () => void action.run());
-    row.append(button);
+    actionsBox.appendChild(button);
   }
   if (remove) {
     const button = document.createElement("button");
@@ -567,8 +572,9 @@ function manageRow({ name, meta, on, dim, badges = [], detail, actions = [], det
     button.type = "button";
     button.textContent = remove.label;
     button.addEventListener("click", () => askConfirm(row, remove));
-    row.append(button);
+    actionsBox.appendChild(button);
   }
+  row.append(actionsBox);
 
   // 有明细的行可以点开：组件体积这类信息平时收着，需要时才展开。
   if (detail?.length) {
@@ -642,6 +648,12 @@ document.addEventListener(
   },
   true,
 );
+
+/** 行尾附图动作（下载 / 使用）也放进同一个槽，否则列宽会跳到行外。 */
+function appendAction(row, button) {
+  const box = row.querySelector?.(".manage-actions");
+  (box ?? row).appendChild(button);
+}
 
 const runSafe = async (fn, label) => {
   try {
@@ -988,7 +1000,7 @@ function renderVersions(data) {
         button.addEventListener("click", () =>
           startInstall("/install/weights", { variant: item.variant }, `下载 ${item.label}`),
         );
-        row.appendChild(button);
+        appendAction(row, button);
       }
       return row;
     }),
@@ -1076,7 +1088,7 @@ function renderDownload(data) {
           button.type = "button";
           button.textContent = "下载";
           button.addEventListener("click", () => startInstall("/files/install", { id: item.id }, `下载 ${item.name}`));
-          row.appendChild(button);
+          appendAction(row, button);
         }
         return row;
       }),
@@ -1111,7 +1123,7 @@ function renderConfigPack(data) {
     button.type = "button";
     button.textContent = "下载";
     button.addEventListener("click", () => runSafe(() => post("/config/install", {}), "下载配置与分词器"));
-    row.appendChild(button);
+    appendAction(row, button);
   }
   nodes.configList.replaceChildren(row);
 }
