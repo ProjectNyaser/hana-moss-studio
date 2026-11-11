@@ -1006,10 +1006,8 @@ async function taskAction(taskId, path, action) {
 function renderDownload(data) {
   nodes.downloadEngine.disabled = false;
 
-  // 模型：下面这块列全部两个仓库，和引擎那块一致——上面是已装的（能切、能卸），
-  // 模型那一张表已经列了完整仓库，这里只接单文件。
-
-  // 单文件按用途分三组：适配器 / DiT / 文本编码器与 VAE。
+  // 单文件按用途分三组：适配器 / DiT / 文本编码器与 VAE。卸载也在行里，
+  // 展开区里给（详情为空时只写一个卸载行），和模型那张表一致。
   const files = Array.isArray(data.files) ? data.files : [];
   const groups = [
     { roles: ["control", "lora"], list: nodes.downloadAdapters, state: nodes.filesAdapterState },
@@ -1024,22 +1022,35 @@ function renderDownload(data) {
         const row = manageRow({
           name: item.name,
           meta: formatSize(item.bytes),
-          // 状态交给右侧那个按钮说，不再另外拄一个「在用」小标。
+          badges: item.active ? ["在用"] : [],
+          on: item.active,
+          actions:
+            item.installed && !item.active
+              ? [
+                  {
+                    label: "使用",
+                    run: () => runSafe(() => post("/files/use", { id: item.id }), `启用 ${item.name}`),
+                  },
+                ]
+              : [],
+          remove: item.installed
+            ? {
+                label: "卸载",
+                question: `卸载 ${item.name}？（${formatSize(item.bytes)}）`,
+                run: () =>
+                  runSafe(() => post("/files/remove", { id: item.id, confirm: true }), "卸载文件"),
+              }
+            : null,
         });
         row.title = item.note ?? "";
-        const button = document.createElement("button");
-        button.className = "btn ghost small";
-        button.type = "button";
-        button.textContent = item.active ? "已启用" : item.installed ? "使用" : "下载";
-        button.disabled = Boolean(item.active);
-        button.addEventListener("click", () => {
-          if (item.installed) {
-            void runSafe(() => post("/files/use", { id: item.id }), `启用 ${item.name}`);
-            return;
-          }
-          void startInstall("/files/install", { id: item.id }, `下载 ${item.name}`);
-        });
-        row.appendChild(button);
+        if (!item.installed) {
+          const button = document.createElement("button");
+          button.className = "btn ghost small";
+          button.type = "button";
+          button.textContent = "下载";
+          button.addEventListener("click", () => startInstall("/files/install", { id: item.id }, `下载 ${item.name}`));
+          row.appendChild(button);
+        }
         return row;
       }),
     );

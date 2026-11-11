@@ -1133,6 +1133,21 @@ function state() {
       }
     });
 
+    // 删单文件：引擎下次 load 会用新的设置，所以把 loadedKey 一并作废。
+    app.post(`/${APP_ID}/files/remove`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const id = String(body?.id ?? "");
+      if (!body?.confirm) return c.json({ ...state(), error: "需要确认" }, 400);
+      try {
+        installer.removeFile(id);
+        engine.loadedKey = null;
+        schedulePush(0);
+        return c.json(state());
+      } catch (error) {
+        return c.json({ ...state(), error: message(error) }, 400);
+      }
+    });
+
     app.post(`/${APP_ID}/engine/start`, async (c) => {
       try {
         await engine.start();

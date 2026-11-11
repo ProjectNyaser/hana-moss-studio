@@ -1196,6 +1196,24 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     return { ok: true, id, target };
   }
 
+  /**
+   * 删一个单文件权重 / 适配器。
+   *
+   * 先删文件，再存一遍设置：归一化会把指向不存在文件的条目摘掉
+   * （modelFiles、LoRA 库、控制适配器都靠这一手），同时发一次 settings 事件，
+   * 侧栏不用等到下一帧才知道适配器没了。
+   */
+  function removeFile(id) {
+    const entry = (MOSSIMAGE.files ?? []).find((item) => item.id === id);
+    if (!entry) throw new Error(`没有这个文件：${id}`);
+    const target = fileTarget(entry);
+    if (!existsSync(target)) throw new Error("这个文件还没下载");
+    rmSync(target, { force: true });
+    const settings = getSettings();
+    saveSettings({ modelFiles: settings.modelFiles, defaults: settings.defaults });
+    return { ok: true, id, target };
+  }
+
   async function installWeights(variant = "base") {
     const key = MODELS[variant] ? variant : "base";
     const repo = MODELS[key].repo;
@@ -1397,6 +1415,7 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     installFile,
     listFiles,
     useFile,
+    removeFile,
     taskAction,
     listEngines,
     listModels,
