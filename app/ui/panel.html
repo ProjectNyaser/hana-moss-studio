@@ -161,10 +161,13 @@
       cursor: pointer;
       list-style: none;
       user-select: none;
+      white-space: nowrap;
       font-size: 11.5px;
       color: var(--ui-text-3);
       letter-spacing: 0.03em;
     }
+    /* 右侧那句话（适配器名之类）太长时自己省略，不要把标题挤换行。 */
+    .pn-fold > summary .hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .pn-fold > summary::-webkit-details-marker { display: none; }
     .pn-fold > summary::after { content: "›"; margin-left: auto; flex: none; transition: transform 160ms var(--ui-ease); }
     .pn-fold[open] > summary::after { transform: rotate(90deg); }

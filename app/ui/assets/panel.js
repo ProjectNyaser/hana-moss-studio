@@ -837,6 +837,35 @@ function clearReference() {
   updateRefNote();
 }
 
+/** 设置里由别处（下载页、工具）改的部分：LoRA 库与控制适配器。
+ *  面板自己只加载一次设置（否则用户输到一半会被服务端回包覆盖），
+ *  但下载页刚装好的适配器得能同步下来。 */
+let loraSig = "";
+let lastControlEdit = 0;
+
+function syncSharedSettings(settings) {
+  const defaults = settings?.defaults ?? {};
+  const list = Array.isArray(defaults.loras) ? defaults.loras : [];
+  const sig = JSON.stringify(list.map((item) => [item.path, item.strength, item.enabled !== false]));
+  if (loraSig && sig !== loraSig) {
+    loras = list.map((item) => ({ ...item }));
+    renderLoras();
+  }
+  loraSig = sig;
+
+  const adapter = defaults.control?.adapter ?? null;
+  const local = controlAdapter?.path ?? null;
+  // 本地刚改过就先等等：800ms 内的回包可能是旧值。
+  if (adapter !== local && Date.now() - lastControlEdit > 2000) {
+    if (adapter) setControlAdapter(adapter);
+    else clearControlAdapter();
+    if (defaults.control?.kind) nodes.controlKind.value = defaults.control.kind;
+    if (Number.isFinite(defaults.control?.strength)) nodes.controlStrength.value = defaults.control.strength;
+    if (Number.isFinite(defaults.control?.loraStrength)) nodes.controlLoraStrength.value = defaults.control.loraStrength;
+    updateControlNote();
+  }
+}
+
 /** 编辑参考图：只记源图，到出手那一刻再按当时尺寸准备。 */
 async function setEditReference(url, name = "画廊图") {
   try {
@@ -880,6 +909,7 @@ function updateControlNote() {
 
 function setControlAdapter(path) {
   controlAdapter = { path };
+  lastControlEdit = Date.now();
   nodes.controlAdapter.hidden = false;
   nodes.controlAdapterName.textContent = `适配器：${controlName(path)}`;
   nodes.controlAdapterName.title = path;
@@ -888,6 +918,7 @@ function setControlAdapter(path) {
 
 function clearControlAdapter() {
   controlAdapter = null;
+  lastControlEdit = Date.now();
   nodes.controlAdapter.hidden = true;
   nodes.controlAdapterName.textContent = "";
   updateControlNote();
@@ -1187,6 +1218,7 @@ function render(data) {
   latest = data;
   facets = data.facets ?? facets;
   setSettings(data.settings);
+  syncSharedSettings(data.settings);
   renderEngine(data);
   nodes.generate.disabled = submitting;
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。

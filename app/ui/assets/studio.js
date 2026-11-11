@@ -53,6 +53,8 @@ const nodes = {
   toast: el("toast"),
   downloadEngine: el("download-engine"),
   downloadModels: el("download-models"),
+  downloadFiles: el("download-files"),
+  downloadFilesState: el("download-files-state"),
   versionsTabs: el("versions-tabs"),
   downloadAvailableState: el("download-available-state"),
   downloadAvailable: el("download-available"),
@@ -988,28 +990,34 @@ function renderDownload(data) {
   // 单文件权重与适配器：ComfyUI 发布页那套，下完自动写进设置。
   const files = Array.isArray(data.files) ? data.files : [];
   const roleLabel = { dit: "DiT", text_encoder: "文本编码器", vae: "VAE", control: "控制适配器", lora: "LoRA" };
-  for (const item of files) {
-    const row = manageRow({
-      name: item.name,
-      meta: item.installed
-        ? `${formatSize(item.bytes)}${item.active ? " · 在用" : ""}`
-        : `${roleLabel[item.role] ?? item.role} · ${formatSize(item.bytes)} · ${item.note ?? ""}`,
-    });
-    const button = document.createElement("button");
-    button.className = "btn ghost small";
-    button.type = "button";
-    button.textContent = item.active ? "已启用" : item.installed ? "使用" : "下载";
-    button.disabled = Boolean(item.active);
-    button.addEventListener("click", () => {
-      if (item.installed) {
-        void runSafe(() => post("/files/use", { id: item.id }), `启用 ${item.name}`);
-        return;
-      }
-      void startInstall("/files/install", { id: item.id }, `下载 ${item.name}`);
-    });
-    row.appendChild(button);
-    nodes.downloadModels.appendChild(row);
-  }
+  nodes.downloadFilesState.textContent = files.length
+    ? `${files.filter((item) => item.installed).length}/${files.length} 已装`
+    : "";
+  nodes.downloadFiles.replaceChildren(
+    ...files.map((item) => {
+      const row = manageRow({
+        name: item.name,
+        // 右列只放体积，角色用小标；note 放 title，不把一行塞满。
+        meta: formatSize(item.bytes),
+        badges: [roleLabel[item.role] ?? item.role, item.active ? "在用" : null].filter(Boolean),
+      });
+      row.title = item.note ?? "";
+      const button = document.createElement("button");
+      button.className = "btn ghost small";
+      button.type = "button";
+      button.textContent = item.active ? "已启用" : item.installed ? "使用" : "下载";
+      button.disabled = Boolean(item.active);
+      button.addEventListener("click", () => {
+        if (item.installed) {
+          void runSafe(() => post("/files/use", { id: item.id }), `启用 ${item.name}`);
+          return;
+        }
+        void startInstall("/files/install", { id: item.id }, `下载 ${item.name}`);
+      });
+      row.appendChild(button);
+      return row;
+    }),
+  );
 }
 
 /**
