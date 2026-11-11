@@ -864,9 +864,17 @@ let versionsKey = "";
 function renderVersions(data) {
   const { engine } = data;
   // 数据没变就别重建：每帧 replaceChildren 会把点击中的按钮换掉，交互会发抖。
-  const key = JSON.stringify({ engine, engines: data.engines, models: data.models, gpu: data.gpu });
+  const key = JSON.stringify({ engine, engines: data.engines, models: data.models, gpu: data.gpu, config: data.configPack });
   if (key === versionsKey) return;
   versionsKey = key;
+
+  // 自管清单：配置与分词器是单独一条，不依附哪个整包。
+  // 单独包一层：这个行就算画不出来，也不能把下面的模型表一起拖死。
+  try {
+    renderConfigPack(data);
+  } catch {
+    /* 缺件时宁可少一行 */
+  }
 
   nodes.engineState.textContent = engine.running
     ? engine.loaded
@@ -916,9 +924,8 @@ function renderVersions(data) {
   // 模型：一张表列完整仓库。装了就看体积与当前状态，没装的直接下载——
   // 同一个仓库不再在「模型」和「全部仓库」各出现一次。
   const models = Array.isArray(data.models) ? data.models : [];
-  nodes.modelState.textContent = models.length
-    ? `${models.filter((item) => item.installed).length}/${models.length} 已装`
-    : "";
+  const installedModelCount = models.filter((item) => item.installed).length;
+  nodes.modelState.textContent = models.length ? `${installedModelCount}/${models.length} 已装` : "";
   nodes.modelList.replaceChildren(
     ...models.map((item) => {
       const row = manageRow({

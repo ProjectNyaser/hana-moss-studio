@@ -1212,7 +1212,8 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
     // 单文件的 DiT / 文本编码器是 bundle 里那两份的量化替代品，
     // 带上 bundle 里对应组件的体积，界面才说得清「它替掉的是什么」。
     const activeDir = settings.modelPath && existsSync(settings.modelPath) ? settings.modelPath : null;
-    const parts = activeDir ? modelComponents(activeDir) : [];
+    // 轻量配置包里没有权重，跟它比体积没有意义（DiT 只会有 config.json 的 240 字节）。
+    const parts = activeDir && hasDitWeights(activeDir) ? modelComponents(activeDir) : [];
     const bundle = (role) => {
       const label = role === "dit" ? "DiT" : role === "text_encoder" ? "文本编码器" : role === "vae" ? "VAE" : null;
       if (!label) return null;
