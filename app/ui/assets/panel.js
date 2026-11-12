@@ -152,12 +152,27 @@ const nodes = {
   controlLoraStrength: el("pn-control-lora-strength"),
   controlFile: el("pn-control-file"),
   controlImgFile: el("pn-control-img-file"),
-  layout: el("pn-layout"),
   layoutNote: el("pn-layout-note"),
+  layoutEdit: el("pn-layout-edit"),
   layoutImport: el("pn-layout-import"),
-  layoutTemplate: el("pn-layout-template"),
   layoutClear: el("pn-layout-clear"),
   layoutFile: el("pn-layout-file"),
+  frame: el("pn-frame"),
+  frameInfo: el("pn-frame-info"),
+  frameStage: el("pn-frame-stage"),
+  frameSheet: el("pn-frame-sheet"),
+  frameBoxes: el("pn-frame-boxes"),
+  frameHint: el("pn-frame-hint"),
+  frameDraft: el("pn-frame-draft"),
+  frameRows: el("pn-frame-rows"),
+  frameForm: el("pn-frame-form"),
+  frameLabel: el("pn-frame-label"),
+  frameCaption: el("pn-frame-caption"),
+  frameText: el("pn-frame-text"),
+  frameSize: el("pn-frame-size"),
+  frameClear: el("pn-frame-clear"),
+  frameCancel: el("pn-frame-cancel"),
+  frameSave: el("pn-frame-save"),
 };
 
 let latest = null;
@@ -977,91 +992,511 @@ async function setControlImage(file) {  try {
   }
 }
 
-// ── 布局（JSON layout）────────────────────────────────────────────────
-/** 读 textarea 里的布局 JSON 并做最基本的结构检查；错误留在 note 里，不阻断输入。 */
-function readLayoutDoc() {
-  const text = nodes.layout.value.trim();
-  if (!text) return { doc: null, items: 0, error: null };
-  let doc;
-  try {
-    doc = JSON.parse(text);
-  } catch (error) {
-    return { doc: null, items: 0, error: `JSON 解析失败：${error.message}` };
-  }
-  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { doc: null, items: 0, error: "要是一个 JSON 对象" };
-  const items = Array.isArray(doc.items) ? doc.items : [];
-  if (!items.length) return { doc, items: 0, error: "items 为空" };
-  for (const [index, item] of items.entries()) {
-    if (!Array.isArray(item?.bbox) || item.bbox.length !== 4) {
-      return { doc, items, error: `第 ${index + 1} 个 item 的 bbox 要四个数（y1,x1,y2,x2）` };
-    }
-  }
-  return { doc, items, error: null };
+// ── 布局（框选）──────────────────────────────────────────────────────
+// 模型面吃的是一段中心坐标的 yxyx JSON，但那只是传输格式。界面上存的是
+// 左上角坐标的框，提交时交给 readLayout 的 boxes 换算；换画幅按比例缩一次就行。
+let layoutBoxes = [];
+/** 导入的 JSON 里可能带着 summary.canvas 这类字段：编辑器不碰，保存时原样带回去。 */
+let layoutMeta = null;
+/** 导入的 JSON 只剩一句整图描述、用户又没写提示词时，用它兑底。 */
+let layoutCaption = "";
+/** 这些框坐标对应的画布尺寸。 */
+let layoutSize = null;
+let frameSelected = null;
+/** 表单当前展示的是哪个框。换框才重填，同一框里打字不被覆写。 */
+let frameFormId = null;
+let frameDrag = null;
+let frameSeq = 0;
+
+function canvasSize() {
+  return {
+    width: Math.max(256, Math.round(Number(nodes.width.value) || 768)),
+    height: Math.max(256, Math.round(Number(nodes.height.value) || 768)),
+  };
 }
 
 function renderLayoutNote() {
-  const { items, error } = readLayoutDoc();
-  if (error) {
-    nodes.layoutNote.textContent = error;
-    nodes.layoutNote.style.color = "var(--danger)";
+  const count = layoutBoxes.length;
+  nodes.layoutNote.textContent = count ? `${count} 个框` : "未使用";
+  nodes.layoutNote.title = count
+    ? layoutBoxes.map((item, index) => `${index + 1}. ${item.label}：${item.caption || item.text || "没写"}`).join("\n")
+    : "";
+}
+
+/** 画幅变了就按比例搬框：框的意思是「这一块占画面多少」，不是某一组像素。 */
+function rescaleLayoutBoxes() {
+  if (!layoutBoxes.length) return;
+  const size = canvasSize();
+  if (!layoutSize) {
+    layoutSize = size;
     return;
   }
-  nodes.layoutNote.style.color = "";
-  nodes.layoutNote.textContent = items.length ? `${items.length} 个框` : "未使用";
-}
-
-/** 模板按当前尺寸算坐标：画布中心为原点，上负下正、左负右正。 */
-function insertLayoutTemplate() {
-  const width = Number(nodes.width.value) || 768;
-  const height = Number(nodes.height.value) || 768;
-  const halfW = Math.round(width / 2);
-  const halfH = Math.round(height / 2);
-  const template = {
-    summary: {
-      canvas: "single",
-      // 故意留空：空着就用上面那句提示词，不编一个假 caption。
-      caption: nodes.prompt.value.trim(),
-    },
-    items: [
-      {
-        label: "text",
-        caption: "顶部居中的标题",
-        text: "HELLO",
-        bbox: [Math.round(-halfH * 0.9), Math.round(-halfW * 0.6), Math.round(-halfH * 0.45), Math.round(halfW * 0.6)],
-      },
-      {
-        label: "object",
-        caption: "画面下方的主体",
-        bbox: [Math.round(halfH * 0.1), Math.round(-halfW * 0.5), Math.round(halfH * 0.9), Math.round(halfW * 0.5)],
-      },
+  if (layoutSize.width === size.width && layoutSize.height === size.height) return;
+  const sx = size.width / layoutSize.width;
+  const sy = size.height / layoutSize.height;
+  layoutBoxes = layoutBoxes.map((item) => ({
+    ...item,
+    box: [
+      Math.round(item.box[0] * sx),
+      Math.round(item.box[1] * sy),
+      Math.round(item.box[2] * sx),
+      Math.round(item.box[3] * sy),
     ],
-    bbox_coord_space: "abs_centralized",
-    bbox_format: "yxyx",
-  };
-  nodes.layout.value = JSON.stringify(template, null, 2);
-  renderLayoutNote();
-  say("已按当前尺寸生成模板：改 caption、text 与 bbox 就能用。");
+  }));
+  layoutSize = size;
+  if (!nodes.frame.hidden) {
+    layoutFrameSheet();
+    renderFrameBoxes();
+    renderFrameInfo();
+  }
 }
 
-nodes.layout.addEventListener("input", renderLayoutNote);
-nodes.layoutTemplate.addEventListener("click", insertLayoutTemplate);
-nodes.layoutClear.addEventListener("click", () => {
-  nodes.layout.value = "";
+/** 分「适应」：先铺满宽度，高度不够就反过来；两边都按像素算，百分比定位才有意义。 */
+function layoutFrameSheet() {
+  const size = layoutSize ?? canvasSize();
+  const stage = nodes.frameStage;
+  const ratio = size.width / size.height;
+  const fitWidth = Math.max(80, stage.clientWidth - 16);
+  const fitHeight = Math.max(80, stage.clientHeight - 16);
+  let width = fitWidth;
+  let height = width / ratio;
+  if (height > fitHeight) {
+    height = fitHeight;
+    width = height * ratio;
+  }
+  nodes.frameSheet.style.width = `${Math.round(width)}px`;
+  nodes.frameSheet.style.height = `${Math.round(height)}px`;
+}
+
+function openFrameEditor(selectId) {
+  const size = canvasSize();
+  if (!layoutSize) layoutSize = size;
+  rescaleLayoutBoxes();
+  // 有参考图就垫在下面：对着已有的构图放框，比对着空白猜准。
+  nodes.frameSheet.style.backgroundImage = refPrepared ? `url(${refPrepared.url})` : "";
+  nodes.frame.hidden = false;
+  document.body.classList.add("pn-locked");
+  frameDrag = null;
+  frameSelected = selectId ?? layoutBoxes[0]?.id ?? null;
+  layoutFrameSheet();
+  renderFrameBoxes();
+  renderFrameForm();
+  renderFrameInfo();
+  say(layoutBoxes.length ? "拖动框改位置，拖四角改大小，右侧写清每块画什么。" : "在画布上按住拖出一个框。");
+}
+
+function closeFrameEditor() {
+  nodes.frame.hidden = true;
+  document.body.classList.remove("pn-locked");
+  frameDrag = null;
+  frameSelected = null;
+  nodes.frameDraft.hidden = true;
   renderLayoutNote();
-});
+}
+
+function saveFrameEditor() {
+  const blank = layoutBoxes.findIndex((item) => !item.caption.trim() && !item.text.trim());
+  if (blank >= 0) {
+    frameSelected = layoutBoxes[blank].id;
+    renderFrameBoxes();
+    renderFrameForm();
+    nodes.frameCaption.focus();
+    say(`第 ${blank + 1} 个框还没写「这块画什么」。`, "bad");
+    return;
+  }
+  closeFrameEditor();
+  say(`布局已保存：${layoutBoxes.length} 个框。`, "ok");
+}
+
+function renderFrameInfo() {
+  const size = layoutSize ?? canvasSize();
+  nodes.frameInfo.textContent = `${size.width}×${size.height} · ${layoutBoxes.length} 个框`;
+}
+
+function renderFrameSize() {
+  const item = layoutBoxes.find((entry) => entry.id === frameSelected);
+  if (!item) {
+    nodes.frameSize.textContent = "";
+    return;
+  }
+  const [x0, y0, x1, y1] = item.box;
+  nodes.frameSize.textContent = `${Math.round(x1 - x0)}×${Math.round(y1 - y0)} px · 左上 ${Math.round(x0)},${Math.round(y0)}`;
+}
+
+function renderFrameRows() {
+  const rows = layoutBoxes.map((item, index) => {
+    const row = document.createElement("li");
+    row.className = "pn-frame-row" + (item.id === frameSelected ? " on" : "");
+    row.dataset.id = item.id;
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = String(index + 1);
+    const text = document.createElement("span");
+    text.className = "txt";
+    const label = document.createElement("b");
+    label.textContent = item.label || "object";
+    const caption = document.createElement("span");
+    caption.textContent = item.caption || item.text || "还没写这块画什么";
+    text.append(label, caption);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "drop";
+    remove.dataset.remove = item.id;
+    remove.title = "删掉这个框";
+    remove.textContent = "×";
+    row.append(num, text, remove);
+    return row;
+  });
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.className = "pn-frame-empty";
+    empty.textContent = "还没有框";
+    rows.push(empty);
+  }
+  nodes.frameRows.replaceChildren(...rows);
+}
+
+function renderFrameBoxes() {
+  const size = layoutSize ?? canvasSize();
+  const list = layoutBoxes.map((item, index) => {
+    const [x0, y0, x1, y1] = item.box;
+    const box = document.createElement("div");
+    box.className = "pn-frame-box" + (item.id === frameSelected ? " on" : "");
+    box.dataset.id = item.id;
+    box.style.left = `${(x0 / size.width) * 100}%`;
+    box.style.top = `${(y0 / size.height) * 100}%`;
+    box.style.width = `${((x1 - x0) / size.width) * 100}%`;
+    box.style.height = `${((y1 - y0) / size.height) * 100}%`;
+    const tag = document.createElement("span");
+    tag.className = "pn-frame-tag";
+    tag.textContent = `${index + 1} ${item.label || "object"}`;
+    box.append(tag);
+    // 四角只在选中的框上出：框多了手柄会互相叠。
+    if (item.id === frameSelected) {
+      for (const dir of ["nw", "ne", "sw", "se"]) {
+        const grip = document.createElement("span");
+        grip.className = `pn-frame-grip ${dir}`;
+        grip.dataset.dir = dir;
+        box.append(grip);
+      }
+    }
+    return box;
+  });
+  nodes.frameBoxes.replaceChildren(...list);
+  nodes.frameHint.hidden = layoutBoxes.length > 0;
+  renderFrameRows();
+}
+
+/** 拖动中只改被拖的那一个框，不重建 DOM：重建会把 pointer 捕获下的手柄换掉。 */
+function syncFrameBox(item) {
+  const size = layoutSize ?? canvasSize();
+  const box = nodes.frameBoxes.querySelector(`[data-id="${item.id}"]`);
+  if (!box) return;
+  const [x0, y0, x1, y1] = item.box;
+  box.style.left = `${(x0 / size.width) * 100}%`;
+  box.style.top = `${(y0 / size.height) * 100}%`;
+  box.style.width = `${((x1 - x0) / size.width) * 100}%`;
+  box.style.height = `${((y1 - y0) / size.height) * 100}%`;
+  renderFrameSize();
+}
+
+function renderFrameForm() {
+  const item = layoutBoxes.find((entry) => entry.id === frameSelected) ?? null;
+  nodes.frameForm.hidden = !item;
+  if (!item) {
+    frameFormId = null;
+    return;
+  }
+  if (frameFormId !== item.id) {
+    frameFormId = item.id;
+    nodes.frameLabel.value = item.label;
+    nodes.frameCaption.value = item.caption;
+    nodes.frameText.value = item.text;
+  }
+  renderFrameSize();
+}
+
+function syncFrameDraft() {
+  const draft = nodes.frameDraft;
+  const size = layoutSize ?? canvasSize();
+  if (!frameDrag?.box) {
+    draft.hidden = true;
+    return;
+  }
+  const [x0, y0, x1, y1] = frameDrag.box;
+  draft.hidden = false;
+  draft.style.left = `${(x0 / size.width) * 100}%`;
+  draft.style.top = `${(y0 / size.height) * 100}%`;
+  draft.style.width = `${((x1 - x0) / size.width) * 100}%`;
+  draft.style.height = `${((y1 - y0) / size.height) * 100}%`;
+}
+
+function removeFrameBox(id) {
+  const index = layoutBoxes.findIndex((item) => item.id === id);
+  if (index < 0) return;
+  layoutBoxes.splice(index, 1);
+  frameSelected = layoutBoxes[Math.min(index, layoutBoxes.length - 1)]?.id ?? null;
+  renderFrameBoxes();
+  renderFrameForm();
+  renderFrameInfo();
+  renderLayoutNote();
+}
+
+/** 屏幕坐标 ↔ 画布像素：框存的是画布像素，画在屏幕上是百分比。 */
+function sheetPoint(event) {
+  const size = layoutSize ?? canvasSize();
+  const rect = nodes.frameSheet.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * size.width;
+  const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * size.height;
+  return {
+    x: Math.max(0, Math.min(size.width, Math.round(x))),
+    y: Math.max(0, Math.min(size.height, Math.round(y))),
+  };
+}
+
+function onFramePointerDown(event) {
+  if (event.button !== 0) return;
+  const point = sheetPoint(event);
+  const grip = event.target.closest?.(".pn-frame-grip") ?? null;
+  const boxEl = event.target.closest?.(".pn-frame-box") ?? null;
+  const item = boxEl ? layoutBoxes.find((entry) => entry.id === boxEl.dataset.id) : null;
+  nodes.frameSheet.setPointerCapture?.(event.pointerId);
+  // preventDefault 挡住了焦点转移：不主动收回，Del 会被表单的输入框吃掉。
+  nodes.frameSheet.focus({ preventScroll: true });
+  if (item && grip) {
+    frameSelected = item.id;
+    frameDrag = { mode: "resize", id: item.id, dir: grip.dataset.dir, origin: [...item.box], start: point };
+  } else if (item) {
+    frameSelected = item.id;
+    frameDrag = { mode: "move", id: item.id, origin: [...item.box], start: point };
+  } else {
+    frameSelected = null;
+    frameDrag = { mode: "new", start: point, box: [point.x, point.y, point.x, point.y] };
+  }
+  renderFrameBoxes();
+  renderFrameForm();
+  event.preventDefault();
+}
+
+function onFramePointerMove(event) {
+  if (!frameDrag) return;
+  const point = sheetPoint(event);
+  const size = layoutSize ?? canvasSize();
+  if (frameDrag.mode === "new") {
+    frameDrag.box = [
+      Math.min(frameDrag.start.x, point.x),
+      Math.min(frameDrag.start.y, point.y),
+      Math.max(frameDrag.start.x, point.x),
+      Math.max(frameDrag.start.y, point.y),
+    ];
+    syncFrameDraft();
+    return;
+  }
+  const item = layoutBoxes.find((entry) => entry.id === frameDrag.id);
+  if (!item) return;
+  if (frameDrag.mode === "move") {
+    const [x0, y0, x1, y1] = frameDrag.origin;
+    const width = x1 - x0;
+    const height = y1 - y0;
+    const nx = Math.max(0, Math.min(size.width - width, x0 + (point.x - frameDrag.start.x)));
+    const ny = Math.max(0, Math.min(size.height - height, y0 + (point.y - frameDrag.start.y)));
+    item.box = [nx, ny, nx + width, ny + height];
+  } else {
+    // 对边不动，被拖的那一角跟着指针；最小 8px，避免拖成一条线。
+    const origin = frameDrag.origin;
+    let x0 = origin[0];
+    let y0 = origin[1];
+    let x1 = origin[2];
+    let y1 = origin[3];
+    if (frameDrag.dir.includes("w")) x0 = Math.min(Math.max(0, point.x), x1 - 8);
+    if (frameDrag.dir.includes("e")) x1 = Math.max(Math.min(size.width, point.x), x0 + 8);
+    if (frameDrag.dir.includes("n")) y0 = Math.min(Math.max(0, point.y), y1 - 8);
+    if (frameDrag.dir.includes("s")) y1 = Math.max(Math.min(size.height, point.y), y0 + 8);
+    item.box = [x0, y0, x1, y1];
+  }
+  syncFrameBox(item);
+}
+
+function onFramePointerUp(event) {
+  if (!frameDrag) return;
+  const drag = frameDrag;
+  frameDrag = null;
+  nodes.frameSheet.releasePointerCapture?.(event.pointerId);
+  nodes.frameDraft.hidden = true;
+  let created = null;
+  if (drag.mode === "new") {
+    const [x0, y0, x1, y1] = drag.box;
+    // 只点一下不算框：小到看不清的大小当误触。
+    if (x1 - x0 >= 8 && y1 - y0 >= 8) {
+      created = { id: `box-${++frameSeq}`, label: "object", caption: "", text: "", box: drag.box };
+      layoutBoxes.push(created);
+      frameSelected = created.id;
+    }
+  }
+  renderFrameBoxes();
+  renderFrameForm();
+  renderFrameInfo();
+  renderLayoutNote();
+  if (created) nodes.frameCaption.focus();
+}
+
+/** 导入的 JSON 只用来搬进可视框：中心 yxyx → 屏幕 xyxy。 */
+function boxesFromDoc(doc) {
+  const size = layoutSize ?? canvasSize();
+  const space = String(doc?.bbox_coord_space ?? "abs_centralized");
+  const format = String(doc?.bbox_format ?? "yxyx");
+  const items = Array.isArray(doc?.items) ? doc.items : [];
+  if (!items.length) throw new Error("items 是空的");
+  return items.map((item, index) => {
+    const raw = Array.isArray(item?.bbox) ? item.bbox.map(Number) : [];
+    if (raw.length !== 4 || raw.some((value) => !Number.isFinite(value))) {
+      throw new Error(`第 ${index + 1} 个 item 的 bbox 要四个数`);
+    }
+    // 先统一成 xyxy 的左下右上顺序，再按坐标系换到屏幕像素。
+    const source = format === "yxyx" ? [raw[1], raw[0], raw[3], raw[2]] : raw;
+    let x0 = source[0];
+    let y0 = source[1];
+    let x1 = source[2];
+    let y1 = source[3];
+    if (space === "abs_centralized") {
+      x0 += size.width / 2;
+      x1 += size.width / 2;
+      y0 += size.height / 2;
+      y1 += size.height / 2;
+    } else if ([x0, y0, x1, y1].every((value) => value >= 0 && value <= 1)) {
+      // 归一化坐标也放进来：别家给的布局多半是这个。
+      x0 *= size.width;
+      x1 *= size.width;
+      y0 *= size.height;
+      y1 *= size.height;
+    }
+    const clampX = (value) => Math.round(Math.max(0, Math.min(size.width, value)));
+    const clampY = (value) => Math.round(Math.max(0, Math.min(size.height, value)));
+    return {
+      id: `box-${++frameSeq}`,
+      label: String(item?.label ?? "object"),
+      caption: String(item?.caption ?? "").trim(),
+      text: String(item?.text ?? ""),
+      box: [
+        clampX(Math.min(x0, x1)),
+        clampY(Math.min(y0, y1)),
+        clampX(Math.max(x0, x1)),
+        clampY(Math.max(y0, y1)),
+      ],
+    };
+  });
+}
+
+/** 导入的 JSON 里除 items 与 summary.caption 之外的字段原样带回去。 */
+function metaFromDoc(doc) {
+  const meta = {};
+  for (const [key, value] of Object.entries(doc)) {
+    if (key === "items") continue;
+    if (key === "summary") {
+      const summary = {};
+      for (const [inner, raw] of Object.entries(value ?? {})) {
+        if (inner !== "caption") summary[inner] = raw;
+      }
+      if (Object.keys(summary).length) meta.summary = summary;
+      continue;
+    }
+    meta[key] = value;
+  }
+  return Object.keys(meta).length ? meta : null;
+}
+
+function clearLayout() {
+  if (layoutBoxes.length && !window.confirm(`清掉这 ${layoutBoxes.length} 个框？`)) return;
+  layoutBoxes = [];
+  layoutMeta = null;
+  layoutCaption = "";
+  layoutSize = canvasSize();
+  frameSelected = null;
+  renderLayoutNote();
+  if (!nodes.frame.hidden) {
+    renderFrameBoxes();
+    renderFrameForm();
+    renderFrameInfo();
+  }
+  say("布局已清空。");
+}
+
+nodes.layoutEdit.addEventListener("click", () => openFrameEditor());
+nodes.layoutClear.addEventListener("click", clearLayout);
 nodes.layoutImport.addEventListener("click", () => nodes.layoutFile.click());
 nodes.layoutFile.addEventListener("change", async () => {
   const file = nodes.layoutFile.files?.[0];
   nodes.layoutFile.value = "";
   if (!file) return;
   try {
-    nodes.layout.value = await file.text();
+    const doc = JSON.parse(await file.text());
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) throw new Error("要是一个 JSON 对象");
+    layoutSize = canvasSize();
+    layoutBoxes = boxesFromDoc(doc);
+    layoutMeta = metaFromDoc(doc);
+    layoutCaption = String(doc.summary?.caption ?? "").trim();
     renderLayoutNote();
-    const { error, items } = readLayoutDoc();
-    say(error ? error : `已载入布局：${items.length} 个框。`, error ? "bad" : "ok");
+    say(`已导入 ${layoutBoxes.length} 个框，坐标按当前画幅换算。`, "ok");
+    openFrameEditor();
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
   }
+});
+
+nodes.frameSave.addEventListener("click", saveFrameEditor);
+nodes.frameCancel.addEventListener("click", closeFrameEditor);
+nodes.frameClear.addEventListener("click", clearLayout);
+
+// 表单三栏直接改选中的框；改完只重画标签与列表，不重建表单本身。
+function onFrameField(name) {
+  return () => {
+    const item = layoutBoxes.find((entry) => entry.id === frameSelected);
+    if (!item) return;
+    item[name] = nodes[`frame${name[0].toUpperCase()}${name.slice(1)}`].value;
+    renderLayoutNote();
+    renderFrameBoxes();
+  };
+}
+nodes.frameLabel.addEventListener("input", onFrameField("label"));
+nodes.frameCaption.addEventListener("input", onFrameField("caption"));
+nodes.frameText.addEventListener("input", onFrameField("text"));
+
+nodes.frameRows.addEventListener("click", (event) => {
+  const remove = event.target.closest?.("[data-remove]") ?? null;
+  if (remove) {
+    removeFrameBox(remove.dataset.remove);
+    return;
+  }
+  const row = event.target.closest?.(".pn-frame-row") ?? null;
+  if (!row) return;
+  frameSelected = row.dataset.id;
+  renderFrameBoxes();
+  renderFrameForm();
+});
+
+nodes.frameSheet.addEventListener("pointerdown", onFramePointerDown);
+// 捕获阶段要拿：框的元素在拖动时会被替换，事件仍冒到 sheet 上。
+nodes.frameSheet.addEventListener("pointermove", onFramePointerMove);
+nodes.frameSheet.addEventListener("pointerup", onFramePointerUp);
+nodes.frameSheet.addEventListener("pointercancel", onFramePointerUp);
+
+document.addEventListener("keydown", (event) => {
+  if (nodes.frame.hidden) return;
+  const tag = event.target?.tagName ?? "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFrameEditor();
+    return;
+  }
+  if ((event.key === "Delete" || event.key === "Backspace") && frameSelected) {
+    event.preventDefault();
+    removeFrameBox(frameSelected);
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (!nodes.frame.hidden) layoutFrameSheet();
 });
 
 // 蒙版画布：白色笔触就是「重画这里」。保存时按 alpha 阈值二值化，避免半透明边。
@@ -1385,15 +1820,20 @@ async function refresh() {
 // ── 交互 ───────────────────────────────────────────────────────────────
 async function onGenerate() {
   const prompt = nodes.prompt.value.trim();
-  const layout = readLayoutDoc();
-  if (layout.error) {
-    say(`布局有问题：${layout.error}`, "bad");
-    nodes.layout.focus();
-    return;
+  if (layoutBoxes.length) {
+    // 手输尺寸还没失焦时 change 不会触发：提交前先把框搬到当前画幅。
+    rescaleLayoutBoxes();
+    const blank = layoutBoxes.findIndex((item) => !item.caption.trim() && !item.text.trim());
+    if (blank >= 0) {
+      say(`第 ${blank + 1} 个框还没写「这块画什么」。`, "bad");
+      openFrameEditor(layoutBoxes[blank].id);
+      nodes.frameCaption.focus();
+      return;
+    }
   }
-  const caption = prompt || String(layout.doc?.summary?.caption ?? "").trim();
+  const caption = prompt || layoutCaption;
   if (!caption) {
-    say("先写一句提示词，或在布局里给 summary.caption。", "bad");
+    say("先写一句提示词：整张图画成什么样。", "bad");
     nodes.prompt.focus();
     return;
   }
@@ -1411,8 +1851,20 @@ async function onGenerate() {
     steps,
     cfg: Number(nodes.cfg.value),
   };
-  // 布局要走整段 JSON：引擎把提示词当文本编码，框就写在那段文本里。
-  if (layout.doc) payload.layout = layout.doc;
+  // 布局只传左上角坐标的框：中心坐标与 yxyx 排序由 readLayout 换算。
+  if (layoutBoxes.length) {
+    payload.boxes = layoutBoxes.map((item) => {
+      const box = {
+        label: item.label.trim() || "object",
+        caption: item.caption.trim(),
+        box: item.box.map((value) => Math.round(value)),
+      };
+      if (item.text.trim()) box.text = item.text.trim();
+      return box;
+    });
+    // summary.canvas 这类字段从导入的 JSON 里带过来，编辑器不碰它们。
+    if (layoutMeta) payload.layout = layoutMeta;
+  }
   const effectiveScale = Math.min(hiresScale, hiresMax());
   if (effectiveScale > 1.001) {
     payload.hiresScale = Math.round(effectiveScale * 100) / 100;
@@ -1564,6 +2016,7 @@ nodes.stepCache.addEventListener("change", syncAccel);
 // 参考图：换了尺寸就把旧蒙版作废（它和新的 init_image 不同尺寸）。
 for (const node of [nodes.width, nodes.height]) {
   node.addEventListener("change", () => {
+    rescaleLayoutBoxes();
     if (!refImage) return;
     refPrepared = null;
     if (maskPath) {

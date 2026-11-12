@@ -29,6 +29,8 @@
 
     html, body { height: 100%; }
     body { background: var(--ui-sidebar); overflow-x: hidden; }
+    /* 编辑器铺满视口时锁住页面滚动：否则右边多一条没用的滚动条。 */
+    body.pn-locked { overflow: hidden; }
 
     .pn {
       display: flex;
@@ -71,8 +73,6 @@
     .pn-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
     .pn-grid > .field { min-width: 0; }
     .pn input, .pn select, .pn textarea { min-width: 0; max-width: 100%; }
-    /* 布局 JSON：等宽字体才看得清层级 */
-    #pn-layout { font-family: var(--ui-mono, ui-monospace, "Cascadia Mono", Consolas, monospace); font-size: 11px; line-height: 1.5; }
 
     .pn-presets { display: flex; flex-wrap: wrap; gap: 4px; }
 
@@ -213,6 +213,58 @@
     .pn-mask-zoom { display: flex; align-items: center; gap: 2px; }
     .pn-mask-zoom button { width: 20px; height: 20px; border-radius: 5px; border: 1px solid var(--ui-line); background: transparent; color: var(--ui-text-2); font: inherit; line-height: 1; cursor: pointer; }
     .pn-mask-zoom button:hover { border-color: var(--ui-text-3); color: var(--ui-text); }
+
+    /* 布局框选：画布在左、框列表在右，铺满整个视口，和蒙版编辑器同一套铺法。
+       框的位置一律按百分比写，画布尺寸一变，框跟着变。 */
+    .pn-frame { position: fixed; inset: 0; z-index: 41; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; background: var(--ui-sidebar); }
+    .pn-frame-body { display: flex; gap: 10px; flex: 1 1 auto; min-height: 0; min-width: 0; }
+    .pn-frame-stage { display: flex; align-items: center; justify-content: center; flex: 1 1 auto; min-width: 0; padding: 8px; overflow: hidden; background: var(--ui-overlay); border-radius: 8px; }
+    /* 参考图作底：对着已有的构图放框比对着空白猜有用。画布自己用卡片面，
+       和 stage 的 overlay 拉开一档，边界才看得出来。 */
+    .pn-frame-sheet { position: relative; flex: none; background-color: var(--ui-surface); background-repeat: no-repeat; background-size: 100% 100%; box-shadow: 0 0 0 1px var(--ui-line-strong); touch-action: none; cursor: crosshair; }
+    /* 收起焦点环：拖动时点一下就出框，会一直闪。 */
+    .pn-frame-sheet:focus, .pn-frame-sheet:focus-visible { outline: none; }
+    /* 三分线：不抢眼，但能看出元素大致落在哪一带。 */
+    .pn-frame-grid { position: absolute; inset: 0; pointer-events: none; opacity: 0.7;
+      background-image:
+        repeating-linear-gradient(to right, var(--ui-line) 0 1px, transparent 1px 33.3333%),
+        repeating-linear-gradient(to bottom, var(--ui-line) 0 1px, transparent 1px 33.3333%);
+    }
+    /* 空画布的一句提示：什么都不画时，先告诉人从哪里下手。 */
+    .pn-frame-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; padding: 0; pointer-events: none; color: var(--ui-text-3); font-size: 12px; white-space: nowrap; }
+    .pn-frame-boxes { position: absolute; inset: 0; pointer-events: none; }
+    .pn-frame-box { position: absolute; border: 1px solid var(--ui-accent); border-radius: 2px; pointer-events: auto; cursor: move;
+      background: transparent; }
+    /* 选中态用外描而不是加粗边框：加粗会改变元素尺寸，1px 的偏移在拖拽时看得出来。 */
+    .pn-frame-box.on { box-shadow: 0 0 0 1px var(--ui-accent); background: color-mix(in srgb, var(--ui-accent) 8%, transparent); }
+    /* 序号与类型贴在框内左上角：贴外侧在靠边的框上会被裁掉。 */
+    .pn-frame-tag { position: absolute; left: 0; top: 0; max-width: 100%; padding: 0 4px; border-radius: 2px 0; background: var(--ui-accent); color: #fff; font-size: 10px; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pn-frame-grip { position: absolute; width: 9px; height: 9px; border: 1px solid var(--ui-accent); border-radius: 2px; background: var(--ui-sidebar); }
+    .pn-frame-grip.nw { left: -5px; top: -5px; cursor: nwse-resize; }
+    .pn-frame-grip.ne { right: -5px; top: -5px; cursor: nesw-resize; }
+    .pn-frame-grip.sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+    .pn-frame-grip.se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+    .pn-frame-draft { position: absolute; border: 1px dashed var(--ui-accent); background: color-mix(in srgb, var(--ui-accent) 10%, transparent); pointer-events: none; }
+    .pn-frame-side { display: flex; flex-direction: column; gap: 8px; flex: 0 0 216px; min-height: 0; overflow-y: auto; }
+    .pn-frame-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .pn-frame-row { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border: 1px solid var(--ui-line); border-radius: 6px; font-size: 11.5px; color: var(--ui-text-2); cursor: pointer; min-width: 0; }
+    .pn-frame-row:hover { border-color: var(--ui-text-3); }
+    .pn-frame-row.on { border-color: var(--ui-accent); background: var(--ui-tint); }
+    .pn-frame-row .num { flex: none; width: 14px; text-align: center; color: var(--ui-text-3); font-variant-numeric: tabular-nums; }
+    .pn-frame-row .txt { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; }
+    .pn-frame-row .txt b { font-weight: 500; font-size: 11px; color: var(--ui-text); }
+    .pn-frame-row .txt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pn-frame-row .drop { flex: none; padding: 0 2px; border: 0; background: transparent; color: var(--ui-text-3); font: inherit; cursor: pointer; }
+    .pn-frame-row .drop:hover { color: var(--danger); }
+    .pn-frame-form { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--ui-line); border-radius: 8px; }
+    .pn-frame-form textarea { font: inherit; font-size: 11.5px; }
+    .pn-frame-empty { font-size: 11px; color: var(--ui-text-3); }
+    /* 侧栏本来就窄：两列放不下时改成上下，画布仍然优先占高。 */
+    @media (max-width: 540px) {
+      .pn-frame-body { flex-direction: column; }
+      .pn-frame-side { flex: 0 0 auto; max-height: 42vh; }
+      .pn-frame-stage { min-height: 32vh; }
+    }
 
     .pn-pane-off { display: none !important; }
 
@@ -497,14 +549,12 @@
     <details class="pn-fold" id="pn-layout-fold">
       <summary><svg class="ic"><use href="#i-prompt"/></svg>布局<span class="hint" id="pn-layout-note">未使用</span></summary>
       <div class="fold-body">
-        <textarea id="pn-layout" rows="6" spellcheck="false"
-                  placeholder='{"summary":{"caption":"..."},"items":[{"label":"text","text":"HELLO","bbox":[-200,-100,-120,100]}]}'></textarea>
         <div class="pn-install-actions">
+          <button class="btn ghost small" id="pn-layout-edit" type="button">框选布局</button>
           <button class="btn ghost small" id="pn-layout-import" type="button">导入 JSON</button>
-          <button class="btn ghost small" id="pn-layout-template" type="button">模板</button>
           <button class="btn ghost small" id="pn-layout-clear" type="button">清空</button>
         </div>
-        <p class="hint">布局就是一段 JSON，直接当提示词交给模型：items 里每个框写清「这块画什么」。坐标以画布中心为原点、单位像素，格式 <code>yxyx</code>（上、左、下、右），所以换尺寸要重算。模板按当前尺寸生成。</p>
+        <p class="hint">在画布上拖出框，写清每块画什么，就是「指哪画哪」。框按画幅比例存着，换尺寸不用重算坐标。</p>
         <input type="file" id="pn-layout-file" accept=".json,application/json" hidden>
       </div>
     </details>
@@ -541,6 +591,52 @@
         <button id="pn-mask-zoom-in" type="button" title="放大">+</button>
       </span>
       <span class="hint" id="pn-mask-pct"></span>
+    </div>
+  </div>
+
+  <div class="pn-frame" id="pn-frame" hidden>
+    <div class="pn-mask-bar">
+      <span id="pn-frame-info"></span>
+      <span class="spacer"></span>
+      <span class="hint">空白处拖出新框 · 选中后 Del 删除</span>
+      <button class="btn ghost small" id="pn-frame-clear" type="button">清空</button>
+      <button class="btn ghost small" id="pn-frame-cancel" type="button">取消</button>
+      <button class="btn primary small" id="pn-frame-save" type="button">保存</button>
+    </div>
+    <div class="pn-frame-body">
+      <div class="pn-frame-stage" id="pn-frame-stage">
+        <div class="pn-frame-sheet" id="pn-frame-sheet" tabindex="-1">
+          <div class="pn-frame-grid"></div>
+          <p class="pn-frame-hint" id="pn-frame-hint">在画布上按住拖出一个框</p>
+          <div class="pn-frame-boxes" id="pn-frame-boxes"></div>
+          <div class="pn-frame-draft" id="pn-frame-draft" hidden></div>
+        </div>
+      </div>
+      <aside class="pn-frame-side">
+        <ul class="pn-frame-rows" id="pn-frame-rows"></ul>
+        <div class="pn-frame-form" id="pn-frame-form" hidden>
+          <label class="field">
+            <span class="label">类型 label</span>
+            <input id="pn-frame-label" type="text" list="pn-frame-label-list" placeholder="object" spellcheck="false">
+          </label>
+          <label class="field">
+            <span class="label">这块画什么</span>
+            <textarea id="pn-frame-caption" rows="2" placeholder="下方的主体：一只仰头的猫"></textarea>
+          </label>
+          <label class="field">
+            <span class="label">要渲染的字</span>
+            <input id="pn-frame-text" type="text" placeholder="label 为 text 时填" spellcheck="false">
+          </label>
+          <datalist id="pn-frame-label-list">
+            <option value="object"></option>
+            <option value="text"></option>
+            <option value="icon"></option>
+            <option value="scene"></option>
+            <option value="person"></option>
+          </datalist>
+          <p class="hint" id="pn-frame-size"></p>
+        </div>
+      </aside>
     </div>
   </div>
 
