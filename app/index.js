@@ -465,15 +465,24 @@ export default defineApp(async (sdk) => {
     if (!caption) throw new Error("提示词不能为空");
     // 参数面先收敛：认不出的采样器、缺文件的 LoRA 在这里就拒，别让它排进队列才失败。
     const gen = readGeneration(input, settings.defaults);
-    // 编辑适配器学的是「给一张源图去改」。没有源图时它只能按训练样本画一小块，
-    // 其余留白：这种组合不该真的跑，直接摘掉并在回执里说一句。
+    // 编辑适配器学的是「给一张源图去改」，它读 references；图生图读 initImage。
+    // 底图就是源图，所以有底图时直接接成 references[0]，真的没图才摘掉。
     const notices = [];
     if (Array.isArray(gen.loras) && gen.loras.length && !gen.references?.images?.length) {
       const kept = [];
       for (const lora of gen.loras) {
         const name = String(lora?.path ?? "").split(/[\\/]/).pop() ?? "";
-        if (/edit/i.test(name)) notices.push(`没有源图，这次的编辑适配器 ${name} 没生效`);
-        else kept.push(lora);
+        if (!/edit/i.test(name)) {
+          kept.push(lora);
+          continue;
+        }
+        if (gen.initImage) {
+          gen.references = { images: [gen.initImage], maxEdge: 512 };
+          notices.push(`编辑适配器 ${name} 用底图当源图`);
+          kept.push(lora);
+        } else {
+          notices.push(`没有源图，这次的编辑适配器 ${name} 没生效`);
+        }
       }
       gen.loras = kept;
     }
