@@ -1127,7 +1127,7 @@ function applyLayoutFromCanvas(msg) {
     renderLayoutNote();
     say(`已收下画布上的 ${layoutBoxes.length} 个框。`, "ok");
   } catch (error) {
-    say(`布局同步失败：${error instanceof Error ? error.message : String(error)}`, "bad");
+    say(`画布上的框没接上：${error instanceof Error ? error.message : String(error)}`, "bad");
   }
 }
 
@@ -1159,7 +1159,7 @@ nodes.layoutFile.addEventListener("change", async () => {
     layoutMeta = metaFromDoc(doc);
     layoutCaption = String(doc.summary?.caption ?? "").trim();
     renderLayoutNote();
-    say(`已导入 ${layoutBoxes.length} 个框，坐标按当前画幅换算。`, "ok");
+    say(`已导入 ${layoutBoxes.length} 个框。`, "ok");
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
   }

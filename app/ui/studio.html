@@ -32,7 +32,7 @@
           <p class="canvas-empty-title">画布还空着</p>
           <p class="hint">在左侧栏写下提示词，按「开始生成」。出图会落在这里，旧图收进「画廊」。</p>
           <button class="btn small" id="canvas-layout" type="button">导入底图框选布局</button>
-          <p class="hint canvas-empty-sub">也可以直接把一张图拖进画布：只用来对齐构图，不参与生成</p>
+          <p class="hint canvas-empty-sub">也可以直接把图拖进来：只用来对位置，不参与生成</p>
         </div>
 
         <div class="lay" id="lay" hidden>
@@ -51,9 +51,9 @@
             </div>
           </div>
           <div class="lay-form" id="lay-form" hidden>
-            <label class="field lay-field lay-field-label"><span class="label">label</span><input id="lay-label" type="text" list="lay-label-list" placeholder="object" spellcheck="false"></label>
+            <label class="field lay-field lay-field-label"><span class="label">类型</span><input id="lay-label" type="text" list="lay-label-list" placeholder="object" spellcheck="false"></label>
             <label class="field lay-field lay-field-caption"><span class="label">这块的提示词</span><textarea id="lay-caption" rows="2" placeholder="顶部居中的大标题，白色粗体，压在蓝山上"></textarea></label>
-            <label class="field lay-field lay-field-text"><span class="label">要渲染的字</span><input id="lay-text" type="text" placeholder="label 为 text 时填" spellcheck="false"></label>
+            <label class="field lay-field lay-field-text"><span class="label">要渲染的字</span><input id="lay-text" type="text" placeholder="类型选 text 时填" spellcheck="false"></label>
             <span class="lay-size" id="lay-size"></span>
             <button class="btn small" id="lay-remove" type="button">删除</button>
           </div>

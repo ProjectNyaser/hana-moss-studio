@@ -396,8 +396,7 @@ function renderLayInfo() {
   const size = layoutCanvasSize();
   const under = lay.underlay ? ` · 底图 ${ratioText(lay.underlay.width, lay.underlay.height)}` : "";
   nodes.layInfo.textContent = `${ratioText(size.width, size.height)} · ${lay.boxes.length} 个框${under}`;
-  // 像素数不归这里管：那是分辨率设定的事。
-  nodes.layInfo.title = "布局只定构图比例，像素总量看侧栏的分辨率设定";
+  nodes.layInfo.removeAttribute("title");
 }
 
 function laySheetSize() {
@@ -430,7 +429,8 @@ function renderLayForm() {
     nodes.layText.value = item.text;
   }
   const [x0, y0, x1, y1] = item.box;
-  nodes.laySize.textContent = `${Math.round(x1 - x0)}×${Math.round(y1 - y0)} px`;
+  const size = layoutCanvasSize();
+  nodes.laySize.textContent = `${Math.round(((x1 - x0) / size.width) * 100)}% × ${Math.round(((y1 - y0) / size.height) * 100)}%`;
 }
 
 function renderLayBoxes() {
@@ -524,7 +524,6 @@ function openLayout(selectId) {
   laySheetSize();
   renderLayBoxes();
   renderLayInfo();
-  toast("框会自动同步到左侧栏，直接点开始生成就行");
 }
 
 function closeLayout() {
@@ -667,7 +666,7 @@ async function setUnderlay(file) {
     const width = Math.max(256, Math.round(Math.sqrt(area * ratio) / 8) * 8);
     const height = Math.max(256, Math.round(width / ratio / 8) * 8);
     await applyCanvasSize(width, height);
-    toast(`画幅已按底图调成 ${ratioText(width, height)}，像素总量不变`);
+    toast(`画幅已按底图调成 ${ratioText(width, height)}`);
   } else {
     toast(`底图：${file.name}（${ratioText(image.naturalWidth, image.naturalHeight)}）`);
   }
