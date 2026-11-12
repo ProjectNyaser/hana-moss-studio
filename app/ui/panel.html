@@ -217,11 +217,14 @@
     /* 布局框选：画布在左、框列表在右，铺满整个视口，和蒙版编辑器同一套铺法。
        框的位置一律按百分比写，画布尺寸一变，框跟着变。 */
     .pn-frame { position: fixed; inset: 0; z-index: 41; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; background: var(--ui-sidebar); }
+    /* 按钮多了以后窄屏会挤：允许换行。 */
+    .pn-frame .pn-mask-bar { flex-wrap: wrap; row-gap: 6px; }
     .pn-frame-body { display: flex; gap: 10px; flex: 1 1 auto; min-height: 0; min-width: 0; }
     .pn-frame-stage { display: flex; align-items: center; justify-content: center; flex: 1 1 auto; min-width: 0; padding: 8px; overflow: hidden; background: var(--ui-overlay); border-radius: 8px; }
     /* 参考图作底：对着已有的构图放框比对着空白猜有用。画布自己用卡片面，
        和 stage 的 overlay 拉开一档，边界才看得出来。 */
-    .pn-frame-sheet { position: relative; flex: none; background-color: var(--ui-surface); background-repeat: no-repeat; background-size: 100% 100%; box-shadow: 0 0 0 1px var(--ui-line-strong); touch-action: none; cursor: crosshair; }
+    /* 底图按 contain 摆：不留变形，比例不同时居中留边，位置才对得上。 */
+    .pn-frame-sheet { position: relative; flex: none; background-color: var(--ui-surface); background-position: center; background-repeat: no-repeat; background-size: contain; box-shadow: 0 0 0 1px var(--ui-line-strong); touch-action: none; cursor: crosshair; }
     /* 收起焦点环：拖动时点一下就出框，会一直闪。 */
     .pn-frame-sheet:focus, .pn-frame-sheet:focus-visible { outline: none; }
     /* 三分线：不抢眼，但能看出元素大致落在哪一带。 */
@@ -230,8 +233,9 @@
         repeating-linear-gradient(to right, var(--ui-line) 0 1px, transparent 1px 33.3333%),
         repeating-linear-gradient(to bottom, var(--ui-line) 0 1px, transparent 1px 33.3333%);
     }
-    /* 空画布的一句提示：什么都不画时，先告诉人从哪里下手。 */
-    .pn-frame-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; padding: 0; pointer-events: none; color: var(--ui-text-3); font-size: 12px; white-space: nowrap; }
+    /* 空画布的一句提示：什么都不画时，先告诉人从哪里下手。
+       给个半透明底：压在亮底图上也要看得清。 */
+    .pn-frame-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--ui-surface) 78%, transparent); color: var(--ui-text-3); font-size: 12px; white-space: nowrap; pointer-events: none; }
     .pn-frame-boxes { position: absolute; inset: 0; pointer-events: none; }
     .pn-frame-box { position: absolute; border: 1px solid var(--ui-accent); border-radius: 2px; pointer-events: auto; cursor: move;
       background: transparent; }
@@ -256,7 +260,7 @@
     .pn-frame-row .txt { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; }
     .pn-frame-row .txt b { font-weight: 500; font-size: 11px; color: var(--ui-text); }
     .pn-frame-row .txt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pn-frame-row .drop { flex: none; padding: 0 2px; border: 0; background: transparent; color: var(--ui-text-3); font: inherit; cursor: pointer; }
+    .pn-frame-row .drop { flex: none; padding: 0 2px; border: 0; background: transparent; color: var(--ui-text-2); font: inherit; cursor: pointer; }
     .pn-frame-row .drop:hover { color: var(--danger); }
     .pn-frame-form { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--ui-line); border-radius: 8px; }
     .pn-frame-form textarea { font: inherit; font-size: 11.5px; }
@@ -600,7 +604,9 @@
     <div class="pn-mask-bar">
       <span id="pn-frame-info"></span>
       <span class="spacer"></span>
-      <span class="hint">空白处拖出新框 · 选中后 Del 删除</span>
+      <button class="btn ghost small" id="pn-frame-underlay" type="button">导入底图</button>
+      <button class="btn ghost small" id="pn-frame-underlay-fit" type="button" hidden>按底图比例</button>
+      <button class="btn ghost small" id="pn-frame-underlay-clear" type="button" hidden>去掉底图</button>
       <button class="btn ghost small" id="pn-frame-clear" type="button">清空</button>
       <button class="btn ghost small" id="pn-frame-cancel" type="button">取消</button>
       <button class="btn primary small" id="pn-frame-save" type="button">保存</button>
@@ -622,8 +628,8 @@
             <input id="pn-frame-label" type="text" list="pn-frame-label-list" placeholder="object" spellcheck="false">
           </label>
           <label class="field">
-            <span class="label">这块画什么</span>
-            <textarea id="pn-frame-caption" rows="2" placeholder="下方的主体：一只仰头的猫"></textarea>
+            <span class="label">这块的提示词</span>
+            <textarea id="pn-frame-caption" rows="3" placeholder="顶部居中的大标题，白色粗体无村线，压在蓝山上"></textarea>
           </label>
           <label class="field">
             <span class="label">要渲染的字</span>
@@ -640,6 +646,7 @@
         </div>
       </aside>
     </div>
+    <input type="file" id="pn-frame-underlay-file" accept="image/*" hidden>
   </div>
 
   <script type="module" src="./assets/panel.js"></script>

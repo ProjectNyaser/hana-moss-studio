@@ -10,7 +10,7 @@
 - 图生图与局部重绘：侧栏选参考图（浏览器里按目标尺寸裁好）、在图上画蒙版；工具可用 `initImage` / `mask` / `maskEncoding`
 - 编辑适配器：工作区右键「用这张做编辑参考」，把图作为 `references` 送进下一次生成
 - 单文件权重与适配器：「下载」页列 DiT INT4（turbo 必需）/ INT8、文本编码器 INT8 / W4A8、VAE small、控制适配器、编辑 LoRA；下载走 aria2，完成对大小后自动写进设置（适配器进库，权重作为 `dit_file` / `text_encoder_file` / `vae_file` 覆盖 bundle 对应分量）
-- 布局：侧栏「布局」段改成可视化框选——在画布上拖框、拖四角改大小、右侧写 label / caption / text，换画幅时框按比例缩放；旧 layout JSON 可以导入成可视框（中心坐标自动换算回屏幕坐标）、`summary.canvas` 这类字段保存时原样带回去；工具面可用 `layout` / `layoutPath` / `boxes`，`boxes` 接左上角像素坐标并自动换算；画廊从 PNG 读回时把布局 prompt 显示成 `summary.caption`
+- 布局：侧栏「布局」段改成可视化框选——在画布上拖框、拖四角改大小、右侧写 label / caption / text，框内底边写明这块的提示词，换画幅时框按比例缩放；编辑器可「导入底图」对着草图/设计稿框选（底图只用来对齐，不进生成流程），比例不同时一键对齐画幅；旧 layout JSON 可以导入成可视框（中心坐标自动换算回屏幕坐标）、`summary.canvas` 这类字段保存时原样带回去；工具面可用 `layout` / `layoutPath` / `boxes`，`boxes` 接左上角像素坐标并自动换算；画廊从 PNG 读回时把布局 prompt 显示成 `summary.caption`
 - 控制适配器：侧栏可收起的「控制图」段：导入适配器（`app-data/control`）、向引擎要 kind、控制图按目标尺寸准备；设置里指向已删文件的适配器会自动清掉
 - 工具：新增 `moss_estimate`（空跑 `check` 给估算与拒绝理由）、`moss_inspect`（问文件是什么）、`moss_engine`（start / stop / release）
 - 显存：侧栏与引擎页加「释放显存」，把显存还给显卡但留住引擎

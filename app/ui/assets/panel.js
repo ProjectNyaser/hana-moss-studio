@@ -173,6 +173,10 @@ const nodes = {
   frameClear: el("pn-frame-clear"),
   frameCancel: el("pn-frame-cancel"),
   frameSave: el("pn-frame-save"),
+  frameUnderlay: el("pn-frame-underlay"),
+  frameUnderlayFit: el("pn-frame-underlay-fit"),
+  frameUnderlayClear: el("pn-frame-underlay-clear"),
+  frameUnderlayFile: el("pn-frame-underlay-file"),
 };
 
 let latest = null;
@@ -267,6 +271,8 @@ function setSettings(settings) {
   updateControlNote();
   syncNotchFromSize();
   renderSize();
+  // 设置是异步到的：宽高可能在这时被改成另一组值，框要跟着重新对一次。
+  rescaleLayoutBoxes();
 }
 
 /** 高清修正的上限：换算出的目标尺寸不能越过引擎那条线。
@@ -1002,6 +1008,8 @@ let layoutMeta = null;
 let layoutCaption = "";
 /** 这些框坐标对应的画布尺寸。 */
 let layoutSize = null;
+/** 布局底图：只给框选对齐用，不参与生成、不上传。 */
+let frameUnderlay = null;
 let frameSelected = null;
 /** 表单当前展示的是哪个框。换框才重填，同一框里打字不被覆写。 */
 let frameFormId = null;
@@ -1070,8 +1078,9 @@ function layoutFrameSheet() {
 
 async function openFrameEditor(selectId) {
   const size = canvasSize();
-  if (!layoutSize) layoutSize = size;
+  // 先对齐到输入框里的当前画幅：settings 到达、手改尺寸都可能让 layoutSize 落后。
   rescaleLayoutBoxes();
+  layoutSize = size;
   // 有参考图就先按当前画幅准备好：用户选的那张就是他想对着放框的那张。
   // prepareRef 自己认尺寸，同尺寸时零成本复用。
   if (refImage) {
@@ -1081,8 +1090,9 @@ async function openFrameEditor(selectId) {
       say(error instanceof Error ? error.message : String(error), "bad");
     }
   }
-  // 有参考图就垫在下面：对着已有的构图放框，比对着空白猜准。
-  nodes.frameSheet.style.backgroundImage = refPrepared ? `url(${refPrepared.url})` : "";
+  // 背景优先级：编辑器里导入的底图 > 侧栏参考图。底图只用来对齐。
+  const underlayUrl = frameUnderlay?.url ?? refPrepared?.url ?? "";
+  nodes.frameSheet.style.backgroundImage = underlayUrl ? `url(${underlayUrl})` : "";
   nodes.frame.hidden = false;
   document.body.classList.add("pn-locked");
   frameDrag = null;
@@ -1119,9 +1129,21 @@ function saveFrameEditor() {
 
 function renderFrameInfo() {
   const size = layoutSize ?? canvasSize();
-  // 背景是参考图时说明一下：不然容易把它当成待生成的画布。
-  const underlay = refPrepared ? " · 参考图作底" : "";
+  // 背景是图时说明一下：不然容易把它当成待生成的画布。
+  let underlay = "";
+  if (frameUnderlay) {
+    underlay = ` · 底图 ${frameUnderlay.width}×${frameUnderlay.height}`;
+  } else if (refPrepared) {
+    underlay = " · 参考图作底";
+  }
   nodes.frameInfo.textContent = `${size.width}×${size.height} · ${layoutBoxes.length} 个框${underlay}`;
+  // 底图两个按钮跟着状态走：没有底图时都不出现；比例对得上时不需要那个一键对齐。
+  nodes.frameUnderlayClear.hidden = !frameUnderlay;
+  const canvasRatio = size.width / Math.max(1, size.height);
+  const offRatio = frameUnderlay
+    ? Math.abs(frameUnderlay.width / Math.max(1, frameUnderlay.height) - canvasRatio) / canvasRatio > 0.02
+    : false;
+  nodes.frameUnderlayFit.hidden = !offRatio;
 }
 
 function renderFrameSize() {
@@ -1468,6 +1490,75 @@ nodes.layoutFile.addEventListener("change", async () => {
 nodes.frameSave.addEventListener("click", saveFrameEditor);
 nodes.frameCancel.addEventListener("click", closeFrameEditor);
 nodes.frameClear.addEventListener("click", clearLayout);
+
+// 底图：编辑器里直接导入一张图对着框，不走侧栏的参考图——那张会进生成流程。
+// 导入即对齐画幅：底图就是构图，比例不该再由人再点一次。
+function applyUnderlayRatio() {
+  if (!frameUnderlay) return null;
+  const current = canvasSize();
+  const ratio = frameUnderlay.width / Math.max(1, frameUnderlay.height);
+  // 保持像素总量不变，只换比例：不把画质预算突然拉高或拉低。
+  const area = current.width * current.height;
+  const width = Math.max(256, Math.round(Math.sqrt(area * ratio) / 8) * 8);
+  const height = Math.max(256, Math.round(width / ratio / 8) * 8);
+  if (width === current.width && height === current.height) return current;
+  nodes.width.value = String(width);
+  nodes.height.value = String(height);
+  // 只派发一次：保存与框的等比缩放都读两个输入框当前值。
+  nodes.width.dispatchEvent(new window.Event("change", { bubbles: true }));
+  layoutSize = canvasSize();
+  layoutFrameSheet();
+  renderFrameBoxes();
+  renderFrameInfo();
+  return { width, height };
+}
+
+function setFrameUnderlay(file) {
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  image.onload = () => {
+    if (frameUnderlay?.url) URL.revokeObjectURL(frameUnderlay.url);
+    frameUnderlay = { url, name: file.name, width: image.naturalWidth, height: image.naturalHeight };
+    nodes.frameSheet.style.backgroundImage = `url(${url})`;
+    const source = `${image.naturalWidth}×${image.naturalHeight}`;
+    const size = layoutSize ?? canvasSize();
+    const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
+    const off = Math.abs(ratio - size.width / Math.max(1, size.height)) / (size.width / Math.max(1, size.height)) > 0.02;
+    const fitted = off ? applyUnderlayRatio() : null;
+    renderFrameInfo();
+    say(
+      fitted
+        ? `底图：${file.name}（${source}），画幅已按它调成 ${fitted.width}×${fitted.height}。只用来对齐，不参与生成。`
+        : `底图：${file.name}（${source}），比例与画幅一致。只用来对齐，不参与生成。`,
+      "ok",
+    );
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(url);
+    say("这张图读不出来。", "bad");
+  };
+  image.src = url;
+}
+
+nodes.frameUnderlay.addEventListener("click", () => nodes.frameUnderlayFile.click());
+nodes.frameUnderlayFile.addEventListener("change", () => {
+  const file = nodes.frameUnderlayFile.files?.[0];
+  nodes.frameUnderlayFile.value = "";
+  if (file) setFrameUnderlay(file);
+});
+nodes.frameUnderlayClear.addEventListener("click", () => {
+  if (frameUnderlay?.url) URL.revokeObjectURL(frameUnderlay.url);
+  frameUnderlay = null;
+  nodes.frameSheet.style.backgroundImage = refPrepared ? `url(${refPrepared.url})` : "";
+  renderFrameInfo();
+  say(refPrepared ? "底图已去掉，换成侧栏的参考图作底。" : "底图已去掉。");
+});
+
+// 兜底：导入后又手改了画幅，比例会重新对不上，这里再拉一次。
+nodes.frameUnderlayFit.addEventListener("click", () => {
+  const fitted = applyUnderlayRatio();
+  if (fitted) say(`画幅已按底图调成 ${fitted.width}×${fitted.height}。`);
+});
 
 // 表单三栏直接改选中的框；改完只重画标签与列表，不重建表单本身。
 function onFrameField(name) {
