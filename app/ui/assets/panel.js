@@ -1068,10 +1068,19 @@ function layoutFrameSheet() {
   nodes.frameSheet.style.height = `${Math.round(height)}px`;
 }
 
-function openFrameEditor(selectId) {
+async function openFrameEditor(selectId) {
   const size = canvasSize();
   if (!layoutSize) layoutSize = size;
   rescaleLayoutBoxes();
+  // 有参考图就先按当前画幅准备好：用户选的那张就是他想对着放框的那张。
+  // 准备过的不重复传，复用 refPrepared。
+  if (refImage && !refPrepared) {
+    try {
+      await prepareRef(size.width, size.height);
+    } catch (error) {
+      say(error instanceof Error ? error.message : String(error), "bad");
+    }
+  }
   // 有参考图就垫在下面：对着已有的构图放框，比对着空白猜准。
   nodes.frameSheet.style.backgroundImage = refPrepared ? `url(${refPrepared.url})` : "";
   nodes.frame.hidden = false;
@@ -1110,7 +1119,9 @@ function saveFrameEditor() {
 
 function renderFrameInfo() {
   const size = layoutSize ?? canvasSize();
-  nodes.frameInfo.textContent = `${size.width}×${size.height} · ${layoutBoxes.length} 个框`;
+  // 背景是参考图时说明一下：不然容易把它当成待生成的画布。
+  const underlay = refPrepared ? " · 参考图作底" : "";
+  nodes.frameInfo.textContent = `${size.width}×${size.height} · ${layoutBoxes.length} 个框${underlay}`;
 }
 
 function renderFrameSize() {
@@ -1137,6 +1148,7 @@ function renderFrameRows() {
     label.textContent = item.label || "object";
     const caption = document.createElement("span");
     caption.textContent = item.caption || item.text || "还没写这块画什么";
+    caption.title = caption.textContent;
     text.append(label, caption);
     const remove = document.createElement("button");
     remove.type = "button";
@@ -1171,6 +1183,16 @@ function renderFrameBoxes() {
     tag.className = "pn-frame-tag";
     tag.textContent = `${index + 1} ${item.label || "object"}`;
     box.append(tag);
+    // 框内再写一句描述：看得到框里的字就不用反复去右侧列表对号。
+    // 框太矮时不写，会和上面的标签撞在一起。
+    const noteText = (item.caption || item.text || "").trim();
+    const heightPx = ((y1 - y0) / size.height) * nodes.frameSheet.clientHeight;
+    if (noteText && heightPx >= 34) {
+      const note = document.createElement("span");
+      note.className = "pn-frame-note";
+      note.textContent = noteText;
+      box.append(note);
+    }
     // 四角只在选中的框上出：框多了手柄会互相叠。
     if (item.id === frameSelected) {
       for (const dir of ["nw", "ne", "sw", "se"]) {
@@ -1826,7 +1848,7 @@ async function onGenerate() {
     const blank = layoutBoxes.findIndex((item) => !item.caption.trim() && !item.text.trim());
     if (blank >= 0) {
       say(`第 ${blank + 1} 个框还没写「这块画什么」。`, "bad");
-      openFrameEditor(layoutBoxes[blank].id);
+      await openFrameEditor(layoutBoxes[blank].id);
       nodes.frameCaption.focus();
       return;
     }

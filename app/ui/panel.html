@@ -239,6 +239,8 @@
     .pn-frame-box.on { box-shadow: 0 0 0 1px var(--ui-accent); background: color-mix(in srgb, var(--ui-accent) 8%, transparent); }
     /* 序号与类型贴在框内左上角：贴外侧在靠边的框上会被裁掉。 */
     .pn-frame-tag { position: absolute; left: 0; top: 0; max-width: 100%; padding: 0 4px; border-radius: 2px 0; background: var(--ui-accent); color: #fff; font-size: 10px; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* 框内的描述：底部一条，半透明底，不挡住框里的内容 */
+    .pn-frame-note { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 4px; border-radius: 0 0 2px 2px; background: color-mix(in srgb, var(--ui-surface) 76%, transparent); color: var(--ui-text); font-size: 10px; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pn-frame-grip { position: absolute; width: 9px; height: 9px; border: 1px solid var(--ui-accent); border-radius: 2px; background: var(--ui-sidebar); }
     .pn-frame-grip.nw { left: -5px; top: -5px; cursor: nwse-resize; }
     .pn-frame-grip.ne { right: -5px; top: -5px; cursor: nesw-resize; }
