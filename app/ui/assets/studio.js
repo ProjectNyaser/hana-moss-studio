@@ -396,10 +396,8 @@ function renderLayInfo() {
   const size = layoutCanvasSize();
   const under = lay.underlay ? ` · 底图 ${ratioText(lay.underlay.width, lay.underlay.height)}` : "";
   nodes.layInfo.textContent = `${ratioText(size.width, size.height)} · ${lay.boxes.length} 个框${under}`;
-  // 像素数不占正文，但悬停还能看。
-  nodes.layInfo.title = lay.underlay
-    ? `${size.width}×${size.height} · 底图 ${lay.underlay.width}×${lay.underlay.height}`
-    : `${size.width}×${size.height}`;
+  // 像素数不归这里管：那是分辨率设定的事。
+  nodes.layInfo.title = "布局只定构图比例，像素总量看侧栏的分辨率设定";
 }
 
 function laySheetSize() {
@@ -669,7 +667,7 @@ async function setUnderlay(file) {
     const width = Math.max(256, Math.round(Math.sqrt(area * ratio) / 8) * 8);
     const height = Math.max(256, Math.round(width / ratio / 8) * 8);
     await applyCanvasSize(width, height);
-    toast(`画幅已按底图调成 ${ratioText(width, height)}（${width}×${height}）`);
+    toast(`画幅已按底图调成 ${ratioText(width, height)}，像素总量不变`);
   } else {
     toast(`底图：${file.name}（${ratioText(image.naturalWidth, image.naturalHeight)}）`);
   }
