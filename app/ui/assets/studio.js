@@ -37,7 +37,6 @@ const nodes = {
   layRemove: el("lay-remove"),
   layImport: el("lay-import"),
   layClear: el("lay-clear"),
-  layDone: el("lay-done"),
   layClose: el("lay-close"),
   layFile: el("lay-file"),
   galleryCount: el("gallery-count"),
@@ -445,6 +444,24 @@ function renderLayBoxes() {
   });
   nodes.layBoxes.replaceChildren(...list);
   renderLayForm();
+  syncLayoutToPanel();
+}
+
+/** 框一变就交给侧栏：不用点「完成」，画布上留着框直接生成。
+ *  不做节流：拖拽中不重建 DOM，只有落点、输入、删除才会走到这里，直接发不会堵。 */
+function syncLayoutToPanel() {
+  const size = layoutCanvasSize();
+  layChannel?.postMessage({
+    type: "layout",
+    width: size.width,
+    height: size.height,
+    boxes: lay.boxes.map((item) => ({
+      label: item.label.trim() || "object",
+      caption: item.caption.trim(),
+      text: item.text.trim(),
+      box: item.box.map((value) => Math.round(value)),
+    })),
+  });
 }
 
 function syncLayBox(item) {
@@ -483,6 +500,7 @@ function openLayout(selectId) {
   laySheetSize();
   renderLayBoxes();
   renderLayInfo();
+  toast("框会自动同步到左侧栏，直接点开始生成就行");
 }
 
 function closeLayout() {
@@ -652,34 +670,6 @@ async function applyCanvasSize(width, height) {
   renderLayInfo();
 }
 
-function doneLayout() {
-  if (!lay.boxes.length) {
-    toast("还没有框：在画布上拖一个");
-    return;
-  }
-  const blank = lay.boxes.findIndex((item) => !item.caption.trim() && !item.text.trim());
-  if (blank >= 0) {
-    lay.selected = lay.boxes[blank].id;
-    renderLayBoxes();
-    nodes.layCaption.focus();
-    toast(`第 ${blank + 1} 个框还没写提示词`);
-    return;
-  }
-  const size = layoutCanvasSize();
-  layChannel?.postMessage({
-    type: "layout",
-    width: size.width,
-    height: size.height,
-    boxes: lay.boxes.map((item) => ({
-      label: item.label.trim() || "object",
-      caption: item.caption.trim(),
-      text: item.text.trim(),
-      box: item.box.map((value) => Math.round(value)),
-    })),
-  });
-  toast(`已把 ${lay.boxes.length} 个框交给左侧栏`);
-  closeLayout();
-}
 
 /** 拖到画布上也进布局：这是“导入底图”的第二条路。 */
 function canvasHasFiles(event) {
@@ -739,7 +729,6 @@ nodes.layClear.addEventListener("click", () => {
   renderLayInfo();
   toast("框已清空");
 });
-nodes.layDone.addEventListener("click", doneLayout);
 nodes.layClose.addEventListener("click", closeLayout);
 nodes.layRemove.addEventListener("click", () => removeLayBox(lay.selected));
 
@@ -786,14 +775,23 @@ window.addEventListener("resize", () => {
   if (lay.open) laySheetSize();
 });
 
+// 表单显隐、窗口缩放、字体变化都会改 stage 高度：跟着重算画布尺寸，免得出滚动条。
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(() => {
+    if (lay.open) laySheetSize();
+  }).observe(nodes.layStage);
+}
+
 /** 侧栏点「去画布框选」时把这一层打开。 */
 const layChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
 layChannel?.addEventListener("message", (event) => {
   const msg = event.data ?? {};
   if (msg.type !== "layout-open") return;
   showView("canvas");
-  openLayout();
+  const target = Number.isFinite(msg.index) ? lay.boxes[msg.index]?.id : undefined;
+  openLayout(target);
   if (!lay.underlay) nodes.layFile.click();
+  else if (target) nodes.layCaption.focus();
 });
 
 // ── 画廊 ───────────────────────────────────────────────────────────────
@@ -1935,6 +1933,13 @@ function useAsEditReference(job) {
 // ── 总渲染 ─────────────────────────────────────────────────────────────
 function render(data) {
   latest = data;
+  // 开跑就收起布局层：让预览和结果露出来，框数据留着。
+  if (data.engine?.active && lay.open) {
+    lay.open = false;
+    nodes.lay.hidden = true;
+    lay.drag = null;
+    nodes.layDraft.hidden = true;
+  }
   // 刚跑完一个：画廊要重新拉首页，新图在最前面。
   if (lastActive && !data.engine.active) void loadGallery(true);
   lastActive = Boolean(data.engine.active);

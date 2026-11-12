@@ -1105,26 +1105,30 @@ function clearLayout() {
 
 /** 主画布交回的框：按当前画幅等比换算。 */
 function applyLayoutFromCanvas(msg) {
-  const boxes = Array.isArray(msg.boxes) ? msg.boxes : [];
-  const fromWidth = Number(msg.width) || canvasSize().width;
-  const fromHeight = Number(msg.height) || canvasSize().height;
-  const size = canvasSize();
-  const sx = size.width / Math.max(1, fromWidth);
-  const sy = size.height / Math.max(1, fromHeight);
-  layoutBoxes = boxes.map((item) => {
-    const box = Array.isArray(item.box) ? item.box.map(Number) : [0, 0, 0, 0];
-    return {
-      id: `box-${++layoutSeq}`,
-      label: String(item.label ?? "object"),
-      caption: String(item.caption ?? ""),
-      text: String(item.text ?? ""),
-      box: [box[0] * sx, box[1] * sy, box[2] * sx, box[3] * sy].map((value) => Math.round(value)),
-    };
-  });
-  layoutSize = size;
-  layoutCaption = "";
-  renderLayoutNote();
-  say(`已收下画布上的 ${layoutBoxes.length} 个框。`, "ok");
+  try {
+    const boxes = Array.isArray(msg.boxes) ? msg.boxes : [];
+    const fromWidth = Number(msg.width) || canvasSize().width;
+    const fromHeight = Number(msg.height) || canvasSize().height;
+    const size = canvasSize();
+    const sx = size.width / Math.max(1, fromWidth);
+    const sy = size.height / Math.max(1, fromHeight);
+    layoutBoxes = boxes.map((item) => {
+      const box = Array.isArray(item.box) ? item.box.map(Number) : [0, 0, 0, 0];
+      return {
+        id: `box-${++layoutSeq}`,
+        label: String(item.label ?? "object"),
+        caption: String(item.caption ?? ""),
+        text: String(item.text ?? ""),
+        box: [box[0] * sx, box[1] * sy, box[2] * sx, box[3] * sy].map((value) => Math.round(value)),
+      };
+    });
+    layoutSize = size;
+    layoutCaption = "";
+    renderLayoutNote();
+    say(`已收下画布上的 ${layoutBoxes.length} 个框。`, "ok");
+  } catch (error) {
+    say(`布局同步失败：${error instanceof Error ? error.message : String(error)}`, "bad");
+  }
 }
 
 /** 主画布改了画幅：输入框跟上，框也按比例挪。 */
@@ -1495,13 +1499,21 @@ async function onGenerate() {
     const blank = layoutBoxes.findIndex((item) => !item.caption.trim() && !item.text.trim());
     if (blank >= 0) {
       say(`第 ${blank + 1} 个框还没写提示词：去画布上补一句。`, "bad");
-      layoutChannel?.postMessage({ type: "layout-open" });
+      layoutChannel?.postMessage({ type: "layout-open", index: blank });
       return;
     }
   }
-  const caption = prompt || layoutCaption;
+  // 提示词与布局最后都是同一段 JSON：框写全了，整图速写可以不写，
+  // 拿各框的提示词拼一句当 summary.caption。
+  const caption =
+    prompt ||
+    layoutCaption ||
+    layoutBoxes
+      .map((item) => item.caption.trim() || item.text.trim())
+      .filter(Boolean)
+      .join("；");
   if (!caption) {
-    say("先写一句提示词：整张图画成什么样。", "bad");
+    say("写一句提示词，或者在画布上框出至少一块。", "bad");
     nodes.prompt.focus();
     return;
   }
