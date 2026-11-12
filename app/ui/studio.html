@@ -31,7 +31,42 @@
         <div class="canvas-empty" id="canvas-empty">
           <p class="canvas-empty-title">画布还空着</p>
           <p class="hint">在左侧栏写下提示词，按「开始生成」。出图会落在这里，旧图收进「画廊」。</p>
+          <button class="btn small" id="canvas-layout" type="button">导入底图框选布局</button>
+          <p class="hint canvas-empty-sub">也可以直接把一张图拖进画布：只用来对齐构图，不参与生成</p>
         </div>
+
+        <div class="lay" id="lay" hidden>
+          <div class="lay-bar">
+            <span class="lay-info" id="lay-info"></span>
+            <span class="spacer"></span>
+            <button class="btn small" id="lay-import" type="button">换底图</button>
+            <button class="btn small" id="lay-clear" type="button">清空框</button>
+            <button class="btn small primary" id="lay-done" type="button">完成</button>
+            <button class="btn small" id="lay-close" type="button">关闭</button>
+          </div>
+          <div class="lay-stage" id="lay-stage">
+            <div class="lay-sheet" id="lay-sheet" tabindex="-1">
+              <div class="lay-grid"></div>
+              <div class="lay-boxes" id="lay-boxes"></div>
+              <div class="lay-draft" id="lay-draft" hidden></div>
+            </div>
+          </div>
+          <div class="lay-form" id="lay-form" hidden>
+            <label class="field lay-field lay-field-label"><span class="label">label</span><input id="lay-label" type="text" list="lay-label-list" placeholder="object" spellcheck="false"></label>
+            <label class="field lay-field lay-field-caption"><span class="label">这块的提示词</span><textarea id="lay-caption" rows="2" placeholder="顶部居中的大标题，白色粗体，压在蓝山上"></textarea></label>
+            <label class="field lay-field lay-field-text"><span class="label">要渲染的字</span><input id="lay-text" type="text" placeholder="label 为 text 时填" spellcheck="false"></label>
+            <span class="lay-size" id="lay-size"></span>
+            <button class="btn small" id="lay-remove" type="button">删除</button>
+          </div>
+          <datalist id="lay-label-list">
+            <option value="object"></option>
+            <option value="text"></option>
+            <option value="icon"></option>
+            <option value="scene"></option>
+            <option value="person"></option>
+          </datalist>
+        </div>
+        <input type="file" id="lay-file" accept="image/*" hidden>
       </div>
     </section>
 

@@ -157,26 +157,6 @@ const nodes = {
   layoutImport: el("pn-layout-import"),
   layoutClear: el("pn-layout-clear"),
   layoutFile: el("pn-layout-file"),
-  frame: el("pn-frame"),
-  frameInfo: el("pn-frame-info"),
-  frameStage: el("pn-frame-stage"),
-  frameSheet: el("pn-frame-sheet"),
-  frameBoxes: el("pn-frame-boxes"),
-  frameEmpty: el("pn-frame-empty"),
-  frameDraft: el("pn-frame-draft"),
-  frameRows: el("pn-frame-rows"),
-  frameForm: el("pn-frame-form"),
-  frameLabel: el("pn-frame-label"),
-  frameCaption: el("pn-frame-caption"),
-  frameText: el("pn-frame-text"),
-  frameSize: el("pn-frame-size"),
-  frameClear: el("pn-frame-clear"),
-  frameCancel: el("pn-frame-cancel"),
-  frameSave: el("pn-frame-save"),
-  frameUnderlay: el("pn-frame-underlay"),
-  frameUnderlayFit: el("pn-frame-underlay-fit"),
-  frameUnderlayClear: el("pn-frame-underlay-clear"),
-  frameUnderlayFile: el("pn-frame-underlay-file"),
 };
 
 let latest = null;
@@ -998,23 +978,17 @@ async function setControlImage(file) {  try {
   }
 }
 
-// ── 布局（框选）──────────────────────────────────────────────────────
-// 模型面吃的是一段中心坐标的 yxyx JSON，但那只是传输格式。界面上存的是
-// 左上角坐标的框，提交时交给 readLayout 的 boxes 换算；换画幅按比例缩一次就行。
+// ── 布局（框选在主画布上）────────────────────────────────────────────
+// 侧栏只有三百多像素，框选对不准构图，编辑器搬到了工作区。这里只存结果：
+// 提交时把框交给 readLayout 换算成中心坐标；画幅变了按比例缩一次。
 let layoutBoxes = [];
-/** 导入的 JSON 里可能带着 summary.canvas 这类字段：编辑器不碰，保存时原样带回去。 */
+/** 导入的 JSON 里可能带着 summary.canvas 这类字段：原样带回去。 */
 let layoutMeta = null;
 /** 导入的 JSON 只剩一句整图描述、用户又没写提示词时，用它兑底。 */
 let layoutCaption = "";
 /** 这些框坐标对应的画布尺寸。 */
 let layoutSize = null;
-/** 布局底图：只给框选对齐用，不参与生成、不上传。 */
-let frameUnderlay = null;
-let frameSelected = null;
-/** 表单当前展示的是哪个框。换框才重填，同一框里打字不被覆写。 */
-let frameFormId = null;
-let frameDrag = null;
-let frameSeq = 0;
+let layoutSeq = 0;
 
 function canvasSize() {
   return {
@@ -1052,344 +1026,9 @@ function rescaleLayoutBoxes() {
     ],
   }));
   layoutSize = size;
-  if (!nodes.frame.hidden) {
-    layoutFrameSheet();
-    renderFrameBoxes();
-    renderFrameInfo();
-  }
 }
 
-/** 分「适应」：先铺满宽度，高度不够就反过来；两边都按像素算，百分比定位才有意义。 */
-function layoutFrameSheet() {
-  const size = layoutSize ?? canvasSize();
-  const stage = nodes.frameStage;
-  const ratio = size.width / size.height;
-  const fitWidth = Math.max(80, stage.clientWidth - 16);
-  const fitHeight = Math.max(80, stage.clientHeight - 16);
-  let width = fitWidth;
-  let height = width / ratio;
-  if (height > fitHeight) {
-    height = fitHeight;
-    width = height * ratio;
-  }
-  nodes.frameSheet.style.width = `${Math.round(width)}px`;
-  nodes.frameSheet.style.height = `${Math.round(height)}px`;
-}
-
-async function openFrameEditor(selectId) {
-  const size = canvasSize();
-  // 先对齐到输入框里的当前画幅：settings 到达、手改尺寸都可能让 layoutSize 落后。
-  rescaleLayoutBoxes();
-  layoutSize = size;
-  // 有参考图就先按当前画幅准备好：用户选的那张就是他想对着放框的那张。
-  // prepareRef 自己认尺寸，同尺寸时零成本复用。
-  if (refImage) {
-    try {
-      await prepareRef(size.width, size.height);
-    } catch (error) {
-      say(error instanceof Error ? error.message : String(error), "bad");
-    }
-  }
-  // 背景优先级：编辑器里导入的底图 > 侧栏参考图。底图只用来对齐。
-  const underlayUrl = frameUnderlay?.url ?? refPrepared?.url ?? "";
-  nodes.frameSheet.style.backgroundImage = underlayUrl ? `url(${underlayUrl})` : "";
-  nodes.frame.hidden = false;
-  document.body.classList.add("pn-locked");
-  frameDrag = null;
-  frameSelected = selectId ?? layoutBoxes[0]?.id ?? null;
-  layoutFrameSheet();
-  renderFrameBoxes();
-  renderFrameForm();
-  renderFrameInfo();
-  say(layoutBoxes.length ? "拖动框改位置，拖四角改大小，右侧写清每块画什么。" : "在画布上按住拖出一个框。");
-}
-
-function closeFrameEditor() {
-  nodes.frame.hidden = true;
-  document.body.classList.remove("pn-locked");
-  frameDrag = null;
-  frameSelected = null;
-  nodes.frameDraft.hidden = true;
-  renderLayoutNote();
-}
-
-function saveFrameEditor() {
-  const blank = layoutBoxes.findIndex((item) => !item.caption.trim() && !item.text.trim());
-  if (blank >= 0) {
-    frameSelected = layoutBoxes[blank].id;
-    renderFrameBoxes();
-    renderFrameForm();
-    nodes.frameCaption.focus();
-    say(`第 ${blank + 1} 个框还没写「这块画什么」。`, "bad");
-    return;
-  }
-  closeFrameEditor();
-  say(`布局已保存：${layoutBoxes.length} 个框。`, "ok");
-}
-
-/** 画布空位：既没底图也没框时才摆出来。有底图后换图走顶部按钮或直接拖。 */
-function renderFrameEmpty() {
-  nodes.frameEmpty.hidden = Boolean(frameUnderlay) || layoutBoxes.length > 0;
-}
-
-function renderFrameInfo() {
-  const size = layoutSize ?? canvasSize();
-  // 背景是图时说明一下：不然容易把它当成待生成的画布。
-  let underlay = "";
-  if (frameUnderlay) {
-    underlay = ` · 底图 ${frameUnderlay.width}×${frameUnderlay.height}`;
-  } else if (refPrepared) {
-    underlay = " · 参考图作底";
-  }
-  nodes.frameInfo.textContent = `${size.width}×${size.height} · ${layoutBoxes.length} 个框${underlay}`;
-  // 底图两个按钮跟着状态走：没有底图时都不出现；比例对得上时不需要那个一键对齐。
-  nodes.frameUnderlayClear.hidden = !frameUnderlay;
-  const canvasRatio = size.width / Math.max(1, size.height);
-  const offRatio = frameUnderlay
-    ? Math.abs(frameUnderlay.width / Math.max(1, frameUnderlay.height) - canvasRatio) / canvasRatio > 0.02
-    : false;
-  nodes.frameUnderlayFit.hidden = !offRatio;
-}
-
-function renderFrameSize() {
-  const item = layoutBoxes.find((entry) => entry.id === frameSelected);
-  if (!item) {
-    nodes.frameSize.textContent = "";
-    return;
-  }
-  const [x0, y0, x1, y1] = item.box;
-  nodes.frameSize.textContent = `${Math.round(x1 - x0)}×${Math.round(y1 - y0)} px · 左上 ${Math.round(x0)},${Math.round(y0)}`;
-}
-
-function renderFrameRows() {
-  const rows = layoutBoxes.map((item, index) => {
-    const row = document.createElement("li");
-    row.className = "pn-frame-row" + (item.id === frameSelected ? " on" : "");
-    row.dataset.id = item.id;
-    const num = document.createElement("span");
-    num.className = "num";
-    num.textContent = String(index + 1);
-    const text = document.createElement("span");
-    text.className = "txt";
-    const label = document.createElement("b");
-    label.textContent = item.label || "object";
-    const caption = document.createElement("span");
-    caption.textContent = item.caption || item.text || "还没写这块画什么";
-    caption.title = caption.textContent;
-    text.append(label, caption);
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "drop";
-    remove.dataset.remove = item.id;
-    remove.title = "删掉这个框";
-    remove.textContent = "×";
-    row.append(num, text, remove);
-    return row;
-  });
-  if (!rows.length) {
-    const empty = document.createElement("li");
-    empty.className = "pn-frame-empty";
-    empty.textContent = "还没有框";
-    rows.push(empty);
-  }
-  nodes.frameRows.replaceChildren(...rows);
-}
-
-function renderFrameBoxes() {
-  const size = layoutSize ?? canvasSize();
-  const list = layoutBoxes.map((item, index) => {
-    const [x0, y0, x1, y1] = item.box;
-    const box = document.createElement("div");
-    box.className = "pn-frame-box" + (item.id === frameSelected ? " on" : "");
-    box.dataset.id = item.id;
-    box.style.left = `${(x0 / size.width) * 100}%`;
-    box.style.top = `${(y0 / size.height) * 100}%`;
-    box.style.width = `${((x1 - x0) / size.width) * 100}%`;
-    box.style.height = `${((y1 - y0) / size.height) * 100}%`;
-    const tag = document.createElement("span");
-    tag.className = "pn-frame-tag";
-    tag.textContent = `${index + 1} ${item.label || "object"}`;
-    box.append(tag);
-    // 框内再写一句描述：看得到框里的字就不用反复去右侧列表对号。
-    // 框太矮时不写，会和上面的标签撞在一起。
-    const noteText = (item.caption || item.text || "").trim();
-    const heightPx = ((y1 - y0) / size.height) * nodes.frameSheet.clientHeight;
-    if (noteText && heightPx >= 34) {
-      const note = document.createElement("span");
-      note.className = "pn-frame-note";
-      note.textContent = noteText;
-      box.append(note);
-    }
-    // 四角只在选中的框上出：框多了手柄会互相叠。
-    if (item.id === frameSelected) {
-      for (const dir of ["nw", "ne", "sw", "se"]) {
-        const grip = document.createElement("span");
-        grip.className = `pn-frame-grip ${dir}`;
-        grip.dataset.dir = dir;
-        box.append(grip);
-      }
-    }
-    return box;
-  });
-  nodes.frameBoxes.replaceChildren(...list);
-  renderFrameEmpty();
-  renderFrameRows();
-}
-
-/** 拖动中只改被拖的那一个框，不重建 DOM：重建会把 pointer 捕获下的手柄换掉。 */
-function syncFrameBox(item) {
-  const size = layoutSize ?? canvasSize();
-  const box = nodes.frameBoxes.querySelector(`[data-id="${item.id}"]`);
-  if (!box) return;
-  const [x0, y0, x1, y1] = item.box;
-  box.style.left = `${(x0 / size.width) * 100}%`;
-  box.style.top = `${(y0 / size.height) * 100}%`;
-  box.style.width = `${((x1 - x0) / size.width) * 100}%`;
-  box.style.height = `${((y1 - y0) / size.height) * 100}%`;
-  renderFrameSize();
-}
-
-function renderFrameForm() {
-  const item = layoutBoxes.find((entry) => entry.id === frameSelected) ?? null;
-  nodes.frameForm.hidden = !item;
-  if (!item) {
-    frameFormId = null;
-    return;
-  }
-  if (frameFormId !== item.id) {
-    frameFormId = item.id;
-    nodes.frameLabel.value = item.label;
-    nodes.frameCaption.value = item.caption;
-    nodes.frameText.value = item.text;
-  }
-  renderFrameSize();
-}
-
-function syncFrameDraft() {
-  const draft = nodes.frameDraft;
-  const size = layoutSize ?? canvasSize();
-  if (!frameDrag?.box) {
-    draft.hidden = true;
-    return;
-  }
-  const [x0, y0, x1, y1] = frameDrag.box;
-  draft.hidden = false;
-  draft.style.left = `${(x0 / size.width) * 100}%`;
-  draft.style.top = `${(y0 / size.height) * 100}%`;
-  draft.style.width = `${((x1 - x0) / size.width) * 100}%`;
-  draft.style.height = `${((y1 - y0) / size.height) * 100}%`;
-}
-
-function removeFrameBox(id) {
-  const index = layoutBoxes.findIndex((item) => item.id === id);
-  if (index < 0) return;
-  layoutBoxes.splice(index, 1);
-  frameSelected = layoutBoxes[Math.min(index, layoutBoxes.length - 1)]?.id ?? null;
-  renderFrameBoxes();
-  renderFrameForm();
-  renderFrameInfo();
-  renderLayoutNote();
-}
-
-/** 屏幕坐标 ↔ 画布像素：框存的是画布像素，画在屏幕上是百分比。 */
-function sheetPoint(event) {
-  const size = layoutSize ?? canvasSize();
-  const rect = nodes.frameSheet.getBoundingClientRect();
-  const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * size.width;
-  const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * size.height;
-  return {
-    x: Math.max(0, Math.min(size.width, Math.round(x))),
-    y: Math.max(0, Math.min(size.height, Math.round(y))),
-  };
-}
-
-function onFramePointerDown(event) {
-  if (event.button !== 0) return;
-  const point = sheetPoint(event);
-  const grip = event.target.closest?.(".pn-frame-grip") ?? null;
-  const boxEl = event.target.closest?.(".pn-frame-box") ?? null;
-  const item = boxEl ? layoutBoxes.find((entry) => entry.id === boxEl.dataset.id) : null;
-  nodes.frameSheet.setPointerCapture?.(event.pointerId);
-  // preventDefault 挡住了焦点转移：不主动收回，Del 会被表单的输入框吃掉。
-  nodes.frameSheet.focus({ preventScroll: true });
-  if (item && grip) {
-    frameSelected = item.id;
-    frameDrag = { mode: "resize", id: item.id, dir: grip.dataset.dir, origin: [...item.box], start: point };
-  } else if (item) {
-    frameSelected = item.id;
-    frameDrag = { mode: "move", id: item.id, origin: [...item.box], start: point };
-  } else {
-    frameSelected = null;
-    frameDrag = { mode: "new", start: point, box: [point.x, point.y, point.x, point.y] };
-  }
-  renderFrameBoxes();
-  renderFrameForm();
-  event.preventDefault();
-}
-
-function onFramePointerMove(event) {
-  if (!frameDrag) return;
-  const point = sheetPoint(event);
-  const size = layoutSize ?? canvasSize();
-  if (frameDrag.mode === "new") {
-    frameDrag.box = [
-      Math.min(frameDrag.start.x, point.x),
-      Math.min(frameDrag.start.y, point.y),
-      Math.max(frameDrag.start.x, point.x),
-      Math.max(frameDrag.start.y, point.y),
-    ];
-    syncFrameDraft();
-    return;
-  }
-  const item = layoutBoxes.find((entry) => entry.id === frameDrag.id);
-  if (!item) return;
-  if (frameDrag.mode === "move") {
-    const [x0, y0, x1, y1] = frameDrag.origin;
-    const width = x1 - x0;
-    const height = y1 - y0;
-    const nx = Math.max(0, Math.min(size.width - width, x0 + (point.x - frameDrag.start.x)));
-    const ny = Math.max(0, Math.min(size.height - height, y0 + (point.y - frameDrag.start.y)));
-    item.box = [nx, ny, nx + width, ny + height];
-  } else {
-    // 对边不动，被拖的那一角跟着指针；最小 8px，避免拖成一条线。
-    const origin = frameDrag.origin;
-    let x0 = origin[0];
-    let y0 = origin[1];
-    let x1 = origin[2];
-    let y1 = origin[3];
-    if (frameDrag.dir.includes("w")) x0 = Math.min(Math.max(0, point.x), x1 - 8);
-    if (frameDrag.dir.includes("e")) x1 = Math.max(Math.min(size.width, point.x), x0 + 8);
-    if (frameDrag.dir.includes("n")) y0 = Math.min(Math.max(0, point.y), y1 - 8);
-    if (frameDrag.dir.includes("s")) y1 = Math.max(Math.min(size.height, point.y), y0 + 8);
-    item.box = [x0, y0, x1, y1];
-  }
-  syncFrameBox(item);
-}
-
-function onFramePointerUp(event) {
-  if (!frameDrag) return;
-  const drag = frameDrag;
-  frameDrag = null;
-  nodes.frameSheet.releasePointerCapture?.(event.pointerId);
-  nodes.frameDraft.hidden = true;
-  let created = null;
-  if (drag.mode === "new") {
-    const [x0, y0, x1, y1] = drag.box;
-    // 只点一下不算框：小到看不清的大小当误触。
-    if (x1 - x0 >= 8 && y1 - y0 >= 8) {
-      created = { id: `box-${++frameSeq}`, label: "object", caption: "", text: "", box: drag.box };
-      layoutBoxes.push(created);
-      frameSelected = created.id;
-    }
-  }
-  renderFrameBoxes();
-  renderFrameForm();
-  renderFrameInfo();
-  renderLayoutNote();
-  if (created) nodes.frameCaption.focus();
-}
-
-/** 导入的 JSON 只用来搬进可视框：中心 yxyx → 屏幕 xyxy。 */
+/** 导入的 JSON 只用来搬进来：中心 yxyx → 屏幕 xyxy。 */
 function boxesFromDoc(doc) {
   const size = layoutSize ?? canvasSize();
   const space = String(doc?.bbox_coord_space ?? "abs_centralized");
@@ -1422,7 +1061,7 @@ function boxesFromDoc(doc) {
     const clampX = (value) => Math.round(Math.max(0, Math.min(size.width, value)));
     const clampY = (value) => Math.round(Math.max(0, Math.min(size.height, value)));
     return {
-      id: `box-${++frameSeq}`,
+      id: `box-${++layoutSeq}`,
       label: String(item?.label ?? "object"),
       caption: String(item?.caption ?? "").trim(),
       text: String(item?.text ?? ""),
@@ -1460,17 +1099,48 @@ function clearLayout() {
   layoutMeta = null;
   layoutCaption = "";
   layoutSize = canvasSize();
-  frameSelected = null;
   renderLayoutNote();
-  if (!nodes.frame.hidden) {
-    renderFrameBoxes();
-    renderFrameForm();
-    renderFrameInfo();
-  }
   say("布局已清空。");
 }
 
-nodes.layoutEdit.addEventListener("click", () => openFrameEditor());
+/** 主画布交回的框：按当前画幅等比换算。 */
+function applyLayoutFromCanvas(msg) {
+  const boxes = Array.isArray(msg.boxes) ? msg.boxes : [];
+  const fromWidth = Number(msg.width) || canvasSize().width;
+  const fromHeight = Number(msg.height) || canvasSize().height;
+  const size = canvasSize();
+  const sx = size.width / Math.max(1, fromWidth);
+  const sy = size.height / Math.max(1, fromHeight);
+  layoutBoxes = boxes.map((item) => {
+    const box = Array.isArray(item.box) ? item.box.map(Number) : [0, 0, 0, 0];
+    return {
+      id: `box-${++layoutSeq}`,
+      label: String(item.label ?? "object"),
+      caption: String(item.caption ?? ""),
+      text: String(item.text ?? ""),
+      box: [box[0] * sx, box[1] * sy, box[2] * sx, box[3] * sy].map((value) => Math.round(value)),
+    };
+  });
+  layoutSize = size;
+  layoutCaption = "";
+  renderLayoutNote();
+  say(`已收下画布上的 ${layoutBoxes.length} 个框。`, "ok");
+}
+
+/** 主画布改了画幅：输入框跟上，框也按比例挪。 */
+function applyLayoutSize(msg) {
+  const width = Number(msg.width);
+  const height = Number(msg.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+  setSize(width, height);
+  rescaleLayoutBoxes();
+  renderLayoutNote();
+}
+
+// 去画布框选：主界面收到就把画布切到布局层。
+nodes.layoutEdit.addEventListener("click", () => {
+  layoutChannel?.postMessage({ type: "layout-open" });
+});
 nodes.layoutClear.addEventListener("click", clearLayout);
 nodes.layoutImport.addEventListener("click", () => nodes.layoutFile.click());
 nodes.layoutFile.addEventListener("change", async () => {
@@ -1486,163 +1156,16 @@ nodes.layoutFile.addEventListener("change", async () => {
     layoutCaption = String(doc.summary?.caption ?? "").trim();
     renderLayoutNote();
     say(`已导入 ${layoutBoxes.length} 个框，坐标按当前画幅换算。`, "ok");
-    openFrameEditor();
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
   }
 });
 
-nodes.frameSave.addEventListener("click", saveFrameEditor);
-nodes.frameCancel.addEventListener("click", closeFrameEditor);
-nodes.frameClear.addEventListener("click", clearLayout);
-
-// 底图：编辑器里直接导入一张图对着框，不走侧栏的参考图——那张会进生成流程。
-// 导入即对齐画幅：底图就是构图，比例不该再由人再点一次。
-function applyUnderlayRatio() {
-  if (!frameUnderlay) return null;
-  const current = canvasSize();
-  const ratio = frameUnderlay.width / Math.max(1, frameUnderlay.height);
-  // 保持像素总量不变，只换比例：不把画质预算突然拉高或拉低。
-  const area = current.width * current.height;
-  const width = Math.max(256, Math.round(Math.sqrt(area * ratio) / 8) * 8);
-  const height = Math.max(256, Math.round(width / ratio / 8) * 8);
-  if (width === current.width && height === current.height) return current;
-  nodes.width.value = String(width);
-  nodes.height.value = String(height);
-  // 只派发一次：保存与框的等比缩放都读两个输入框当前值。
-  nodes.width.dispatchEvent(new window.Event("change", { bubbles: true }));
-  layoutSize = canvasSize();
-  layoutFrameSheet();
-  renderFrameBoxes();
-  renderFrameInfo();
-  return { width, height };
-}
-
-function setFrameUnderlay(file) {
-  const url = URL.createObjectURL(file);
-  const image = new Image();
-  image.onload = () => {
-    if (frameUnderlay?.url) URL.revokeObjectURL(frameUnderlay.url);
-    frameUnderlay = { url, name: file.name, width: image.naturalWidth, height: image.naturalHeight };
-    nodes.frameSheet.style.backgroundImage = `url(${url})`;
-    const source = `${image.naturalWidth}×${image.naturalHeight}`;
-    const size = layoutSize ?? canvasSize();
-    const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
-    const off = Math.abs(ratio - size.width / Math.max(1, size.height)) / (size.width / Math.max(1, size.height)) > 0.02;
-    const fitted = off ? applyUnderlayRatio() : null;
-    renderFrameInfo();
-    renderFrameEmpty();
-    say(
-      fitted
-        ? `底图：${file.name}（${source}），画幅已按它调成 ${fitted.width}×${fitted.height}。只用来对齐，不参与生成。`
-        : `底图：${file.name}（${source}），比例与画幅一致。只用来对齐，不参与生成。`,
-      "ok",
-    );
-  };
-  image.onerror = () => {
-    URL.revokeObjectURL(url);
-    say("这张图读不出来。", "bad");
-  };
-  image.src = url;
-}
-
-nodes.frameUnderlay.addEventListener("click", () => nodes.frameUnderlayFile.click());
-nodes.frameEmpty.addEventListener("click", () => nodes.frameUnderlayFile.click());
-
-// 拖图进画布：和「导入底图」走同一条路，拖完就对齐比例。
-nodes.frameSheet.addEventListener("dragover", (event) => {
-  const types = Array.from(event.dataTransfer?.types ?? []);
-  if (!types.includes("Files")) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = "copy";
-  nodes.frameSheet.classList.add("drop");
-});
-nodes.frameSheet.addEventListener("dragleave", (event) => {
-  // 在子元素上移进移出也会派 dragleave：目标还在画布里就不改状态。
-  if (event.relatedTarget && nodes.frameSheet.contains(event.relatedTarget)) return;
-  nodes.frameSheet.classList.remove("drop");
-});
-nodes.frameSheet.addEventListener("drop", (event) => {
-  event.preventDefault();
-  nodes.frameSheet.classList.remove("drop");
-  const file = event.dataTransfer?.files?.[0];
-  if (!file) return;
-  if (!String(file.type).startsWith("image/")) {
-    say("拖进来的不是图片。", "bad");
-    return;
-  }
-  setFrameUnderlay(file);
-});
-nodes.frameUnderlayFile.addEventListener("change", () => {
-  const file = nodes.frameUnderlayFile.files?.[0];
-  nodes.frameUnderlayFile.value = "";
-  if (file) setFrameUnderlay(file);
-});
-nodes.frameUnderlayClear.addEventListener("click", () => {
-  if (frameUnderlay?.url) URL.revokeObjectURL(frameUnderlay.url);
-  frameUnderlay = null;
-  nodes.frameSheet.style.backgroundImage = refPrepared ? `url(${refPrepared.url})` : "";
-  renderFrameInfo();
-  renderFrameEmpty();
-  say(refPrepared ? "底图已去掉，换成侧栏的参考图作底。" : "底图已去掉。");
-});
-
-// 兜底：导入后又手改了画幅，比例会重新对不上，这里再拉一次。
-nodes.frameUnderlayFit.addEventListener("click", () => {
-  const fitted = applyUnderlayRatio();
-  if (fitted) say(`画幅已按底图调成 ${fitted.width}×${fitted.height}。`);
-});
-
-// 表单三栏直接改选中的框；改完只重画标签与列表，不重建表单本身。
-function onFrameField(name) {
-  return () => {
-    const item = layoutBoxes.find((entry) => entry.id === frameSelected);
-    if (!item) return;
-    item[name] = nodes[`frame${name[0].toUpperCase()}${name.slice(1)}`].value;
-    renderLayoutNote();
-    renderFrameBoxes();
-  };
-}
-nodes.frameLabel.addEventListener("input", onFrameField("label"));
-nodes.frameCaption.addEventListener("input", onFrameField("caption"));
-nodes.frameText.addEventListener("input", onFrameField("text"));
-
-nodes.frameRows.addEventListener("click", (event) => {
-  const remove = event.target.closest?.("[data-remove]") ?? null;
-  if (remove) {
-    removeFrameBox(remove.dataset.remove);
-    return;
-  }
-  const row = event.target.closest?.(".pn-frame-row") ?? null;
-  if (!row) return;
-  frameSelected = row.dataset.id;
-  renderFrameBoxes();
-  renderFrameForm();
-});
-
-nodes.frameSheet.addEventListener("pointerdown", onFramePointerDown);
-// 捕获阶段要拿：框的元素在拖动时会被替换，事件仍冒到 sheet 上。
-nodes.frameSheet.addEventListener("pointermove", onFramePointerMove);
-nodes.frameSheet.addEventListener("pointerup", onFramePointerUp);
-nodes.frameSheet.addEventListener("pointercancel", onFramePointerUp);
-
-document.addEventListener("keydown", (event) => {
-  if (nodes.frame.hidden) return;
-  const tag = event.target?.tagName ?? "";
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeFrameEditor();
-    return;
-  }
-  if ((event.key === "Delete" || event.key === "Backspace") && frameSelected) {
-    event.preventDefault();
-    removeFrameBox(frameSelected);
-  }
-});
-
-window.addEventListener("resize", () => {
-  if (!nodes.frame.hidden) layoutFrameSheet();
+const layoutChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
+layoutChannel?.addEventListener("message", (event) => {
+  const data = event.data ?? {};
+  if (data.type === "layout") applyLayoutFromCanvas(data);
+  else if (data.type === "layout-size") applyLayoutSize(data);
 });
 
 // 蒙版画布：白色笔触就是「重画这里」。保存时按 alpha 阈值二值化，避免半透明边。
@@ -1971,9 +1494,8 @@ async function onGenerate() {
     rescaleLayoutBoxes();
     const blank = layoutBoxes.findIndex((item) => !item.caption.trim() && !item.text.trim());
     if (blank >= 0) {
-      say(`第 ${blank + 1} 个框还没写「这块画什么」。`, "bad");
-      await openFrameEditor(layoutBoxes[blank].id);
-      nodes.frameCaption.focus();
+      say(`第 ${blank + 1} 个框还没写提示词：去画布上补一句。`, "bad");
+      layoutChannel?.postMessage({ type: "layout-open" });
       return;
     }
   }

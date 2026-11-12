@@ -22,6 +22,24 @@ const nodes = {
   resultImage: el("result-image"),
   resultCaption: el("result-caption"),
   canvasEmpty: el("canvas-empty"),
+  canvasLayout: el("canvas-layout"),
+  lay: el("lay"),
+  layInfo: el("lay-info"),
+  layStage: el("lay-stage"),
+  laySheet: el("lay-sheet"),
+  layBoxes: el("lay-boxes"),
+  layDraft: el("lay-draft"),
+  layForm: el("lay-form"),
+  layLabel: el("lay-label"),
+  layCaption: el("lay-caption"),
+  layText: el("lay-text"),
+  laySize: el("lay-size"),
+  layRemove: el("lay-remove"),
+  layImport: el("lay-import"),
+  layClear: el("lay-clear"),
+  layDone: el("lay-done"),
+  layClose: el("lay-close"),
+  layFile: el("lay-file"),
   galleryCount: el("gallery-count"),
   thumbs: el("thumbs"),
   ctxMenu: el("ctx-menu"),
@@ -329,6 +347,454 @@ async function renderCanvas(data) {
   nodes.resultCaption.textContent = `${job.width}×${job.height} · ${job.steps} 步 · CFG ${job.cfg} · 种子 ${seed} · ${formatDuration(job.elapsedMs)}`;
   img.onclick = () => openViewer(job.id);
 }
+
+// ── 布局框选（主画布上）───────────────────────────────────────────────
+// 框选放在主画布：侧栏只有三百多像素，对不准构图。这一层只管「位置 + 每块写什么」，
+// 画幅与提交还归侧栏；完成后用广播把框交回去。
+const lay = {
+  open: false,
+  /** {url, name, width, height}：只给对齐用，不上传。 */
+  underlay: null,
+  boxes: [],
+  selected: null,
+  /** 表单当前展示的是哪个框；换框才重填。 */
+  formId: null,
+  drag: null,
+  seq: 0,
+};
+
+function layoutCanvasSize() {
+  const defaults = latest?.settings?.defaults ?? {};
+  return {
+    width: Math.max(256, Math.round(Number(defaults.width) || 1024)),
+    height: Math.max(256, Math.round(Number(defaults.height) || 1024)),
+  };
+}
+
+function renderLayInfo() {
+  const size = layoutCanvasSize();
+  const under = lay.underlay ? ` · 底图 ${lay.underlay.width}×${lay.underlay.height}` : "";
+  nodes.layInfo.textContent = `${size.width}×${size.height} · ${lay.boxes.length} 个框${under}`;
+}
+
+function laySheetSize() {
+  const size = layoutCanvasSize();
+  const stage = nodes.layStage;
+  const ratio = size.width / Math.max(1, size.height);
+  const fitWidth = Math.max(80, stage.clientWidth - 44);
+  const fitHeight = Math.max(80, stage.clientHeight - 44);
+  let width = fitWidth;
+  let height = width / ratio;
+  if (height > fitHeight) {
+    height = fitHeight;
+    width = height * ratio;
+  }
+  nodes.laySheet.style.width = `${Math.round(width)}px`;
+  nodes.laySheet.style.height = `${Math.round(height)}px`;
+}
+
+function renderLayForm() {
+  const item = lay.boxes.find((entry) => entry.id === lay.selected) ?? null;
+  nodes.layForm.hidden = !item;
+  if (!item) {
+    lay.formId = null;
+    return;
+  }
+  if (lay.formId !== item.id) {
+    lay.formId = item.id;
+    nodes.layLabel.value = item.label;
+    nodes.layCaption.value = item.caption;
+    nodes.layText.value = item.text;
+  }
+  const [x0, y0, x1, y1] = item.box;
+  nodes.laySize.textContent = `${Math.round(x1 - x0)}×${Math.round(y1 - y0)} px`;
+}
+
+function renderLayBoxes() {
+  const size = layoutCanvasSize();
+  const heightPx = nodes.laySheet.clientHeight;
+  const list = lay.boxes.map((item, index) => {
+    const [x0, y0, x1, y1] = item.box;
+    const box = document.createElement("div");
+    box.className = "lay-box" + (item.id === lay.selected ? " on" : "");
+    box.dataset.id = item.id;
+    box.style.left = `${(x0 / size.width) * 100}%`;
+    box.style.top = `${(y0 / size.height) * 100}%`;
+    box.style.width = `${((x1 - x0) / size.width) * 100}%`;
+    box.style.height = `${((y1 - y0) / size.height) * 100}%`;
+    const tag = document.createElement("span");
+    tag.className = "lay-tag";
+    tag.textContent = `${index + 1} ${item.label || "object"}`;
+    box.append(tag);
+    const noteText = (item.caption || item.text || "").trim();
+    if (noteText && (y1 - y0) / size.height * heightPx >= 34) {
+      const note = document.createElement("span");
+      note.className = "lay-note";
+      note.textContent = noteText;
+      box.append(note);
+    }
+    if (item.id === lay.selected) {
+      for (const dir of ["nw", "ne", "sw", "se"]) {
+        const grip = document.createElement("span");
+        grip.className = `lay-grip ${dir}`;
+        grip.dataset.dir = dir;
+        box.append(grip);
+      }
+    }
+    return box;
+  });
+  nodes.layBoxes.replaceChildren(...list);
+  renderLayForm();
+}
+
+function syncLayBox(item) {
+  const size = layoutCanvasSize();
+  const box = nodes.layBoxes.querySelector(`[data-id="${item.id}"]`);
+  if (!box) return;
+  const [x0, y0, x1, y1] = item.box;
+  box.style.left = `${(x0 / size.width) * 100}%`;
+  box.style.top = `${(y0 / size.height) * 100}%`;
+  box.style.width = `${((x1 - x0) / size.width) * 100}%`;
+  box.style.height = `${((y1 - y0) / size.height) * 100}%`;
+  renderLayForm();
+}
+
+function renderLayDraft() {
+  const draft = nodes.layDraft;
+  const size = layoutCanvasSize();
+  if (!lay.drag?.box) {
+    draft.hidden = true;
+    return;
+  }
+  const [x0, y0, x1, y1] = lay.drag.box;
+  draft.hidden = false;
+  draft.style.left = `${(x0 / size.width) * 100}%`;
+  draft.style.top = `${(y0 / size.height) * 100}%`;
+  draft.style.width = `${((x1 - x0) / size.width) * 100}%`;
+  draft.style.height = `${((y1 - y0) / size.height) * 100}%`;
+}
+
+function openLayout(selectId) {
+  lay.open = true;
+  nodes.lay.hidden = false;
+  nodes.laySheet.style.backgroundImage = lay.underlay ? `url(${lay.underlay.url})` : "";
+  lay.selected = selectId ?? lay.boxes[0]?.id ?? null;
+  lay.drag = null;
+  laySheetSize();
+  renderLayBoxes();
+  renderLayInfo();
+}
+
+function closeLayout() {
+  lay.open = false;
+  nodes.lay.hidden = true;
+  lay.drag = null;
+  nodes.layDraft.hidden = true;
+  if (latest) void renderCanvas(latest);
+}
+
+function removeLayBox(id) {
+  const index = lay.boxes.findIndex((item) => item.id === id);
+  if (index < 0) return;
+  lay.boxes.splice(index, 1);
+  lay.selected = lay.boxes[Math.min(index, lay.boxes.length - 1)]?.id ?? null;
+  renderLayBoxes();
+  renderLayInfo();
+}
+
+/** 屏幕坐标 ↔ 画布像素：框存像素，画在屏幕上是百分比。 */
+function layPoint(event) {
+  const size = layoutCanvasSize();
+  const rect = nodes.laySheet.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * size.width;
+  const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * size.height;
+  return {
+    x: Math.max(0, Math.min(size.width, Math.round(x))),
+    y: Math.max(0, Math.min(size.height, Math.round(y))),
+  };
+}
+
+function onLayPointerDown(event) {
+  if (event.button !== 0) return;
+  const point = layPoint(event);
+  const grip = event.target.closest?.(".lay-grip") ?? null;
+  const boxEl = event.target.closest?.(".lay-box") ?? null;
+  const item = boxEl ? lay.boxes.find((entry) => entry.id === boxEl.dataset.id) : null;
+  try {
+    nodes.laySheet.setPointerCapture(event.pointerId);
+  } catch {
+    /* 合成的 PointerEvent 没有活动指针，捕获会抛；拖拽本身不靠它 */
+  }
+  // preventDefault 挡住了焦点转移：不主动收回，Del 会被表单的输入框吃掉。
+  nodes.laySheet.focus({ preventScroll: true });
+  if (item && grip) {
+    lay.selected = item.id;
+    lay.drag = { mode: "resize", id: item.id, dir: grip.dataset.dir, origin: [...item.box], start: point };
+  } else if (item) {
+    lay.selected = item.id;
+    lay.drag = { mode: "move", id: item.id, origin: [...item.box], start: point };
+  } else {
+    lay.selected = null;
+    lay.drag = { mode: "new", start: point, box: [point.x, point.y, point.x, point.y] };
+  }
+  renderLayBoxes();
+  renderLayInfo();
+  event.preventDefault();
+}
+
+function onLayPointerMove(event) {
+  if (!lay.drag) return;
+  const point = layPoint(event);
+  const size = layoutCanvasSize();
+  if (lay.drag.mode === "new") {
+    lay.drag.box = [
+      Math.min(lay.drag.start.x, point.x),
+      Math.min(lay.drag.start.y, point.y),
+      Math.max(lay.drag.start.x, point.x),
+      Math.max(lay.drag.start.y, point.y),
+    ];
+    renderLayDraft();
+    return;
+  }
+  const item = lay.boxes.find((entry) => entry.id === lay.drag.id);
+  if (!item) return;
+  if (lay.drag.mode === "move") {
+    const [x0, y0, x1, y1] = lay.drag.origin;
+    const width = x1 - x0;
+    const height = y1 - y0;
+    const nx = Math.max(0, Math.min(size.width - width, x0 + (point.x - lay.drag.start.x)));
+    const ny = Math.max(0, Math.min(size.height - height, y0 + (point.y - lay.drag.start.y)));
+    item.box = [nx, ny, nx + width, ny + height];
+  } else {
+    const origin = lay.drag.origin;
+    let x0 = origin[0];
+    let y0 = origin[1];
+    let x1 = origin[2];
+    let y1 = origin[3];
+    if (lay.drag.dir.includes("w")) x0 = Math.min(Math.max(0, point.x), x1 - 8);
+    if (lay.drag.dir.includes("e")) x1 = Math.max(Math.min(size.width, point.x), x0 + 8);
+    if (lay.drag.dir.includes("n")) y0 = Math.min(Math.max(0, point.y), y1 - 8);
+    if (lay.drag.dir.includes("s")) y1 = Math.max(Math.min(size.height, point.y), y0 + 8);
+    item.box = [x0, y0, x1, y1];
+  }
+  syncLayBox(item);
+}
+
+function onLayPointerUp(event) {
+  if (!lay.drag) return;
+  const drag = lay.drag;
+  lay.drag = null;
+  try {
+    nodes.laySheet.releasePointerCapture(event.pointerId);
+  } catch {
+    /* 同上：没有活动指针时不用释放 */
+  }
+  nodes.layDraft.hidden = true;
+  let created = null;
+  if (drag.mode === "new") {
+    const [x0, y0, x1, y1] = drag.box;
+    if (x1 - x0 >= 8 && y1 - y0 >= 8) {
+      created = { id: `lay-${++lay.seq}`, label: "object", caption: "", text: "", box: drag.box };
+      lay.boxes.push(created);
+      lay.selected = created.id;
+    }
+  }
+  renderLayBoxes();
+  renderLayInfo();
+  if (created) nodes.layCaption.focus();
+}
+
+/** 底图只给对齐用：不上传、不进生成。比例不同就跟着改画幅。 */
+async function setUnderlay(file) {
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = () => reject(new Error("这张图读不出来"));
+    image.src = url;
+  });
+  if (lay.underlay?.url) URL.revokeObjectURL(lay.underlay.url);
+  lay.underlay = { url, name: file.name, width: image.naturalWidth, height: image.naturalHeight };
+  nodes.laySheet.style.backgroundImage = `url(${url})`;
+  const size = layoutCanvasSize();
+  const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
+  const canvasRatio = size.width / Math.max(1, size.height);
+  if (Math.abs(ratio - canvasRatio) / canvasRatio > 0.02) {
+    // 保持像素总量不变，只换比例。
+    const area = size.width * size.height;
+    const width = Math.max(256, Math.round(Math.sqrt(area * ratio) / 8) * 8);
+    const height = Math.max(256, Math.round(width / ratio / 8) * 8);
+    await applyCanvasSize(width, height);
+    toast(`画幅已按底图调成 ${width}×${height}`);
+  } else {
+    toast(`底图：${file.name}（${image.naturalWidth}×${image.naturalHeight}）`);
+  }
+  laySheetSize();
+  renderLayBoxes();
+  renderLayInfo();
+}
+
+/** 画幅改动落到设置，并告诉侧栏把输入框也改过来。 */
+async function applyCanvasSize(width, height) {
+  const defaults = { ...(latest?.settings?.defaults ?? {}), width, height };
+  try {
+    await post("/settings", { defaults });
+    if (latest?.settings?.defaults) {
+      latest.settings.defaults.width = width;
+      latest.settings.defaults.height = height;
+    }
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), "error");
+  }
+  layChannel?.postMessage({ type: "layout-size", width, height });
+  laySheetSize();
+  renderLayBoxes();
+  renderLayInfo();
+}
+
+function doneLayout() {
+  if (!lay.boxes.length) {
+    toast("还没有框：在画布上拖一个");
+    return;
+  }
+  const blank = lay.boxes.findIndex((item) => !item.caption.trim() && !item.text.trim());
+  if (blank >= 0) {
+    lay.selected = lay.boxes[blank].id;
+    renderLayBoxes();
+    nodes.layCaption.focus();
+    toast(`第 ${blank + 1} 个框还没写提示词`);
+    return;
+  }
+  const size = layoutCanvasSize();
+  layChannel?.postMessage({
+    type: "layout",
+    width: size.width,
+    height: size.height,
+    boxes: lay.boxes.map((item) => ({
+      label: item.label.trim() || "object",
+      caption: item.caption.trim(),
+      text: item.text.trim(),
+      box: item.box.map((value) => Math.round(value)),
+    })),
+  });
+  toast(`已把 ${lay.boxes.length} 个框交给左侧栏`);
+  closeLayout();
+}
+
+/** 拖到画布上也进布局：这是“导入底图”的第二条路。 */
+function canvasHasFiles(event) {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+}
+
+nodes.canvas.addEventListener("dragover", (event) => {
+  if (!canvasHasFiles(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+  nodes.canvas.classList.add("dropping");
+});
+nodes.canvas.addEventListener("dragleave", (event) => {
+  if (event.relatedTarget && nodes.canvas.contains(event.relatedTarget)) return;
+  nodes.canvas.classList.remove("dropping");
+});
+nodes.canvas.addEventListener("drop", async (event) => {
+  if (!canvasHasFiles(event)) return;
+  event.preventDefault();
+  nodes.canvas.classList.remove("dropping");
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  if (!String(file.type).startsWith("image/")) {
+    toast("拖进来的不是图片");
+    return;
+  }
+  showView("canvas");
+  if (!lay.open) openLayout();
+  try {
+    await setUnderlay(file);
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), "error");
+  }
+});
+
+nodes.canvasLayout.addEventListener("click", () => {
+  showView("canvas");
+  openLayout();
+  // 没底图时直接把选图框拉起来：少点一步。
+  if (!lay.underlay) nodes.layFile.click();
+});
+nodes.layImport.addEventListener("click", () => nodes.layFile.click());
+nodes.layFile.addEventListener("change", async () => {
+  const file = nodes.layFile.files?.[0];
+  nodes.layFile.value = "";
+  if (!file) return;
+  try {
+    await setUnderlay(file);
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), "error");
+  }
+});
+nodes.layClear.addEventListener("click", () => {
+  lay.boxes = [];
+  lay.selected = null;
+  renderLayBoxes();
+  renderLayInfo();
+  toast("框已清空");
+});
+nodes.layDone.addEventListener("click", doneLayout);
+nodes.layClose.addEventListener("click", closeLayout);
+nodes.layRemove.addEventListener("click", () => removeLayBox(lay.selected));
+
+nodes.layLabel.addEventListener("input", () => {
+  const item = lay.boxes.find((entry) => entry.id === lay.selected);
+  if (!item) return;
+  item.label = nodes.layLabel.value;
+  renderLayBoxes();
+});
+nodes.layCaption.addEventListener("input", () => {
+  const item = lay.boxes.find((entry) => entry.id === lay.selected);
+  if (!item) return;
+  item.caption = nodes.layCaption.value;
+  renderLayBoxes();
+});
+nodes.layText.addEventListener("input", () => {
+  const item = lay.boxes.find((entry) => entry.id === lay.selected);
+  if (!item) return;
+  item.text = nodes.layText.value;
+  renderLayBoxes();
+});
+
+nodes.laySheet.addEventListener("pointerdown", onLayPointerDown);
+nodes.laySheet.addEventListener("pointermove", onLayPointerMove);
+nodes.laySheet.addEventListener("pointerup", onLayPointerUp);
+nodes.laySheet.addEventListener("pointercancel", onLayPointerUp);
+
+document.addEventListener("keydown", (event) => {
+  if (!lay.open) return;
+  const tag = event.target?.tagName ?? "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeLayout();
+    return;
+  }
+  if ((event.key === "Delete" || event.key === "Backspace") && lay.selected) {
+    event.preventDefault();
+    removeLayBox(lay.selected);
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (lay.open) laySheetSize();
+});
+
+/** 侧栏点「去画布框选」时把这一层打开。 */
+const layChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
+layChannel?.addEventListener("message", (event) => {
+  const msg = event.data ?? {};
+  if (msg.type !== "layout-open") return;
+  showView("canvas");
+  openLayout();
+  if (!lay.underlay) nodes.layFile.click();
+});
 
 // ── 画廊 ───────────────────────────────────────────────────────────────
 const GALLERY_GAP = 10;
