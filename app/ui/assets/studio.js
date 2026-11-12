@@ -370,10 +370,36 @@ function layoutCanvasSize() {
   };
 }
 
+/** 比例文字：常见的几种直接给名字，其余写成 x:1。 */
+const RATIO_LABELS = [
+  { value: 16 / 9, label: "16:9" },
+  { value: 9 / 16, label: "9:16" },
+  { value: 3 / 2, label: "3:2" },
+  { value: 2 / 3, label: "2:3" },
+  { value: 4 / 3, label: "4:3" },
+  { value: 3 / 4, label: "3:4" },
+  { value: 1, label: "1:1" },
+];
+
+function ratioText(width, height) {
+  const ratio = width / Math.max(1, height);
+  let best = null;
+  for (const item of RATIO_LABELS) {
+    const diff = Math.abs(item.value - ratio) / item.value;
+    if (!best || diff < best.diff) best = { diff, label: item.label };
+  }
+  if (best && best.diff <= 0.02) return best.label;
+  return `${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1`;
+}
+
 function renderLayInfo() {
   const size = layoutCanvasSize();
-  const under = lay.underlay ? ` · 底图 ${lay.underlay.width}×${lay.underlay.height}` : "";
-  nodes.layInfo.textContent = `${size.width}×${size.height} · ${lay.boxes.length} 个框${under}`;
+  const under = lay.underlay ? ` · 底图 ${ratioText(lay.underlay.width, lay.underlay.height)}` : "";
+  nodes.layInfo.textContent = `${ratioText(size.width, size.height)} · ${lay.boxes.length} 个框${under}`;
+  // 像素数不占正文，但悬停还能看。
+  nodes.layInfo.title = lay.underlay
+    ? `${size.width}×${size.height} · 底图 ${lay.underlay.width}×${lay.underlay.height}`
+    : `${size.width}×${size.height}`;
 }
 
 function laySheetSize() {
@@ -643,9 +669,9 @@ async function setUnderlay(file) {
     const width = Math.max(256, Math.round(Math.sqrt(area * ratio) / 8) * 8);
     const height = Math.max(256, Math.round(width / ratio / 8) * 8);
     await applyCanvasSize(width, height);
-    toast(`画幅已按底图调成 ${width}×${height}`);
+    toast(`画幅已按底图调成 ${ratioText(width, height)}（${width}×${height}）`);
   } else {
-    toast(`底图：${file.name}（${image.naturalWidth}×${image.naturalHeight}）`);
+    toast(`底图：${file.name}（${ratioText(image.naturalWidth, image.naturalHeight)}）`);
   }
   laySheetSize();
   renderLayBoxes();
