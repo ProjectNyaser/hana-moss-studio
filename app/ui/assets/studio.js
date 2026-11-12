@@ -394,8 +394,11 @@ function ratioText(width, height) {
 
 function renderLayInfo() {
   const size = layoutCanvasSize();
-  const under = lay.underlay ? ` · 底图 ${ratioText(lay.underlay.width, lay.underlay.height)}` : "";
-  nodes.layInfo.textContent = `${ratioText(size.width, size.height)} · ${lay.boxes.length} 个框${under}`;
+  const canvasRatio = ratioText(size.width, size.height);
+  const underRatio = lay.underlay ? ratioText(lay.underlay.width, lay.underlay.height) : "";
+  // 两边同一比例时不说第二遍：那句只在画幅被手改过、对不上了才有信息。
+  const under = underRatio && underRatio !== canvasRatio ? ` · 底图 ${underRatio}` : "";
+  nodes.layInfo.textContent = `${canvasRatio} · ${lay.boxes.length} 个框${under}`;
   nodes.layInfo.removeAttribute("title");
 }
 
