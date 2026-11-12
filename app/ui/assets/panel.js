@@ -1073,8 +1073,8 @@ async function openFrameEditor(selectId) {
   if (!layoutSize) layoutSize = size;
   rescaleLayoutBoxes();
   // 有参考图就先按当前画幅准备好：用户选的那张就是他想对着放框的那张。
-  // 准备过的不重复传，复用 refPrepared。
-  if (refImage && !refPrepared) {
+  // prepareRef 自己认尺寸，同尺寸时零成本复用。
+  if (refImage) {
     try {
       await prepareRef(size.width, size.height);
     } catch (error) {
