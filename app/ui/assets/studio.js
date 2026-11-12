@@ -101,6 +101,8 @@ let newestJobId = null;
 let bootstrapped = false;
 let currentView = "canvas";
 let releasesLoaded = false;
+/** 上次的布局只在第一次拿到设置时接回来，不要每帧重读。 */
+let layoutRestored = false;
 
 async function withTimeout(promise, ms) {
   let timer = null;
@@ -478,6 +480,7 @@ function renderLayBoxes() {
 /** 框一变就交给侧栏：不用点「完成」，画布上留着框直接生成。
  *  不做节流：拖拽中不重建 DOM，只有落点、输入、删除才会走到这里，直接发不会堵。 */
 function syncLayoutToPanel() {
+  saveLayoutLocal();
   const size = layoutCanvasSize();
   layChannel?.postMessage({
     type: "layout",
@@ -490,6 +493,55 @@ function syncLayoutToPanel() {
       box: item.box.map((value) => Math.round(value)),
     })),
   });
+}
+
+const LAYOUT_KEY = "hana-moss-studio:layout";
+
+/** 框存本地：刷新、重装都不该把画好的框弄丢。存百分比，换画幅也不会偏。 */
+function saveLayoutLocal() {
+  try {
+    const size = layoutCanvasSize();
+    localStorage.setItem(
+      LAYOUT_KEY,
+      JSON.stringify({
+        boxes: lay.boxes.map((item) => ({
+          label: item.label,
+          caption: item.caption,
+          text: item.text,
+          box: [
+            item.box[0] / size.width,
+            item.box[1] / size.height,
+            item.box[2] / size.width,
+            item.box[3] / size.height,
+          ],
+        })),
+      }),
+    );
+  } catch {
+    /* 存储不可用就算了，不阻碍画框 */
+  }
+}
+
+function restoreLayoutLocal() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data?.boxes) || !data.boxes.length) return;
+    const size = layoutCanvasSize();
+    lay.boxes = data.boxes.map((item) => {
+      const box = Array.isArray(item.box) ? item.box.map(Number) : [0, 0, 0, 0];
+      return {
+        id: `lay-${++lay.seq}`,
+        label: String(item.label ?? "object"),
+        caption: String(item.caption ?? ""),
+        text: String(item.text ?? ""),
+        box: [box[0] * size.width, box[1] * size.height, box[2] * size.width, box[3] * size.height].map((value) => Math.round(value)),
+      };
+    });
+  } catch {
+    /* 坏了当没有 */
+  }
 }
 
 function syncLayBox(item) {
@@ -1982,6 +2034,16 @@ function useAsEditReference(job) {
 // ── 总渲染 ─────────────────────────────────────────────────────────────
 function render(data) {
   latest = data;
+  // 第一次拿到设置时把上次的框接回来（存的是百分比，画幅变了也不偏）。
+  if (!layoutRestored && data.settings) {
+    layoutRestored = true;
+    restoreLayoutLocal();
+    if (lay.open) {
+      laySheetSize();
+      renderLayBoxes();
+      renderLayInfo();
+    }
+  }
   // 开跑就收起布局层：让预览和结果露出来，框数据留着。
   if (data.engine?.active && lay.open) {
     lay.open = false;

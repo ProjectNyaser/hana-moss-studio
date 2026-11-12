@@ -253,6 +253,32 @@ function setSettings(settings) {
   renderSize();
   // 设置是异步到的：宽高可能在这时被改成另一组值，框要跟着重新对一次。
   rescaleLayoutBoxes();
+  // 上次画的框接回来：只存了百分比，按当前画幅还原成像素。
+  restoreLayoutLocal();
+}
+
+function restoreLayoutLocal() {
+  try {
+    const raw = localStorage.getItem("hana-moss-studio:layout");
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data?.boxes) || !data.boxes.length) return;
+    const size = canvasSize();
+    layoutBoxes = data.boxes.map((item) => {
+      const box = Array.isArray(item.box) ? item.box.map(Number) : [0, 0, 0, 0];
+      return {
+        id: `box-${++layoutSeq}`,
+        label: String(item.label ?? "object"),
+        caption: String(item.caption ?? ""),
+        text: String(item.text ?? ""),
+        box: [box[0] * size.width, box[1] * size.height, box[2] * size.width, box[3] * size.height].map((value) => Math.round(value)),
+      };
+    });
+    layoutSize = size;
+    renderLayoutNote();
+  } catch {
+    /* 坏了当没有 */
+  }
 }
 
 /** 高清修正的上限：换算出的目标尺寸不能越过引擎那条线。
