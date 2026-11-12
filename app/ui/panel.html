@@ -439,12 +439,12 @@
 
     <div class="pn-block">
       <div class="pn-head">
-        <span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>参考图</span>
+        <span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>底图</span>
         <span class="hint" id="pn-ref-note">未选择</span>
       </div>
       <div class="pn-ref" id="pn-ref" hidden>
-        <img id="pn-ref-img" alt="参考图">
-        <button class="pn-ref-x" id="pn-ref-clear" type="button" title="清除参考图">×</button>
+        <img id="pn-ref-img" alt="底图">
+        <button class="pn-ref-x" id="pn-ref-clear" type="button" title="清除底图">×</button>
       </div>
       <div class="pn-grid" id="pn-ref-controls" hidden>
         <label class="field"><span class="label">重绘强度</span><input id="pn-strength" type="number" min="0.05" max="1" step="0.05" value="0.6"></label>
@@ -454,13 +454,13 @@
         </label>
       </div>
       <div class="pn-install-actions">
-        <button class="btn ghost small" id="pn-ref-pick" type="button">选参考图</button>
+        <button class="btn ghost small" id="pn-ref-pick" type="button">选底图</button>
         <button class="btn ghost small" id="pn-mask-edit" type="button" hidden>画蒙版</button>
       </div>
-      <p class="hint">作品区右键「以这张为参考」可以把画廊里的图直接带进来。蒙版用白色区域告诉引擎「哪里重画」。</p>
+      <p class="hint">作品区右键「用这张做底图」可以把画廊里的图带进来。蒙版用白色区域告诉引擎「哪里重画」。</p>
       <div class="pn-editref" id="pn-editref" hidden>
         <span class="name" id="pn-editref-name"></span>
-        <button class="drop" id="pn-editref-clear" type="button" title="移除编辑参考图">×</button>
+        <button class="drop" id="pn-editref-clear" type="button" title="移除参考图">×</button>
       </div>
       <input type="file" id="pn-ref-file" accept="image/*" hidden>
     </div>

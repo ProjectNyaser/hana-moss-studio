@@ -855,7 +855,7 @@ async function setReference(blobOrUrl) {
     nodes.refImg.src = typeof blobOrUrl === "string" ? blobOrUrl : url;
     nodes.refNote.textContent = "准备中…";
     await prepareRef(Number(nodes.width.value), Number(nodes.height.value));
-    say("参考图已就绪，可以另写提示词，也可以直接跑。", "ok");
+    say("底图已就绪，可以另写提示词，也可以直接跑。", "ok");
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
   }
@@ -929,9 +929,9 @@ async function setEditReference(url, name = "画廊图") {
     editSource = image;
     editRef = null;
     nodes.editRef.hidden = false;
-    nodes.editRefName.textContent = `编辑参考：${name}`;
-    nodes.editRef.title = "需要 LoRA 列表里有编辑适配器（如 Moss-Image-Edit），它按这张参考图重画";
-    say("编辑参考图已就绪：确认 LoRA 里有编辑适配器再跑。", "ok");
+    nodes.editRefName.textContent = `参考图：${name}`;
+    nodes.editRef.title = "需要 LoRA 列表里有编辑适配器（如 Moss-Image-Edit），它按这张图重画";
+    say("参考图已就绪：确认 LoRA 里有编辑适配器再跑。", "ok");
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
   }
@@ -1196,6 +1196,8 @@ layoutChannel?.addEventListener("message", (event) => {
   const data = event.data ?? {};
   if (data.type === "layout") applyLayoutFromCanvas(data);
   else if (data.type === "layout-size") applyLayoutSize(data);
+  // 画布上导入的底图就是图生图的源图：这边也换成同一张。
+  else if (data.type === "layout-underlay" && typeof data.name === "string") void setReference(inputUrl(data.name));
 });
 
 // 蒙版画布：白色笔触就是「重画这里」。保存时按 alpha 阈值二值化，避免半透明边。
@@ -1208,7 +1210,7 @@ const MASK_ZOOMS = [1, 1.5, 2, 3, 4];
 
 function openMaskEditor() {
   if (!refPrepared) {
-    say("先选一张参考图。", "bad");
+    say("先选一张底图。", "bad");
     return;
   }
   const canvas = nodes.maskCanvas;
@@ -1592,7 +1594,7 @@ async function onGenerate() {
   try {
     // 参考图按当前尺寸现准备：改了尺寸也能直接跑，不用用户再选一次。
     if (refImage) {
-      say("正在准备参考图…");
+      say("正在准备底图…");
       const prepared = await prepareRef(Number(nodes.width.value), Number(nodes.height.value));
       if (prepared) {
         payload.initImage = prepared.path;

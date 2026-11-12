@@ -701,7 +701,7 @@ function onLayPointerUp(event) {
   if (created) nodes.layCaption.focus();
 }
 
-/** 底图只给对齐用：不上传、不进生成。比例不同就跟着改画幅。 */
+/** 底图就是图生图的源图（initImage）：能对齐构图，也会参与生成。比例不同就跟着改画幅。 */
 async function setUnderlay(file) {
   const url = URL.createObjectURL(file);
   const image = new Image();
@@ -713,6 +713,13 @@ async function setUnderlay(file) {
   if (lay.underlay?.url) URL.revokeObjectURL(lay.underlay.url);
   lay.underlay = { url, name: file.name, width: image.naturalWidth, height: image.naturalHeight };
   nodes.laySheet.style.backgroundImage = `url(${url})`;
+  // 底图就是图生图的源图（initImage）：传上去，让侧栏那张也跟着换成它。
+  try {
+    const uploaded = await api("/inputs/upload?kind=init", { method: "POST", body: file }, 60000);
+    if (uploaded?.name) layChannel?.postMessage({ type: "layout-underlay", name: uploaded.name });
+  } catch (error) {
+    toast(`底图没传上去：${error instanceof Error ? error.message : String(error)}`, "error");
+  }
   const size = layoutCanvasSize();
   const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
   const canvasRatio = size.width / Math.max(1, size.height);
@@ -724,7 +731,7 @@ async function setUnderlay(file) {
     await applyCanvasSize(width, height);
     toast(`画幅已按底图调成 ${ratioText(width, height)}`);
   } else {
-    toast(`底图：${file.name}（${ratioText(image.naturalWidth, image.naturalHeight)}）`);
+    toast(`底图：${file.name}（${ratioText(image.naturalWidth, image.naturalHeight)}），已作为图生图底图`);
   }
   laySheetSize();
   renderLayBoxes();
@@ -1949,9 +1956,9 @@ function openMenu(event, job) {
   if (job.status === "done" && job.output) {
     items.push({ label: "载入这张", run: () => loadJob(job) });
     // 图生图的入口就在这里：看到一张想接着改的图，直接送进侧栏当参考。
-    items.push({ label: "以这张为参考", run: () => useAsReference(job) });
+    items.push({ label: "用这张做底图", run: () => useAsReference(job) });
     // 编辑适配器（Moss-Image-Edit 一类）的入口：源图 + 指令。
-    items.push({ label: "用这张做编辑参考", run: () => useAsEditReference(job) });
+    items.push({ label: "用这张做参考图", run: () => useAsEditReference(job) });
     items.push({ sep: true });
   }
   items.push({
