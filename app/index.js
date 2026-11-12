@@ -465,6 +465,18 @@ export default defineApp(async (sdk) => {
     if (!caption) throw new Error("提示词不能为空");
     // 参数面先收敛：认不出的采样器、缺文件的 LoRA 在这里就拒，别让它排进队列才失败。
     const gen = readGeneration(input, settings.defaults);
+    // 编辑适配器学的是「给一张源图去改」。没有源图时它只能按训练样本画一小块，
+    // 其余留白：这种组合不该真的跑，直接摘掉并在回执里说一句。
+    const notices = [];
+    if (Array.isArray(gen.loras) && gen.loras.length && !gen.references?.images?.length) {
+      const kept = [];
+      for (const lora of gen.loras) {
+        const name = String(lora?.path ?? "").split(/[\\/]/).pop() ?? "";
+        if (/edit/i.test(name)) notices.push(`没有源图，这次的编辑适配器 ${name} 没生效`);
+        else kept.push(lora);
+      }
+      gen.loras = kept;
+    }
     const record = {
       prompt: layout ? layout.prompt : caption,
       caption,
@@ -502,6 +514,7 @@ export default defineApp(async (sdk) => {
       maskEncoding: gen.maskEncoding,
       strength: clampFloat(input?.strength, 0.05, 1, 0.6),
       resize: VALUES.resize.includes(input?.resize) ? input.resize : "crop",
+      ...(notices.length ? { notices } : {}),
     };
     // 引擎的高清修正要的是具体目标尺寸，不是倍数，这里先算好。
     // 1.0 等于关闭：目标与基础图同尺寸，第二阶段没有意义。
@@ -528,6 +541,7 @@ export default defineApp(async (sdk) => {
     Object.assign(record, { id, status: "queued", createdAt: new Date().toISOString(), output: fileName });
     store.upsertJob(record);
     const entry = remember(liveEntry(record));
+    if (record.notices) entry.notices = record.notices;
     queue.push({ ...record, output: join(outputsDir, fileName) });
     // 有新任务就把待停的计时取消掉。
     clearTimeout(idleStopTimer);
@@ -1455,7 +1469,7 @@ function state() {
       try {
         const entry = submit(body ?? {});
         await attachTask(entry, null);
-        return c.json({ job: jobView(entry), state: state() });
+        return c.json({ job: jobView(entry), notices: entry.notices ?? [], state: state() });
       } catch (error) {
         return c.json({ error: message(error) }, 400);
       }
@@ -1679,6 +1693,7 @@ function state() {
           : "",
         `- 提示词：${entry.prompt.slice(0, 120)}${entry.prompt.length > 120 ? "…" : ""}`,
         entry.layout ? `- 布局：${entry.layout.items} 个框 · 尺寸与 bbox 必须对应，改尺寸要重算坐标` : "",
+        ...(entry.notices ?? []).map((notice) => `- 注意：${notice}`),
         `- 进度：下方卡片实时刷新（${position ? `队列第 ${position} 位` : "已开始"}）。`,
         entry.taskId
           ? `- 宿主任务：${entry.taskId}（出图完成后自动回执）`

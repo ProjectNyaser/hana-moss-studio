@@ -1605,7 +1605,8 @@ async function onGenerate() {
   }
   try {
     const result = await post("/generate", payload);
-    say(`已入队 ${result.job?.jobId ?? ""}`, "ok");
+    const notices = Array.isArray(result?.notices) ? result.notices : [];
+    say(notices.length ? notices.join("；") : `已入队 ${result.job?.jobId ?? ""}`, notices.length ? "bad" : "ok");
     render(result.state);
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
