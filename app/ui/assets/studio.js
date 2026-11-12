@@ -359,6 +359,8 @@ const lay = {
   /** 表单当前展示的是哪个框；换框才重填。 */
   formId: null,
   drag: null,
+  /** 正在把比例拉回底图，避免改尺寸的回声再触发一次。 */
+  fixing: false,
   seq: 0,
 };
 
@@ -395,9 +397,8 @@ function ratioText(width, height) {
 function renderLayInfo() {
   const size = layoutCanvasSize();
   const canvasRatio = ratioText(size.width, size.height);
-  const underRatio = lay.underlay ? ratioText(lay.underlay.width, lay.underlay.height) : "";
-  // 两边同一比例时不说第二遍：那句只在画幅被手改过、对不上了才有信息。
-  const under = underRatio && underRatio !== canvasRatio ? ` · 底图 ${underRatio}` : "";
+  // 底图的实际分辨率是它自己的属性，不是画幅设定；比例只写一次。
+  const under = lay.underlay ? ` · 底图 ${lay.underlay.width}×${lay.underlay.height}` : "";
   nodes.layInfo.textContent = `${canvasRatio} · ${lay.boxes.length} 个框${under}`;
   nodes.layInfo.removeAttribute("title");
 }
@@ -694,6 +695,28 @@ async function applyCanvasSize(width, height) {
   laySheetSize();
   renderLayBoxes();
   renderLayInfo();
+}
+
+/** 布局开着时把画幅比例锁在底图上：像素总量可以换，比例不能被改乱。 */
+function pinLayoutRatio() {
+  if (!lay.open || !lay.underlay || lay.fixing) return;
+  const size = layoutCanvasSize();
+  const ratio = size.width / Math.max(1, size.height);
+  const underRatio = lay.underlay.width / Math.max(1, lay.underlay.height);
+  if (Math.abs(ratio - underRatio) / underRatio <= 0.02) return;
+  // 同一组尺寸只试一次：写设置失败时不要跟着每次状态刷新重试。
+  const key = `${size.width}x${size.height}`;
+  if (lay.pinnedFor === key) return;
+  lay.pinnedFor = key;
+  const area = size.width * size.height;
+  const width = Math.max(256, Math.round(Math.sqrt(area * underRatio) / 8) * 8);
+  const height = Math.max(256, Math.round(width / underRatio / 8) * 8);
+  lay.fixing = true;
+  void applyCanvasSize(width, height)
+    .then(() => toast(`比例跟底图走，已调回 ${ratioText(width, height)}`))
+    .finally(() => {
+      lay.fixing = false;
+    });
 }
 
 
@@ -1966,6 +1989,8 @@ function render(data) {
     lay.drag = null;
     nodes.layDraft.hidden = true;
   }
+  // 布局开着时比例跟着底图：像素可以换，比例不能被改乱。
+  pinLayoutRatio();
   // 刚跑完一个：画廊要重新拉首页，新图在最前面。
   if (lastActive && !data.engine.active) void loadGallery(true);
   lastActive = Boolean(data.engine.active);
