@@ -1400,7 +1400,8 @@ function renderModels(data) {
   nodes.modelField.hidden = !models.length;
   // 轻量包（只有配置与分词器）：模型差异全在 DiT 权重里。
   const lite = data?.modelLite ?? null;
-  nodes.model.disabled = !models.length || Boolean(lite);
+  // 轻量包时也给一个出口：上面仍列着已装的完整模型，能直接切回去。
+  nodes.model.disabled = !models.length;
   const configReady = Boolean(data?.configPack?.installed);
   nodes.modelHint.hidden = !(lite || (!models.length && configReady));
   if (lite) {

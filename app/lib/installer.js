@@ -438,7 +438,14 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       if (dead.length && !task.cancelled) throw new Error(`${dead.length} 个文件下载失败，重试会续传`);
       const bad = await verifyWeights(task, wanted, dir);
       if (bad.length) throw new Error(`${bad.length} 个文件校验不过：${bad.slice(0, 3).map((e) => e.path).join("、")}`);
-      saveSettings({ modelPath: dir, modelPaths: { ...(getSettings().modelPaths ?? {}), config: dir } });
+      // 配置包只补 config 与分词器：手上已有完整权重时不该抢走当前模型路径，
+      // 否则引擎会去读一个没有权重的目录，模型下拉也会被当成轻量包禁用。
+      const prev = getSettings().modelPath;
+      const keepCurrent = Boolean(prev && prev !== dir && existsSync(prev) && hasDitWeights(prev));
+      saveSettings({
+        ...(keepCurrent ? {} : { modelPath: dir }),
+        modelPaths: { ...(getSettings().modelPaths ?? {}), config: dir },
+      });
       task.finish({ phase: "done", message: `配置就绪：${wanted.length} 个文件`, detail: { modelPath: dir } });
       onInstalled?.("config", { modelPath: dir });
     } catch (error) {
