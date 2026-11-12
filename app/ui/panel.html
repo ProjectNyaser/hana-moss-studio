@@ -233,9 +233,15 @@
         repeating-linear-gradient(to right, var(--ui-line) 0 1px, transparent 1px 33.3333%),
         repeating-linear-gradient(to bottom, var(--ui-line) 0 1px, transparent 1px 33.3333%);
     }
-    /* 空画布的一句提示：什么都不画时，先告诉人从哪里下手。
-       给个半透明底：压在亮底图上也要看得清。 */
-    .pn-frame-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--ui-surface) 78%, transparent); color: var(--ui-text-3); font-size: 12px; white-space: nowrap; pointer-events: none; }
+    /* 空画布：直接摆一个放图的口子，不用去顶部找按钮。
+       画布本身也接拖放，这两条路都走同一个导入。 */
+    .pn-frame-drop { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 3px; max-width: min(340px, 82%); padding: 16px 20px; border: 1px dashed var(--ui-line-strong); border-radius: 10px; background: color-mix(in srgb, var(--ui-surface) 84%, transparent); color: var(--ui-text-3); font: inherit; font-size: 12px; text-align: center; cursor: pointer; }
+    .pn-frame-drop:hover { border-color: var(--ui-accent); color: var(--ui-text-2); }
+    .pn-frame-drop[hidden] { display: none; }
+    .pn-frame-drop .title { color: inherit; }
+    .pn-frame-drop .sub { font-size: 11px; opacity: 0.78; }
+    /* 拖着图经过画布时给个边框，告诉人这里能放。 */
+    .pn-frame-sheet.drop { outline: 2px dashed var(--ui-accent); outline-offset: -2px; }
     .pn-frame-boxes { position: absolute; inset: 0; pointer-events: none; }
     .pn-frame-box { position: absolute; border: 1px solid var(--ui-accent); border-radius: 2px; pointer-events: auto; cursor: move;
       background: transparent; }
@@ -615,7 +621,10 @@
       <div class="pn-frame-stage" id="pn-frame-stage">
         <div class="pn-frame-sheet" id="pn-frame-sheet" tabindex="-1">
           <div class="pn-frame-grid"></div>
-          <p class="pn-frame-hint" id="pn-frame-hint">在画布上按住拖出一个框</p>
+          <button class="pn-frame-drop" id="pn-frame-empty" type="button">
+            <span class="title">拖一张图片进来，或点这里导底图</span>
+            <span class="sub">只用来对齐构图，不参与生成</span>
+          </button>
           <div class="pn-frame-boxes" id="pn-frame-boxes"></div>
           <div class="pn-frame-draft" id="pn-frame-draft" hidden></div>
         </div>

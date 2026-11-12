@@ -162,7 +162,7 @@ const nodes = {
   frameStage: el("pn-frame-stage"),
   frameSheet: el("pn-frame-sheet"),
   frameBoxes: el("pn-frame-boxes"),
-  frameHint: el("pn-frame-hint"),
+  frameEmpty: el("pn-frame-empty"),
   frameDraft: el("pn-frame-draft"),
   frameRows: el("pn-frame-rows"),
   frameForm: el("pn-frame-form"),
@@ -1127,6 +1127,11 @@ function saveFrameEditor() {
   say(`布局已保存：${layoutBoxes.length} 个框。`, "ok");
 }
 
+/** 画布空位：既没底图也没框时才摆出来。有底图后换图走顶部按钮或直接拖。 */
+function renderFrameEmpty() {
+  nodes.frameEmpty.hidden = Boolean(frameUnderlay) || layoutBoxes.length > 0;
+}
+
 function renderFrameInfo() {
   const size = layoutSize ?? canvasSize();
   // 背景是图时说明一下：不然容易把它当成待生成的画布。
@@ -1227,7 +1232,7 @@ function renderFrameBoxes() {
     return box;
   });
   nodes.frameBoxes.replaceChildren(...list);
-  nodes.frameHint.hidden = layoutBoxes.length > 0;
+  renderFrameEmpty();
   renderFrameRows();
 }
 
@@ -1526,6 +1531,7 @@ function setFrameUnderlay(file) {
     const off = Math.abs(ratio - size.width / Math.max(1, size.height)) / (size.width / Math.max(1, size.height)) > 0.02;
     const fitted = off ? applyUnderlayRatio() : null;
     renderFrameInfo();
+    renderFrameEmpty();
     say(
       fitted
         ? `底图：${file.name}（${source}），画幅已按它调成 ${fitted.width}×${fitted.height}。只用来对齐，不参与生成。`
@@ -1541,6 +1547,32 @@ function setFrameUnderlay(file) {
 }
 
 nodes.frameUnderlay.addEventListener("click", () => nodes.frameUnderlayFile.click());
+nodes.frameEmpty.addEventListener("click", () => nodes.frameUnderlayFile.click());
+
+// 拖图进画布：和「导入底图」走同一条路，拖完就对齐比例。
+nodes.frameSheet.addEventListener("dragover", (event) => {
+  const types = Array.from(event.dataTransfer?.types ?? []);
+  if (!types.includes("Files")) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+  nodes.frameSheet.classList.add("drop");
+});
+nodes.frameSheet.addEventListener("dragleave", (event) => {
+  // 在子元素上移进移出也会派 dragleave：目标还在画布里就不改状态。
+  if (event.relatedTarget && nodes.frameSheet.contains(event.relatedTarget)) return;
+  nodes.frameSheet.classList.remove("drop");
+});
+nodes.frameSheet.addEventListener("drop", (event) => {
+  event.preventDefault();
+  nodes.frameSheet.classList.remove("drop");
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  if (!String(file.type).startsWith("image/")) {
+    say("拖进来的不是图片。", "bad");
+    return;
+  }
+  setFrameUnderlay(file);
+});
 nodes.frameUnderlayFile.addEventListener("change", () => {
   const file = nodes.frameUnderlayFile.files?.[0];
   nodes.frameUnderlayFile.value = "";
@@ -1551,6 +1583,7 @@ nodes.frameUnderlayClear.addEventListener("click", () => {
   frameUnderlay = null;
   nodes.frameSheet.style.backgroundImage = refPrepared ? `url(${refPrepared.url})` : "";
   renderFrameInfo();
+  renderFrameEmpty();
   say(refPrepared ? "底图已去掉，换成侧栏的参考图作底。" : "底图已去掉。");
 });
 
