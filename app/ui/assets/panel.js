@@ -111,6 +111,11 @@ const nodes = {
   dataspace: el("pn-dataspace"),
   distill: el("pn-distill"),
   advSamplingNote: el("pn-adv-sampling-note"),
+  latent: el("pn-latent"),
+  latentNote: el("pn-latent-note"),
+  resumeRow: el("pn-resume-row"),
+  resumeName: el("pn-resume-name"),
+  resumeGo: el("pn-resume-go"),
   stepThresholdField: el("pn-threshold-field"),
   accelNote: el("pn-accel-note"),
   samplerNote: el("pn-sampler-note"),
@@ -1678,6 +1683,28 @@ const PHASE_LABEL = {
 };
 
 /** 安装区：没有任务时给一句提示，有任务时给进度与取消。 */
+let checkpointCache = { at: 0, item: null };
+
+/** 可续画的断点：只报还没跑完的那一个，跑完的不占位置。 */
+async function refreshCheckpoint(force = false) {
+  if (!force && Date.now() - checkpointCache.at < 8000) return;
+  checkpointCache.at = Date.now();
+  try {
+    const data = await api("/latent/checkpoints", undefined, 8000);
+    const pending = (data.items ?? []).find((item) => !item.done) ?? null;
+    checkpointCache.item = pending;
+    if (!pending) {
+      nodes.resumeRow.hidden = true;
+      return;
+    }
+    nodes.resumeRow.hidden = false;
+    nodes.resumeName.textContent = `断点 ${pending.stepIndex}/${pending.steps} · ${pending.width}×${pending.height}`;
+    nodes.resumeName.title = pending.prompt || "";
+  } catch {
+    /* 老版本没有这条路由 */
+  }
+}
+
 function render(data) {
   latest = data;
   facets = data.facets ?? facets;
@@ -1697,6 +1724,7 @@ function render(data) {
   const done = data.jobs.filter((job) => job.status === "done").length;
   const failed = data.jobs.filter((job) => job.status === "error").length;
   nodes.errors.textContent = failed ? `完成 ${done} · 失败 ${failed}` : done ? `完成 ${done}` : "";
+  void refreshCheckpoint();
 }
 
 async function refresh() {
@@ -1709,6 +1737,25 @@ async function refresh() {
 }
 
 // ── 交互 ───────────────────────────────────────────────────────────────
+nodes.latent.addEventListener("change", () => {
+  nodes.latentNote.hidden = !nodes.latent.checked;
+});
+nodes.resumeGo.addEventListener("click", async () => {
+  const item = checkpointCache.item;
+  if (!item) return;
+  nodes.resumeGo.disabled = true;
+  try {
+    const result = await post("/latent/resume", { id: item.id });
+    say(`已从断点入队 ${result.job?.jobId ?? ""}（第 ${item.stepIndex}/${item.steps} 步接着跑）`, "ok");
+    if (result.state) render(result.state);
+    void refreshCheckpoint(true);
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    nodes.resumeGo.disabled = false;
+  }
+});
+
 async function onGenerate() {
   const prompt = nodes.prompt.value.trim();
   if (layoutBoxes.length) {
@@ -1734,6 +1781,17 @@ async function onGenerate() {
     say("写一句提示词，或者在画布上框出至少一块。", "bad");
     nodes.prompt.focus();
     return;
+  }
+  if (nodes.latent.checked) {
+    // 引擎的组件会话只做纯文生图：混着底图/控制图进去只会得到一条报错。
+    if (refImage || editSources.length || controlAdapter) {
+      say("可续画只做文生图：先把底图、参考图、控制图去掉。", "bad");
+      return;
+    }
+    if (nodes.sampler.value !== "euler") {
+      say("可续画只支持 euler + moss。", "bad");
+      return;
+    }
   }
   submitting = true;
   nodes.generate.disabled = true;
@@ -1767,6 +1825,7 @@ async function onGenerate() {
   payload.sNoise = nodes.sNoise.value === "" ? 1 : Number(nodes.sNoise.value);
   if (nodes.dataspace.value.trim()) payload.dataspace = nodes.dataspace.value.trim();
   if (nodes.distill.value.trim()) payload.distill = nodes.distill.value.trim();
+  if (nodes.latent.checked) payload.mode = "latent";
   // 布局只传左上角坐标的框：中心坐标与 yxyx 排序由 readLayout 换算。
   if (layoutBoxes.length) {
     payload.boxes = layoutBoxes.map((item) => {

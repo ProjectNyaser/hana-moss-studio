@@ -209,6 +209,8 @@
     /* 编辑参考图：只是一个小标签，不占位置 */
     .pn-editref { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border: 1px dashed var(--ui-line); border-radius: 6px; font-size: 11px; color: var(--ui-text-2); min-width: 0; }
     .pn-editref .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pn-check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ui-text-2); }
+    .pn-check input { margin: 0; }
     .pn-editref .drop { flex: none; border: 0; background: transparent; color: var(--ui-text-3); cursor: pointer; padding: 0 2px; font: inherit; }
     .pn-editref .drop:hover { color: var(--danger); }
 
@@ -429,6 +431,16 @@
         <input id="pn-step-threshold" type="number" min="0.001" max="1" step="0.005" placeholder="模型默认 0.03">
       </label>
       <p class="hint" id="pn-accel-note" hidden>fbcache 跳过快稳定的 DiT 块：更快，但这张图会跟不加速的不同。阈值越大越快。</p>
+
+      <label class="pn-check">
+        <input id="pn-latent" type="checkbox">
+        <span>可续画</span>
+      </label>
+      <p class="hint" id="pn-latent-note" hidden>每一步的 latent 都落盘：取消或关掉之后能从断点接着跑。只做 euler + moss 的文生图，不搭底图/蒙版/控制图/参考图。</p>
+      <div class="pn-editref" id="pn-resume-row" hidden>
+        <span class="name" id="pn-resume-name"></span>
+        <button class="btn ghost small" id="pn-resume-go" type="button">接着画</button>
+      </div>
 
       <details class="pn-fold" id="pn-adv-sampling">
         <summary><svg class="ic"><use href="#i-sliders"/></svg>采样面<span class="hint" id="pn-adv-sampling-note">默认</span></summary>
