@@ -21,8 +21,9 @@ const nodes = {
   result: el("result"),
   resultImage: el("result-image"),
   resultCaption: el("result-caption"),
+  resultBar: el("result-bar"),
   canvasEmpty: el("canvas-empty"),
-  canvasLayout: el("canvas-layout"),
+  canvasBase: el("canvas-base"),
   lay: el("lay"),
   layInfo: el("lay-info"),
   layStage: el("lay-stage"),
@@ -46,6 +47,7 @@ const nodes = {
   baseImage: el("base-image"),
   baseMask: el("base-mask"),
   baseBrush: el("base-brush"),
+  baseBrushValue: el("base-brush-value"),
   baseBrushField: el("base-brush-field"),
   basePaint: el("base-paint"),
   baseErase: el("base-erase"),
@@ -178,8 +180,8 @@ let toastTimer = null;
  * 一句话提示。
  *
  * 直接在页面里调宿主：oh-releases 就是这么用的（ui/src/releases.js:679）。
- * 之前绕了一圈去请求自己的 /toast 路由、再由服务端调 sdk.ui.toast，
- * 那条路上 sdk.ui 属于 UI 侧能力，服务端手里未必是同一个通道。
+ * 不经过自己的 /toast 路由：那条路上 sdk.ui 属于 UI 侧能力，服务端手里未必
+ * 是同一个通道。
  *
  * type 取宿主认的三个值：info / success / warning。
  */
@@ -237,7 +239,7 @@ function renderStage(data) {
     dotClass = "dot err";
     label = "未找到 moss-server";
   } else if (!engine.running) {
-    label = "引擎未启动";
+    label = "空闲";
   } else if (engine.active) {
     dotClass = "dot busy";
     const active = engine.active;
@@ -276,7 +278,10 @@ function renderStage(data) {
   // 生成中才给一个明确的取消按钮，不做「点状态块就取消」那种隐式交互。
   nodes.stageCancel.hidden = !engine.active;
   nodes.stageChip.title = engine.lastError ?? "";
-  nodes.canvasMeta.textContent = `引擎 ${data.engine?.hello?.version ?? data.engines?.find((item) => item.current)?.version ?? "未安装"} · 协议 v${data.engine?.hello?.protocol_version ?? data.mossimage?.protocolVersion ?? "?"} · 记录 ${data.jobTotal ?? data.jobs.length} 条`;
+  // 协议版本对用户没有意义，留给日志；这里只说清楚引擎在不在、画过几张。
+  const engineVersion = data.engine?.hello?.version ?? data.engines?.find((item) => item.current)?.version ?? "未安装";
+  nodes.canvasMeta.textContent = `引擎 ${engineVersion} · ${data.jobTotal ?? data.jobs.length} 张`;
+  nodes.canvasMeta.title = `协议 v${data.engine?.hello?.protocol_version ?? data.mossimage?.protocolVersion ?? "?"}`;
 }
 
 
@@ -340,6 +345,8 @@ async function renderCanvas(data) {
   if (active) {
     nodes.canvasEmpty.hidden = true;
     nodes.result.hidden = false;
+    // 采样预览不是成品，那排动作（另存、删除…）此刻碰不得。
+    nodes.resultBar.hidden = true;
     if (active.previewAt && img.dataset.preview !== String(active.previewAt)) {
       img.dataset.preview = String(active.previewAt);
       img.src = previewUrl(active.previewAt);
@@ -367,11 +374,46 @@ async function renderCanvas(data) {
   }
   nodes.canvasEmpty.hidden = true;
   nodes.result.hidden = false;
+  nodes.resultBar.hidden = false;
   if (img.getAttribute("src") !== url) img.src = url;
   const seed = job.report?.seedUsed ?? job.seed;
   nodes.resultCaption.textContent = `${job.width}×${job.height} · ${job.steps} 步 · CFG ${job.cfg} · 种子 ${seed} · ${formatDuration(job.elapsedMs)}`;
   img.onclick = () => openViewer(job.id);
 }
+
+// 结果图底部那排动作：右键菜单里也有一份，这里让常用的那几个一眼就看到。
+function resultJob() {
+  const job = latest ? shownJob(latest) : null;
+  return job && job.status === "done" && job.output ? job : null;
+}
+
+async function saveResult(job) {
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = outputUrl(job.output);
+    anchor.download = job.output;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    toast(`已开始另存：${job.output}`);
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), "bad");
+  }
+}
+
+nodes.resultBar.addEventListener("click", (event) => {
+  const button = event.target.closest(".rb");
+  if (!button) return;
+  const job = resultJob();
+  if (!job) return;
+  const act = button.dataset.act;
+  if (act === "base") useAsReference(job);
+  else if (act === "ref") useAsEditReference(job);
+  else if (act === "reuse") loadJob(job);
+  else if (act === "view") openViewer(job.id);
+  else if (act === "save") void saveResult(job);
+  else if (act === "delete") void removeJob(job.id);
+});
 
 // ── 布局框选（主画布上）───────────────────────────────────────────────
 // 框选放在主画布：侧栏只有三百多像素，对不准构图。这一层只管「位置 + 每块写什么」，
@@ -882,6 +924,11 @@ function renderBaseBar() {
   nodes.baseMask.classList.toggle("painting", painting);
 }
 
+// 笔刷大小写出来：滑杆上的圆点看不出具体多少像素。
+nodes.baseBrush.addEventListener("input", () => {
+  nodes.baseBrushValue.textContent = nodes.baseBrush.value;
+});
+
 /** 已保存的蒙版是黑白图：直接叠上去看不清，按亮度换成红色半透明。 */
 function paintMaskOverlay(image) {
   const canvas = nodes.baseMask;
@@ -1144,19 +1191,25 @@ nodes.canvas.addEventListener("drop", async (event) => {
   }
 });
 
-nodes.canvasLayout.addEventListener("click", () => {
+// 选一张图进来后去哪儿：改图台，还是布局框选。同一个选图框，两种用途。
+let fileIntent = "layout";
+
+nodes.canvasBase.addEventListener("click", () => {
   showView("canvas");
-  openLayout();
-  // 没底图时直接把选图框拉起来：少点一步。
-  if (!lay.underlay) nodes.layFile.click();
+  fileIntent = "edit";
+  nodes.layFile.click();
 });
-nodes.layImport.addEventListener("click", () => nodes.layFile.click());
+nodes.layImport.addEventListener("click", () => {
+  fileIntent = "layout";
+  nodes.layFile.click();
+});
 nodes.layFile.addEventListener("change", async () => {
   const file = nodes.layFile.files?.[0];
   nodes.layFile.value = "";
   if (!file) return;
   try {
-    await setUnderlay(file);
+    if (fileIntent === "edit") await openEditSheet(file);
+    else await setUnderlay(file);
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), "error");
   }
@@ -1223,7 +1276,10 @@ nodes.baseLayout.addEventListener("click", () => {
   const hasUnderlay = Boolean(lay.underlay);
   closeEditSheet();
   openLayout();
-  if (!hasUnderlay) nodes.layFile.click();
+  if (!hasUnderlay) {
+    fileIntent = "layout";
+    nodes.layFile.click();
+  }
 });
 nodes.baseMask.addEventListener("pointerdown", (event) => {
   if (edit.mode === null) return;
@@ -1291,8 +1347,10 @@ layChannel?.addEventListener("message", (event) => {
   showView("canvas");
   const target = Number.isFinite(msg.index) ? lay.boxes[msg.index]?.id : undefined;
   openLayout(target);
-  if (!lay.underlay) nodes.layFile.click();
-  else if (target) nodes.layCaption.focus();
+  if (!lay.underlay) {
+    fileIntent = "layout";
+    nodes.layFile.click();
+  } else if (target) nodes.layCaption.focus();
 });
 
 // ── 画廊 ───────────────────────────────────────────────────────────────
@@ -1864,9 +1922,9 @@ function renderVersions(data) {
     : engine.serverFound
       ? "空闲（出图时自动启动）"
       : "未安装";
-  // 不需要手动启动：出图会自己拉起。只留一个「停止」给想立刻腾显存的人。
-  nodes.engineToggle.hidden = false;
-  nodes.engineToggle.textContent = engine.running ? "停止引擎" : "启动引擎";
+  // 引擎由出图流程拉起；这个按钮只管停。
+  nodes.engineToggle.hidden = !engine.running;
+  nodes.engineToggle.textContent = "停止引擎";
   nodes.engineToggle.disabled = false;
   nodes.engineRelease.hidden = !(engine.running && engine.loaded && !engine.active);
   const cublasError = engine.device?.cublaslt?.error;
@@ -2580,9 +2638,7 @@ nodes.tabs.addEventListener("click", (event) => {
   if (tab?.dataset.view) showView(tab.dataset.view);
 });
 nodes.engineToggle.addEventListener("click", () => {
-  // 引擎没起来时这个按钮就该是「启动」：之前它只会停，用户只能靠出图把引擎拉起来。
-  const running = Boolean(latest?.engine?.running);
-  void runSafe(() => post(running ? "/engine/stop" : "/engine/start"), running ? "停止" : "启动");
+  void runSafe(() => post("/engine/stop"), "停止");
 });
 nodes.engineRelease.addEventListener("click", () => {
   nodes.engineRelease.disabled = true;

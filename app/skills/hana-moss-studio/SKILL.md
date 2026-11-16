@@ -129,11 +129,11 @@ latent 是模型空间的 F32 `[128, h/16, w/16]`，与 ComfyUI 的 Flux2 `LATEN
 
 返回引擎是否在跑、模型是否加载、设备与显存、当前任务阶段与步进、队列长度、最近五条任务结局。调参前、出图失败后、怀疑引擎卡住时都该先看它。
 
-## 引擎里还没接的部分
+## 未包装的引擎能力
 
 - **conditioning 导入**（`conditioning_import`）：把外部算好的文本条件直接灌进去。苔室的文本编码一直在引擎里，没有需要复用的外部条件；`encode_text` 本身也很快（17 token 毫秒级）。
 
-## latent 级局部重绘（已接）
+## latent 级局部重绘
 
 `runLatentInpaint`，走 `POST /latent/inpaint` 或工具 `moss_latent` 的 `action=inpaint`。
 

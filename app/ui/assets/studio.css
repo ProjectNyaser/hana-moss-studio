@@ -604,7 +604,7 @@ body {
 .queue-card .qc-meta { font-size: 11px; color: var(--ui-text-3); }
 .queue-card .qc-bar { height: 3px; border-radius: 999px; background: var(--ui-line); overflow: hidden; }
 
-/* 进度条与百分比同一行：数字跟条一起收右，不会像之前那样一上一下。 */
+/* 进度条与百分比同一行，数字跟条一起收右。 */
 .queue-card .qc-bar-row {
   display: flex;
   align-items: center;
@@ -693,6 +693,63 @@ body {
   background: var(--ui-surface);
 }
 
+/* 图底那一排：动作就在眼前，不用去右键菜单里找。悬停才出，不挡画面。 */
+.result-shot {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.result-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%) translateY(6px);
+  display: flex;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-overlay-strong) 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ui-line) 70%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.result-shot:hover .result-bar,
+.result-bar:focus-within {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.rb {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1;
+  padding: 7px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.rb:hover { background: color-mix(in srgb, var(--ui-text) 14%, transparent); }
+.rb:active { background: color-mix(in srgb, var(--ui-text) 22%, transparent); }
+.rb.danger:hover { background: color-mix(in srgb, #e0574a 34%, transparent); }
+.rb[disabled] { opacity: 0.45; cursor: default; }
+
+@media (hover: none) {
+  .result-bar { opacity: 1; pointer-events: auto; transform: translateX(-50%); }
+}
+
 /* 采样中的那张：尺寸与结果图一致，只多一层柔化。 */
 .result img.preview { filter: blur(0.6px); }
 
@@ -714,15 +771,65 @@ body {
   flex-direction: column;
   gap: 6px;
   align-items: center;
+  width: 100%;
+  max-width: 100%;
 }
 
 .canvas-empty-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--ui-text-2);
+  letter-spacing: 0.01em;
 }
 
 .canvas-empty .hint { max-width: min(100%, 640px); text-wrap: pretty; }
+
+/* 空态三张卡：第一眼就把三条路摆出来，不用猜能干什么。 */
+.empty-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  /* 画布是 grid + place-content: center，百分比宽会退回 max-content，所以用定宽。 */
+  width: min(560px, 92vw);
+  margin-top: 12px;
+  text-align: left;
+}
+
+@media (max-width: 720px) {
+  .empty-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.empty-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: var(--ui-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.empty-card.ec-action {
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--ui-accent) 42%, var(--ui-line));
+  background: color-mix(in srgb, var(--ui-accent) 7%, var(--ui-surface));
+  transition: background 130ms ease, border-color 130ms ease, transform 130ms ease;
+}
+
+.empty-card.ec-action:hover {
+  background: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-surface));
+  border-color: var(--ui-accent);
+  transform: translateY(-1px);
+}
+
+.ec-title { font-size: 13px; color: var(--ui-text); font-weight: 600; }
+.ec-note { font-size: 11.5px; color: var(--ui-text-3); line-height: 1.6; text-wrap: pretty; }
+
+/* 空态里的按钮不再需要外边距，卡片本身就是点击面 */
+#canvas-layout { margin-top: 0; }
 
 /* ── 布局框选（在主画布上）──────────────────────────────────────── */
 /* 侧栏只有三百多像素，框选对不准构图；这一步放在主画布，宽高都够。 */
@@ -730,7 +837,6 @@ body {
 .canvas.dropping { outline: 2px dashed var(--ui-accent); outline-offset: -4px; }
 
 .canvas-empty-sub { font-size: 11px; opacity: 0.85; }
-#canvas-layout { margin-top: 6px; }
 
 .lay { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; background: var(--panel-card-bg); }
 .lay[hidden] { display: none; }

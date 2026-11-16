@@ -90,6 +90,7 @@ const nodes = {
   modelHint: el("pn-model-hint"),
   dit: el("pn-dit"),
   ditNote: el("pn-dit-note"),
+  modelFoldNote: el("pn-model-fold-note"),
   te: el("pn-te"),
   errors: el("pn-errors"),
   sampler: el("pn-sampler"),
@@ -161,7 +162,6 @@ const nodes = {
   editRefClear: el("pn-editref-clear"),
   refControls: el("pn-ref-controls"),
   release: el("pn-release"),
-  start: el("pn-start"),
   controlFold: el("pn-control-fold"),
   controlNote: el("pn-control-note"),
   controlAdapter: el("pn-control-adapter"),
@@ -1542,7 +1542,8 @@ function renderEngine(data) {
     dotClass = "dot err";
     label = "未找到 moss-server";
   } else if (!engine.running) {
-    label = "引擎未启动";
+    // 不写「未启动」：这易让人以为要先去点按钮。引擎是出图时自动拉起的。
+    label = "空闲 · 出图时自动启动";
   } else if (engine.active) {
     dotClass = "dot busy";
     const progress = engine.active.progress ?? {};
@@ -1556,8 +1557,6 @@ function renderEngine(data) {
   nodes.state.title = engine.lastError ?? "";
   // 显存只在「引擎在跑、模型已加载、没有任务」时才存在可释放的东西。
   nodes.release.hidden = !(engine.running && engine.loaded && !engine.active);
-  // 引擎没起来、但路径已经配好时给一个拉起入口（出图也会自动拉起）。
-  nodes.start.hidden = !(engine.serverFound && !engine.running);
 }
 
 /**
@@ -1636,6 +1635,12 @@ function renderModels(data) {
   nodes.ditNote.textContent =
     ditFile?.tier && ditFile.tier !== data?.settings?.tier ? `它只能跑 ${ditFile.tier} 档` : "";
   nodes.ditNote.title = ditFile?.path ?? "";
+  // 折叠起来的摘要：不展开也能看出现在跑的是哪套权重。
+  const tierNow = data?.settings?.tier ?? "reference";
+  const ditNow = ditFile ? shortDitName(ditFile.name) : "bundle 自带";
+  // 文件名里已经写了档位（INT4 ConvRot（turbo 档））就不重复一遍。
+  nodes.modelFoldNote.textContent = ditNow.includes(tierNow) ? ditNow : `${ditNow} · ${tierNow}`;
+  nodes.modelFoldNote.title = ditFile?.path ?? "bundle 自带的 bf16 DiT";
 
   // 文本编码器：bundle 自带的 bf16，或已装的 INT8 / W4A8。只影响显存占用。
   const tes = (data?.files ?? []).filter((item) => item.role === "text_encoder" && item.installed);
@@ -2459,20 +2464,6 @@ for (const node of [nodes.width, nodes.height]) {
 
 nodes.generate.addEventListener("click", onGenerate);
 nodes.cancel.addEventListener("click", onCancel);
-nodes.start.addEventListener("click", async () => {
-  nodes.start.disabled = true;
-  say("正在启动引擎…");
-  try {
-    const result = await post("/engine/start", {}, 120000);
-    say("引擎已启动。", "ok");
-    render(result);
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error), "bad");
-  } finally {
-    nodes.start.disabled = false;
-  }
-});
-
 nodes.release.addEventListener("click", async () => {
   nodes.release.disabled = true;
   say("正在把权重读回内存并释放显存…");

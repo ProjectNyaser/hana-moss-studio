@@ -25,14 +25,31 @@
     <section class="studio-view" id="view-canvas">
       <div class="canvas" id="canvas">
         <figure class="result" id="result" hidden>
-          <img id="result-image" alt="最近一次出图">
+          <div class="result-shot">
+            <img id="result-image" alt="最近一次出图">
+            <div class="result-bar" id="result-bar">
+              <button class="rb" type="button" data-act="base" title="当作图生图的底图（init image）">当底图</button>
+              <button class="rb" type="button" data-act="ref" title="喂给编辑适配器当参考图">当参考图</button>
+              <button class="rb" type="button" data-act="reuse" title="把这组参数送回侧栏">载入参数</button>
+              <button class="rb" type="button" data-act="view" title="全屏查看（←/→ 翻页）">全屏</button>
+              <button class="rb" type="button" data-act="save" title="另存一张到本地">另存</button>
+              <button class="rb danger" type="button" data-act="delete" title="删掉这张，连同它的记录">删除</button>
+            </div>
+          </div>
           <figcaption id="result-caption"></figcaption>
         </figure>
         <div class="canvas-empty" id="canvas-empty">
           <p class="canvas-empty-title">画布还空着</p>
-          <p class="hint">在左侧栏写下提示词，按「开始生成」。出图会落在这里，旧图收进「画廊」。</p>
-          <button class="btn small" id="canvas-layout" type="button">导入底图框选布局</button>
-          <p class="hint canvas-empty-sub">也可以直接把图拖进来：它当底图，在上面抹出要重画的地方就能改</p>
+          <div class="empty-grid">
+            <div class="empty-card">
+              <span class="ec-title">写提示词</span>
+              <span class="ec-note">左侧栏写画面，按开始生成</span>
+            </div>
+            <button class="empty-card ec-action" id="canvas-base" type="button">
+              <span class="ec-title">从底图开始</span>
+              <span class="ec-note">导入一张图：抹一块改，或者框几块重排</span>
+            </button>
+          </div>
         </div>
 
         <div class="lay" id="lay" hidden>
@@ -70,7 +87,8 @@
             <span class="base-info" id="base-info"></span>
             <span class="spacer"></span>
             <label class="base-brush" id="base-brush-field" hidden><span>笔刷</span>
-              <input id="base-brush" type="range" min="6" max="240" step="2" value="60"></label>
+              <input id="base-brush" type="range" min="6" max="240" step="2" value="60">
+              <span class="base-brush-value mono" id="base-brush-value">60</span></label>
             <button class="btn small" id="base-paint" type="button">画蒙版</button>
             <button class="btn small" id="base-erase" type="button" hidden>擦</button>
             <button class="btn small" id="base-mask-clear" type="button" hidden>清空</button>
