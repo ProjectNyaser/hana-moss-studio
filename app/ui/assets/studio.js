@@ -100,7 +100,7 @@ const nodes = {
   downloadAvailable: el("download-available"),
 };
 
-const views = ["canvas", "gallery", "queue", "versions"];
+const views = ["chat", "canvas", "gallery", "queue", "versions"];
 const imageCache = new Map();
 let latest = null;
 // 耗时锚点：{ at, ms }，每次后端推送更新，两次之间由定时器补差。
@@ -225,6 +225,7 @@ function showView(view) {
     if (section) section.hidden = name !== view;
   }
   if (view === "versions") void loadReleases();
+  if (view === "chat") renderChat(latest ?? {});
   if (view === "gallery" && !galleryJobs.length) void loadGallery(true);
   // 画廊在隐藏状态下 clientWidth 是 0，首次算出来的列数偏少；显出来后重排一次。
   if (view === "gallery" && galleryEntries.length) {
@@ -233,6 +234,69 @@ function showView(view) {
 }
 
 // ── 画布 ───────────────────────────────────────────────────────────────
+/** 会话流水：用户写的靠右，出的图靠左，旧在上新在下。 */
+function renderChat(data) {
+  const log = document.getElementById("chat-log");
+  if (!log) return;
+  const jobs = (Array.isArray(data?.jobs) ? data.jobs : [])
+    .filter((job) => job.status === "done" && job.output)
+    .slice()
+    .reverse();
+  if (!jobs.length) {
+    const empty = document.createElement("p");
+    empty.className = "chat-empty";
+    empty.textContent = "还没有消息。在下面写一句，出图会排在这里。";
+    log.replaceChildren(empty);
+    return;
+  }
+  const rows = [];
+  for (const job of jobs) {
+    const userRow = document.createElement("div");
+    userRow.className = "chat-row user";
+    const bubble = document.createElement("div");
+    bubble.className = "chat-bubble";
+    const text = document.createElement("p");
+    text.className = "chat-text";
+    text.textContent = job.prompt || "（无提示词）";
+    const meta = document.createElement("p");
+    meta.className = "chat-meta";
+    meta.textContent = `${job.width}×${job.height} · ${job.steps} 步 · CFG ${job.cfg} · ${job.sampler ?? "euler"}`;
+    bubble.append(text, meta);
+    userRow.append(bubble);
+
+    const botRow = document.createElement("div");
+    botRow.className = "chat-row bot";
+    const shot = document.createElement("div");
+    shot.className = "chat-shot";
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.alt = (job.prompt ?? "").slice(0, 40);
+    const url = loadThumb(job.output, 900);
+    if (url) img.src = url;
+    img.addEventListener("click", () => openViewer(job.id));
+    const acts = document.createElement("div");
+    acts.className = "chat-acts";
+    const again = document.createElement("button");
+    again.type = "button";
+    again.className = "chat-act";
+    again.textContent = "再生成";
+    again.title = "用这条的参数再来一张";
+    again.addEventListener("click", () => layChannel?.postMessage({ type: "reuse", job }));
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "chat-act";
+    edit.textContent = "改这张";
+    edit.title = "当底图，去画布抹一块重画";
+    edit.addEventListener("click", () => useAsReference(job));
+    acts.append(again, edit);
+    shot.append(img, acts);
+    botRow.append(shot);
+    rows.push(userRow, botRow);
+  }
+  log.replaceChildren(...rows);
+  log.scrollTop = log.scrollHeight;
+}
+
 function renderStage(data) {
   const { engine } = data;
   let dotClass = "dot";
@@ -1183,6 +1247,10 @@ function applyEditState(state) {
 
 // ── 底部输入区 ─────────────────────────────────────────────────────
 // 提示词与发送按钮在主界面；真正提交仍由侧栏那一侧完成，它拿着全部参数。
+// 输入框要跨页签常驻：把它从画布视图里提到 main 末尾。
+const composerHost = document.getElementById("composer");
+if (composerHost) document.querySelector("main")?.append(composerHost);
+
 const composer = {
   input: document.getElementById("composer-input"),
   negative: document.getElementById("composer-negative"),
@@ -3360,6 +3428,7 @@ function render(data) {
   renderStage(data);
   renderQueue(data);
   renderVersions(data);
+  renderChat(data);
   renderComposerModel();
   renderDownload(data);
   const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;

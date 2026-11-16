@@ -11,7 +11,8 @@
 <body>
   <main class="studio-column">
     <nav class="studio-tabs" id="studio-tabs" role="tablist">
-      <button class="studio-tab on" type="button" role="tab" data-view="canvas">画布</button>
+      <button class="studio-tab on" type="button" role="tab" data-view="chat">会话</button>
+      <button class="studio-tab" type="button" role="tab" data-view="canvas">画布</button>
       <button class="studio-tab" type="button" role="tab" data-view="gallery">画廊<span class="tab-count" id="tab-count"></span></button>
       <button class="studio-tab" type="button" role="tab" data-view="queue">队列<span class="tab-count" id="tab-queue"></span></button>
       <button class="studio-tab" type="button" role="tab" data-view="versions">版本</button>
@@ -22,7 +23,11 @@
     </nav>
     <div class="top-progress" id="top-progress" hidden><i id="top-progress-bar"></i></div>
 
-    <section class="studio-view" id="view-canvas">
+    <section class="studio-view" id="view-chat">
+      <div class="chat-log" id="chat-log"></div>
+    </section>
+
+    <section class="studio-view" id="view-canvas" hidden>
       <div class="canvas" id="canvas">
         <figure class="result" id="result" hidden>
           <div class="result-shot">
