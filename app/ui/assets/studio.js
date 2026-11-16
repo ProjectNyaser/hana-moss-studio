@@ -1263,6 +1263,9 @@ const SIZE_OPTIONS = [
   [1344, 768],
   [768, 1344],
   [1536, 640],
+  [1920, 1080],
+  [1080, 1920],
+  [1920, 1920],
 ];
 
 const STEP_OPTIONS = [8, 16, 20, 28, 40];
@@ -1440,21 +1443,29 @@ function renderPanelList(which, kind) {
     }
   } else if (kind === "size") {
     const defaults = latest?.settings?.defaults ?? {};
-    for (const [width, height] of SIZE_OPTIONS) {
+    const curW = Number(defaults.width ?? 1024);
+    const curH = Number(defaults.height ?? 1024);
+    // 当前尺寸不在预置里也要能看到自己：放到第一行，否则整列没有一项是选中的。
+    const options = SIZE_OPTIONS.some(([w, h]) => w === curW && h === curH)
+      ? SIZE_OPTIONS
+      : [[curW, curH], ...SIZE_OPTIONS];
+    for (const [width, height] of options) {
       items.push({
         text: `${width} × ${height}`,
-        selected: defaults.width === width && defaults.height === height,
+        selected: width === curW && height === curH,
         apply: () => saveDefaults({ width, height }),
       });
     }
   } else if (kind === "steps") {
     const current = Number(latest?.settings?.defaults?.steps ?? 20);
-    for (const steps of STEP_OPTIONS) {
+    const options = STEP_OPTIONS.includes(current) ? STEP_OPTIONS : [current, ...STEP_OPTIONS];
+    for (const steps of options) {
       items.push({ text: String(steps), selected: current === steps, apply: () => saveDefaults({ steps }) });
     }
   } else if (kind === "cfg") {
     const current = Number(latest?.settings?.defaults?.cfg ?? 3);
-    for (const cfg of CFG_OPTIONS) {
+    const options = CFG_OPTIONS.includes(current) ? CFG_OPTIONS : [current, ...CFG_OPTIONS];
+    for (const cfg of options) {
       items.push({ text: String(cfg), selected: current === cfg, apply: () => saveDefaults({ cfg }) });
     }
   }
