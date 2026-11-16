@@ -461,11 +461,23 @@
         <button class="btn ghost small" id="pn-mask-edit" type="button" hidden>画蒙版</button>
       </div>
       <p class="hint">图可以直接拖进来；也可以在作品区右键「用这张做底图」。拖到工作区画布上会落进改图台，直接在上面抹蒙版。</p>
-      <div class="pn-editref" id="pn-editref" hidden>
-        <span class="name" id="pn-editref-name"></span>
-        <button class="drop" id="pn-editref-clear" type="button" title="移除参考图">×</button>
-      </div>
       <input type="file" id="pn-ref-file" accept="image/*" hidden>
+    </div>
+
+    <div class="pn-block" id="pn-editref-block">
+      <div class="pn-head">
+        <span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>参考图</span>
+        <span class="hint" id="pn-editref-note">未选择</span>
+      </div>
+      <div class="pn-ref" id="pn-editref-thumb" hidden>
+        <img id="pn-editref-img" alt="参考图">
+        <button class="pn-ref-x" id="pn-editref-clear" type="button" title="移除参考图">×</button>
+      </div>
+      <div class="pn-install-actions">
+        <button class="btn ghost small" id="pn-editref-pick" type="button">选参考图</button>
+      </div>
+      <p class="hint">编辑适配器（Moss-Image-Edit 那类）的源图：它读这张按提示词重画。要 LoRA 列表里有编辑适配器才生效；图可以直接拖到这一块。</p>
+      <input type="file" id="pn-editref-file" accept="image/*" hidden>
     </div>
 
     <details class="pn-fold" id="pn-control-fold">

@@ -132,8 +132,11 @@ const nodes = {
   maskZoomIn: el("pn-mask-zoom-in"),
   maskZoomOut: el("pn-mask-zoom-out"),
   maskZoomLabel: el("pn-mask-zoom-label"),
-  editRef: el("pn-editref"),
-  editRefName: el("pn-editref-name"),
+  editRefThumb: el("pn-editref-thumb"),
+  editRefImg: el("pn-editref-img"),
+  editRefNote: el("pn-editref-note"),
+  editRefPick: el("pn-editref-pick"),
+  editRefFile: el("pn-editref-file"),
   editRefClear: el("pn-editref-clear"),
   refControls: el("pn-ref-controls"),
   release: el("pn-release"),
@@ -945,8 +948,10 @@ function applySharedSettings(settings) {
 }
 
 /** 编辑参考图：只记源图，到出手那一刻再按当时尺寸准备。 */
-async function setEditReference(url, name = "画廊图") {
+async function setEditReference(source, name = "画廊图") {
+  let url = null;
   try {
+    url = typeof source === "string" ? source : URL.createObjectURL(source);
     const image = new Image();
     await new Promise((resolve, reject) => {
       image.onload = resolve;
@@ -955,11 +960,19 @@ async function setEditReference(url, name = "画廊图") {
     });
     editSource = image;
     editRef = null;
-    nodes.editRef.hidden = false;
-    nodes.editRefName.textContent = `参考图：${name}`;
-    nodes.editRef.title = "需要 LoRA 列表里有编辑适配器（如 Moss-Image-Edit），它按这张图重画";
-    say("参考图已就绪：确认 LoRA 里有编辑适配器再跑。", "ok");
+    nodes.editRefThumb.hidden = false;
+    nodes.editRefImg.src = url;
+    nodes.editRefNote.textContent = `${name} · ${image.naturalWidth}×${image.naturalHeight}`;
+    nodes.editRefThumb.title = "需要 LoRA 列表里有编辑适配器（如 Moss-Image-Edit），它按这张图重画";
+    const blocked = !loras.some((item) => item.enabled !== false && /edit/i.test(String(item.path ?? "")));
+    say(
+      blocked
+        ? `参考图已就绪（${image.naturalWidth}×${image.naturalHeight}），但 LoRA 里没有编辑适配器，它还不会生效。`
+        : `参考图已就绪（${image.naturalWidth}×${image.naturalHeight}），配合提示词一起跑。`,
+      blocked ? "bad" : "ok",
+    );
   } catch (error) {
+    if (url && typeof source !== "string") URL.revokeObjectURL(url);
     say(error instanceof Error ? error.message : String(error), "bad");
   }
 }
@@ -967,8 +980,9 @@ async function setEditReference(url, name = "画廊图") {
 function clearEditReference() {
   editSource = null;
   editRef = null;
-  nodes.editRef.hidden = true;
-  nodes.editRefName.textContent = "";
+  nodes.editRefThumb.hidden = true;
+  nodes.editRefImg.removeAttribute("src");
+  nodes.editRefNote.textContent = "未选择";
 }
 
 // ── 控制适配器 ───────────────────────────────────────────────────────
@@ -2052,6 +2066,9 @@ window.addEventListener("dragover", (event) => {
   if (!carriesFiles(event)) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
+  // 落在「参考图」块上就是编辑适配器的源图，其余地方当底图。
+  const overRef = Boolean(event.target?.closest?.("#pn-editref-block"));
+  if (nodes.dropHint) nodes.dropHint.textContent = overRef ? "松手当作参考图" : "松手当作底图";
 });
 window.addEventListener("dragleave", (event) => {
   if (!carriesFiles(event)) return;
@@ -2061,6 +2078,7 @@ window.addEventListener("dragleave", (event) => {
 window.addEventListener("drop", async (event) => {
   if (!carriesFiles(event)) return;
   event.preventDefault();
+  const overRef = Boolean(event.target?.closest?.("#pn-editref-block"));
   hideDropHint();
   const files = Array.from(event.dataTransfer?.files ?? []);
   const file = files.find((item) => (item.type ? item.type.startsWith("image/") : /\.(png|jpe?g|webp|bmp|avif)$/i.test(item.name ?? "")));
@@ -2068,7 +2086,8 @@ window.addEventListener("drop", async (event) => {
     say("拖进来的不是图片（要 png / jpg / webp）。", "bad");
     return;
   }
-  await setReference(file);
+  if (overRef) await setEditReference(file, file.name);
+  else await setReference(file);
 });
 nodes.refFile.addEventListener("change", async () => {
   const file = nodes.refFile.files?.[0];
@@ -2077,6 +2096,12 @@ nodes.refFile.addEventListener("change", async () => {
 });
 nodes.refClear.addEventListener("click", () => clearReference());
 nodes.editRefClear.addEventListener("click", () => clearEditReference());
+nodes.editRefPick.addEventListener("click", () => nodes.editRefFile.click());
+nodes.editRefFile.addEventListener("change", async () => {
+  const file = nodes.editRefFile.files?.[0];
+  nodes.editRefFile.value = "";
+  if (file) await setEditReference(file, file.name);
+});
 nodes.refResize.addEventListener("change", async () => {
   if (!refImage) return;
   refPrepared = null;
