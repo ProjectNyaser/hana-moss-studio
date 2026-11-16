@@ -198,14 +198,95 @@
     .pn-fold[open] > summary::after { transform: rotate(90deg); }
     .pn-fold .fold-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
 
-    /* 生成按钮固定在侧栏底部，参数区滚动不影响它。 */
-    #pn-actions {
+    /* 底部输入区：附件芯片 + 提示词 + 一行工具 */
+    .pn-composer {
       flex: none;
-      margin-top: 0;
-      padding: 10px 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px 12px;
       border-top: 1px solid var(--ui-line);
       background: var(--ui-sidebar);
-      z-index: 5;
+    }
+    .pn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pn-chips[hidden] { display: none; }
+    .pn-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      padding: 3px 4px 3px 8px;
+      border: 1px solid var(--ui-line);
+      border-radius: 999px;
+      background: var(--ui-surface);
+      font-size: 11.5px;
+      color: var(--ui-text-2);
+    }
+    .pn-chip img { width: 20px; height: 20px; border-radius: 6px; object-fit: cover; flex: none; }
+    .pn-chip .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pn-chip .pn-chip-x {
+      flex: none;
+      border: 0;
+      background: transparent;
+      color: var(--ui-text-3);
+      font-size: 13px;
+      line-height: 1;
+      padding: 0 4px;
+      cursor: pointer;
+    }
+    .pn-chip .pn-chip-x:hover { color: var(--ui-text); }
+    #pn-prompt {
+      width: 100%;
+      box-sizing: border-box;
+      resize: none;
+      padding: 9px 11px;
+      border: 1px solid var(--ui-line);
+      border-radius: 12px;
+      background: var(--ui-surface);
+      color: var(--ui-text);
+      font: inherit;
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+    #pn-prompt:focus {
+      outline: none;
+      border-color: var(--ui-accent);
+      box-shadow: 0 0 0 3px var(--ui-tint);
+    }
+    .pn-tools { display: flex; align-items: center; gap: 6px; }
+    .pn-tool {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 26px;
+      padding: 0 9px;
+      border: 1px solid var(--ui-line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ui-text-2);
+      font: inherit;
+      font-size: 11.5px;
+      cursor: pointer;
+    }
+    .pn-tool:hover { background: var(--ui-overlay); color: var(--ui-text); }
+    .pn-tool[aria-expanded="false"] { color: var(--ui-text-3); }
+    .pn-model-mini {
+      max-width: 132px;
+      height: 26px;
+      padding: 0 6px;
+      border: 1px solid var(--ui-line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ui-text-2);
+      font: inherit;
+      font-size: 11.5px;
+    }
+    .pn-model-mini:disabled { opacity: 0.5; }
+    /* 点「参数」就把它滚到眼前，闪一下底色 */
+    .pn-block.pn-flash { animation: pn-flash 900ms ease; border-radius: 10px; }
+    @keyframes pn-flash {
+      0%, 100% { background: transparent; }
+      30% { background: var(--ui-tint); }
     }
 
     .pn-foot { flex: none; padding: 0 12px 8px; display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--ui-text-3); }
@@ -340,7 +421,7 @@
   </svg>
 
   <div class="pn" id="pn-root">
-    <div class="pn-body">
+    <div class="pn-body" id="pn-body">
     <div class="pn-block">
       <div class="pn-state">
         <span class="dot" id="pn-dot"></span>
@@ -349,17 +430,6 @@
                 title="把显存还给显卡，引擎留着：下次出图会自动重新加载">释放显存</button>
       </div>
       <p class="hint" id="pn-message" role="status"></p>
-    </div>
-
-    <div class="pn-block">
-      <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>提示词</span></div>
-      <label class="field">
-        <textarea id="pn-prompt" rows="4" placeholder="苔石上的一盏白兰花，晨雾，柔光，浅景深"></textarea>
-      </label>
-      <label class="field">
-        <span class="label">反向</span>
-        <textarea id="pn-negative" rows="2" placeholder="模糊，畸变，水印"></textarea>
-      </label>
     </div>
 
     <div class="pn-block">
@@ -604,14 +674,33 @@
       </div>
     </details>
 
+    <div class="pn-block">
+      <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>反向提示词</span></div>
+      <label class="field">
+        <textarea id="pn-negative" rows="2" placeholder="模糊，畸变，水印"></textarea>
+      </label>
+    </div>
+
     <div class="pn-foot">
       <span id="pn-errors"></span>
     </div>
     </div>
 
-    <div class="pn-row" id="pn-actions">
-      <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
-      <button class="btn ghost" id="pn-cancel" type="button" hidden>取消</button>
+    <div class="pn-composer" id="pn-composer">
+      <div class="pn-chips" id="pn-chips" hidden></div>
+      <textarea id="pn-prompt" rows="2" placeholder="描述画面，或者把图拖进来改"></textarea>
+      <div class="pn-tools">
+        <button class="pn-tool" id="pn-add-image" type="button" title="加一张图（当底图或参考图）">
+          <svg class="ic"><use href="#i-image"/></svg>
+        </button>
+        <button class="pn-tool" id="pn-params-toggle" type="button" aria-expanded="true" title="画幅、步数、采样与模型">
+          <svg class="ic"><use href="#i-sliders"/></svg><span id="pn-params-note">参数</span>
+        </button>
+        <span class="spacer"></span>
+        <select class="pn-model-mini" id="pn-model-mini" title="模型"></select>
+        <button class="btn primary small" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>生成</button>
+        <button class="btn ghost small" id="pn-cancel" type="button" hidden>取消</button>
+      </div>
     </div>
   </div>
 

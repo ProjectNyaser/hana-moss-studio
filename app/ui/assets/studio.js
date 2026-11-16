@@ -37,6 +37,7 @@ const nodes = {
   laySize: el("lay-size"),
   layRemove: el("lay-remove"),
   layImport: el("lay-import"),
+  layBase: el("lay-base"),
   layClear: el("lay-clear"),
   layClose: el("lay-close"),
   layFile: el("lay-file"),
@@ -515,6 +516,17 @@ function renderLayBoxes() {
     const box = document.createElement("div");
     box.className = "lay-box" + (item.id === lay.selected ? " on" : "");
     box.dataset.id = item.id;
+    box.addEventListener("dblclick", (event) => {
+      event.stopPropagation();
+      startInlineLayEdit(box, item);
+    });
+    box.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      lay.selected = item.id;
+      renderLayBoxes();
+      openLayBoxMenu(event, item);
+    });
     box.style.left = `${(x0 / size.width) * 100}%`;
     box.style.top = `${(y0 / size.height) * 100}%`;
     box.style.width = `${((x1 - x0) / size.width) * 100}%`;
@@ -563,8 +575,85 @@ function syncLayoutToPanel() {
   });
 }
 
-const LAYOUT_KEY = "hana-moss-studio:layout";
+/** 框上直接改字：双击就能写，Enter 落定，Esc 退出。 */
+function startInlineLayEdit(box, item) {
+  if (!box || box.querySelector(".lay-edit")) return;
+  const area = document.createElement("textarea");
+  area.className = "lay-edit";
+  area.value = item.caption || item.text || "";
+  area.placeholder = "这块画什么";
+  box.appendChild(area);
+  area.focus();
+  area.select();
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    if (save) {
+      item.caption = area.value.trim();
+      lay.selected = item.id;
+    }
+    renderLayBoxes();
+    renderLayInfo();
+  };
+  area.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  area.addEventListener("blur", () => finish(true));
+  area.addEventListener("pointerdown", (event) => event.stopPropagation());
+  area.addEventListener("dblclick", (event) => event.stopPropagation());
+}
 
+/** 复制一块：位置错开一点，方便成对摆。 */
+function duplicateLayBox(id) {
+  const source = lay.boxes.find((item) => item.id === id);
+  if (!source) return;
+  const [x0, y0, x1, y1] = source.box;
+  const size = layoutCanvasSize();
+  const shift = Math.round(Math.min(size.width, size.height) * 0.02);
+  const box = [x0 + shift, y0 + shift, x1 + shift, y1 + shift].map((value, index) =>
+    Math.max(0, Math.min(index % 2 === 0 ? size.width : size.height, value)),
+  );
+  lay.seq += 1;
+  const copy = { id: `b${lay.seq}`, label: source.label, caption: source.caption, text: source.text, box };
+  lay.boxes.push(copy);
+  lay.selected = copy.id;
+  renderLayBoxes();
+  renderLayInfo();
+}
+
+function openLayBoxMenu(event, item) {
+  showMenu(event, [
+    {
+      label: "改文字",
+      run: () => {
+        const box = nodes.layBoxes.querySelector(`.lay-box[data-id="${item.id}"]`);
+        startInlineLayEdit(box, item);
+      },
+    },
+    { label: "复制一块", run: () => duplicateLayBox(item.id) },
+    {
+      label: "清空文字",
+      run: () => {
+        item.caption = "";
+        item.text = "";
+        renderLayBoxes();
+        renderLayInfo();
+      },
+    },
+    { sep: true },
+    { label: "删除这块", danger: true, run: () => removeLayBox(item.id) },
+  ]);
+}
+
+const LAYOUT_KEY = "hana-moss-studio:layout";
 /** 框存本地：刷新、重装都不该把画好的框弄丢。存百分比，换画幅也不会偏。 */
 function saveLayoutLocal() {
   try {
@@ -607,6 +696,8 @@ function restoreLayoutLocal() {
         box: [box[0] * size.width, box[1] * size.height, box[2] * size.width, box[3] * size.height].map((value) => Math.round(value)),
       };
     });
+    // 不说一句的话，重开 App 后画布上凭空多出几个框，像是界面自己乱画的。
+    toast(`上次的 ${lay.boxes.length} 个框还在，工具条上「清空框」可以全部去掉`);
   } catch {
     /* 坏了当没有 */
   }
@@ -863,6 +954,8 @@ function pinLayoutRatio() {
 const edit = {
   open: false,
   url: null,
+  /** 底图的原始 File：布局与改图台之间切来切去不用重选。 */
+  file: null,
   name: "",
   width: 0,
   height: 0,
@@ -995,6 +1088,8 @@ async function openEditSheet(file) {
     if (edit.url) URL.revokeObjectURL(edit.url);
     edit.url = url;
     edit.name = file.name || "底图";
+    // 留着这份 File：从布局切回「抹蒙版」时不用再选一次图。
+    edit.file = file;
     edit.width = image.naturalWidth;
     edit.height = image.naturalHeight;
     edit.share = 0;
@@ -1204,6 +1299,16 @@ nodes.canvasBase.addEventListener("click", () => {
 nodes.layImport.addEventListener("click", () => {
   fileIntent = "layout";
   nodes.layFile.click();
+});
+// 布局与改图台不共存，但底图是同一张：切回去只多一步点击，不用重传图。
+nodes.layBase.addEventListener("click", () => {
+  if (!edit.file) {
+    toast("先用「换底图」选一张，再抹蒙版");
+    return;
+  }
+  void openEditSheet(edit.file).catch((error) => {
+    toast(error instanceof Error ? error.message : String(error), "error");
+  });
 });
 nodes.layFile.addEventListener("change", async () => {
   const file = nodes.layFile.files?.[0];
@@ -2431,7 +2536,12 @@ function openMenu(event, job) {
     danger: true,
     run: () => removeJob(job.id),
   });
+  showMenu(event, items);
+}
 
+/** 上下文菜单的渲染与贴边定位：图片和布局框共用这一份。 */
+function showMenu(event, items) {
+  const menu = nodes.ctxMenu;
   menu.replaceChildren(
     ...items.map((item) => {
       if (item.sep) {

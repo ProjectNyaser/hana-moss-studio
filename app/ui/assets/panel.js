@@ -87,6 +87,7 @@ const nodes = {
   tier: el("pn-tier"),
   model: el("pn-model"),
   modelField: el("pn-model-field"),
+  modelMini: el("pn-model-mini"),
   modelHint: el("pn-model-hint"),
   dit: el("pn-dit"),
   ditNote: el("pn-dit-note"),
@@ -141,6 +142,10 @@ const nodes = {
   strength: el("pn-strength"),
   maskEdit: el("pn-mask-edit"),
   latentInpaint: el("pn-latent-inpaint"),
+  chips: el("pn-chips"),
+  paramsToggle: el("pn-params-toggle"),
+  paramsNote: el("pn-params-note"),
+  addImage: el("pn-add-image"),
   mask: el("pn-mask"),
   maskInfo: el("pn-mask-info"),
   maskStage: el("pn-mask-stage"),
@@ -501,6 +506,8 @@ function renderSize() {
     ? `${width}×${height}${scaleLabel} → ${finalW}×${finalH} · ${finalMP.toFixed(2)}MP`
     : `${width}×${height} · ${finalMP.toFixed(2)}MP`;
   nodes.sizeNote.className = base.adjusted ? "hint bad" : "hint";
+  // 输入框下方那颗「参数」报当前尺寸，不展开也知道会出多大的图。
+  nodes.paramsNote.textContent = `${finalW}×${finalH}`;
 
   // 容器还没撑开（切视图的中间帧）时，下一帧再量一次就够，
   // 不能在这里递归自己：宽度一直是 0 的话会每帧重跑一遍整块渲染。
@@ -925,6 +932,7 @@ function updateRefNote() {
     // 没参考图时重绘强度与适配无处可用，不摆在那里让用户以为它们会生效。
     nodes.refControls.hidden = true;
     broadcastEditState();
+    renderComposer();
     return;
   }
   const size = `${refPrepared.width}×${refPrepared.height}`;
@@ -935,6 +943,62 @@ function updateRefNote() {
   nodes.latentInpaint.hidden = !(maskPath && refPrepared.width % 16 === 0 && refPrepared.height % 16 === 0);
   nodes.refControls.hidden = false;
   broadcastEditState();
+  renderComposer();
+}
+
+/** 底部输入区的附件芯片：这次请求带了什么图，一眼看得到，点 × 就去掉。 */
+function renderComposer() {
+  const chips = [];
+  if (refPrepared) {
+    chips.push({
+      label: `底图 ${refPrepared.width}×${refPrepared.height}`,
+      url: refPrepared.url,
+      drop: () => clearReference(),
+    });
+  }
+  if (maskPath) {
+    chips.push({
+      label: maskShare ? `蒙版 ${Math.round(maskShare * 100)}%` : "蒙版",
+      drop: () => {
+        maskPath = null;
+        maskBlob = null;
+        maskShare = 0;
+        updateRefNote();
+      },
+    });
+  }
+  editSources.forEach((item, index) => {
+    chips.push({
+      label: `参考 ${index + 1}`,
+      url: item.url,
+      drop: () => removeEditReference(index),
+    });
+  });
+  nodes.chips.replaceChildren(
+    ...chips.map((chip) => {
+      const row = document.createElement("span");
+      row.className = "pn-chip";
+      if (chip.url) {
+        const image = document.createElement("img");
+        image.src = chip.url;
+        image.alt = "";
+        row.appendChild(image);
+      }
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = chip.label;
+      row.appendChild(name);
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "pn-chip-x";
+      close.textContent = "×";
+      close.title = "去掉";
+      close.addEventListener("click", () => chip.drop());
+      row.appendChild(close);
+      return row;
+    }),
+  );
+  nodes.chips.hidden = chips.length === 0;
 }
 
 async function setReference(blobOrUrl) {
@@ -1059,6 +1123,7 @@ function renderEditRefs() {
     }),
   );
   nodes.editRefNote.textContent = editSources.length ? `${editSources.length} 张` : "未选择";
+  renderComposer();
 }
 
 function removeEditReference(index) {
@@ -1596,6 +1661,12 @@ function renderModels(data) {
     }
     nodes.model.disabled = !models.length;
     nodes.model.value = models.length && current ? current.variant : nodes.model.value;
+    // 输入框旁的小选择器跟参数区那格同源。
+    nodes.modelMini.replaceChildren(
+      ...Array.from(nodes.model.options).map((option) => new window.Option(option.textContent, option.value)),
+    );
+    nodes.modelMini.disabled = !models.length;
+    nodes.modelMini.value = nodes.model.value;
   // 自管清单：没装整包时「模型」这一格没有意义（两个仓库的配置与分词器相同），直接收起来。
   nodes.modelField.hidden = !models.length;
   // 轻量包（只有配置与分词器）：模型差异全在 DiT 权重里。
@@ -2178,7 +2249,12 @@ nodes.tier.addEventListener("change", async () => {
 });
 
 // 切模型：只改设置，引擎下次 load 时按新目录读；已加载的缓存由服务端作废。
+nodes.modelMini.addEventListener("change", () => {
+  nodes.model.value = nodes.modelMini.value;
+  nodes.model.dispatchEvent(new window.Event("change"));
+});
 nodes.model.addEventListener("change", async () => {
+  nodes.modelMini.value = nodes.model.value;
   const variant = nodes.model.value;
   if (!variant) return;
   try {
@@ -2337,6 +2413,21 @@ nodes.refFile.addEventListener("change", async () => {
   if (file) await setReference(file);
 });
 nodes.refClear.addEventListener("click", () => clearReference());
+// 还没有底图时，加进来的第一张就是底图；已经有了就追加成参考图。
+nodes.addImage.addEventListener("click", () => {
+  if (refPrepared) nodes.editRefFile.click();
+  else nodes.refFile.click();
+});
+// 「参数」把人带到画幅那一栏，闪一下底让他们看清落在哪。
+nodes.paramsToggle.addEventListener("click", () => {
+  const block = document.getElementById("pn-size-note")?.closest(".pn-block");
+  if (!block) return;
+  block.scrollIntoView({ block: "start", behavior: "smooth" });
+  block.classList.remove("pn-flash");
+  void block.offsetWidth;
+  block.classList.add("pn-flash");
+  setTimeout(() => block.classList.remove("pn-flash"), 900);
+});
 nodes.editRefClear.addEventListener("click", () => clearEditReference());
 nodes.editRefPick.addEventListener("click", () => nodes.editRefFile.click());
 nodes.editRefFile.addEventListener("change", async () => {
