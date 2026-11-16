@@ -108,6 +108,8 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 |---|---|
 | `action` | `run` 新开一次；`resume` 从断点接着跑；`list` 列断点；`encode` PNG → latent；`decode` latent → PNG |
 | `batch` | 一次出 1~4 张（缺省 1）。2 张以上走 host guidance，种子逐张 +1；断点里的张数要与这次一致才能续 |
+| `imagePath` + `maskPath` | `action=inpaint` 用：底图与蒙版（白处重画），两张同尺寸且是 16 的倍数 |
+| `strength` | inpaint 的重画幅度（缺省 0.6，1 = 这块从噪声重画） |
 | `prompt` / `negativePrompt` / `width` / `height` / `steps` / `cfg` / `shift` / `seed` | 同 `moss_generate`。`resume` 时用断点里的值 |
 | `checkpointId` | `resume` 用：断点 id（就是任务 id）或 meta 文件绝对路径 |
 | `imagePath` | `encode` 用：PNG 路径，尺寸要是 16 的倍数 |
@@ -129,8 +131,20 @@ latent 是模型空间的 F32 `[128, h/16, w/16]`，与 ComfyUI 的 Flux2 `LATEN
 
 ## 引擎里还没接的部分
 
-- **crop 调用**（`MI_RUN_CROPS`）：它是分块计算，不是「任意位置局部重绘」——块的位置由客户端裁好 latent 写进槽位、再用 `shape` 声明尺寸，所以要做的是裁 latent → 跑 → 贴回。现在的高分辨率局部重绘用的是底图 + 蒙版（像素级），效果接近但不如 latent 级保真。
 - **conditioning 导入**（`conditioning_import`）：把外部算好的文本条件直接灌进去。苔室的文本编码一直在引擎里，没有需要复用的外部条件；`encode_text` 本身也很快（17 token 毫秒级）。
+
+## latent 级局部重绘（已接）
+
+`runLatentInpaint`，走 `POST /latent/inpaint` 或工具 `moss_latent` 的 `action=inpaint`。
+
+做法：底图先 `vae_encode` 成全图 latent，蒙版按 16 像素网格取包围盒，然后每一步只把这块裁成 `[128, ch, cw]` 写进槽位、用 `shape` 声明尺寸跑，输出去 CFG 合完再积分贴回。
+
+两条硬约束：
+
+- crop 调用必须用 `guidance: "host"`，MOSS guidance 下引擎直接报 `invalid_argument`。
+- 尺寸要是 16 的倍数，蒙版与底图同尺寸。
+
+保真度：区域内外不是像素级严格封口。实测 256² + 中心 64² 蒙版，区域内平均差 14.2，区域外 1.96（VAE 解码的全局注意力会扩散一点）。换来的是区域**不经过 VAE 往返**，与像素级 inpainting 是两条路。
 
 ## 三条硬边界
 
