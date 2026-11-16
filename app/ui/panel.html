@@ -287,7 +287,7 @@
     }
     .pn-tier-mini:disabled { opacity: 0.5; }
     .pn-tier-mini[hidden] { display: none; }
-    /* 模型与精度合成一格：窄侧栏里最占地方的是两串名称。 */
+    /* 模型与精度合成一格，做成无框文字：字号跟输入框一致，不抢镜头。 */
     .pn-model-chip {
       display: inline-flex;
       align-items: center;
@@ -296,11 +296,11 @@
       min-width: 0;
       max-width: 150px;
       height: 26px;
-      padding: 0 9px;
-      border: 1px solid var(--ui-line);
-      border-radius: 999px;
+      padding: 0 6px;
+      border: 0;
+      border-radius: 8px;
       background: transparent;
-      color: var(--ui-text-2);
+      color: var(--ui-text-3);
       font: inherit;
       font-size: 11.5px;
       cursor: pointer;

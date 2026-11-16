@@ -3026,3 +3026,20 @@ async function boot() {
 }
 
 void boot();
+
+// 装机后旧页面不会自己长出新代码：构建号变了就刷一次。
+void (async () => {
+  try {
+    const response = await fetch("./build.json", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    const stamp = String(data?.stamp ?? "");
+    if (!stamp) return;
+    const key = "hana-moss-studio:build:studio";
+    const seen = localStorage.getItem(key);
+    localStorage.setItem(key, stamp);
+    if (seen && seen !== stamp) location.reload();
+  } catch {
+    /* 没有这个文件就当没有这回事 */
+  }
+})();

@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,6 +28,10 @@ const out = join(repoRoot, "build", manifest.id);
 
 rmSync(join(repoRoot, "build"), { recursive: true, force: true });
 cpSync(source, out, { recursive: true });
+
+// 页面靠这个文件判定「装的是不是新构建」：变了就自己刷一次，
+// 不用用户手动找刷新按钮——iframe 里的旧 DOM 不会自己长出新代码。
+writeFileSync(join(out, "ui", "build.json"), JSON.stringify({ stamp: Date.now() }, null, 0));
 
 console.log(`打包完成：${out}`);
 console.log(`${manifest.name}（${manifest.id}）v${manifest.version}`);
