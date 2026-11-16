@@ -810,20 +810,22 @@ export default defineApp(async (sdk) => {
 
   function slimJob(job) {
     if (!job || typeof job !== "object") return job;
+    // 记录有两种存法：早期是扁平字段，后来是 params 里一层，两边都要认。
+    const p = job.params ?? {};
     return {
       id: job.id,
       cardId: cardIdOf(job.id),
-      prompt: job.caption ?? job.prompt,
-      negativePrompt: job.negativePrompt ?? "",
-      width: job.width,
-      height: job.height,
-      steps: job.steps,
-      cfg: job.cfg,
+      prompt: job.caption ?? job.prompt ?? p.prompt,
+      negativePrompt: job.negativePrompt ?? p.negativePrompt ?? "",
+      width: job.width ?? p.width,
+      height: job.height ?? p.height,
+      steps: job.steps ?? p.steps,
+      cfg: job.cfg ?? p.cfg,
       // 高清修正开着时引擎总步数会多出第二阶段，界面要能解释这个差额。
-      hiresScale: job.hiresScale ?? 0,
-      sampler: job.sampler ?? null,
-      scheduler: job.scheduler ?? null,
-      shift: job.shift ?? null,
+      hiresScale: job.hiresScale ?? p.hiresScale ?? 0,
+      sampler: job.sampler ?? p.sampler ?? null,
+      scheduler: job.scheduler ?? p.scheduler ?? null,
+      shift: job.shift ?? p.shift ?? null,
       stepCache: job.stepCache ?? "off",
       loras: Array.isArray(job.loras) ? job.loras : [],
       control: job.control ? { kind: job.control.kind ?? null, images: job.control.images?.length ?? 0 } : null,
