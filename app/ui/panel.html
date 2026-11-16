@@ -199,14 +199,17 @@
     .pn-fold .fold-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
 
     /* 底部输入区：附件芯片 + 提示词 + 一行工具 */
+    /* 整个输入区是一张圆角卡片：输入框、附件、工具行都在里面，跟侧栏背景分开。 */
     .pn-composer {
       flex: none;
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      padding: 10px 12px 12px;
-      border-top: 1px solid var(--ui-line);
-      background: var(--ui-sidebar);
+      gap: 6px;
+      margin: 8px 10px 10px;
+      padding: 8px 8px 6px;
+      border: 1px solid var(--ui-line);
+      border-radius: 16px;
+      background: var(--ui-surface);
       container-type: inline-size;
     }
 
@@ -241,10 +244,10 @@
       width: 100%;
       box-sizing: border-box;
       resize: none;
-      padding: 9px 11px;
-      border: 1px solid var(--ui-line);
-      border-radius: 12px;
-      background: var(--ui-surface);
+      padding: 6px 6px 2px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
       color: var(--ui-text);
       font: inherit;
       font-size: 12.5px;
@@ -252,8 +255,6 @@
     }
     #pn-prompt:focus {
       outline: none;
-      border-color: var(--ui-accent);
-      box-shadow: 0 0 0 3px var(--ui-tint);
     }
     .pn-tools { display: flex; align-items: center; gap: 6px; }
     .pn-tool {
@@ -323,11 +324,23 @@
       background: var(--ui-accent);
       color: #fff;
       cursor: pointer;
+      /* 这个圆里只应该有图标：字号抹零，任何逸出的文字都不显示。 */
+      font-size: 0;
+      line-height: 0;
+      overflow: hidden;
       transition: filter 120ms var(--ui-ease);
     }
     .pn-send:hover { filter: brightness(1.07); }
     .pn-send:disabled { opacity: 0.5; cursor: default; }
-    .pn-send .ic { width: 15px; height: 15px; opacity: 1; stroke-width: 1.9; }
+    /* 箭头用伪元素画：不依赖 SVG symbol 与 use，尺寸也不会被字号带偏。 */
+    .pn-send::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-top: 2px solid currentColor;
+      border-right: 2px solid currentColor;
+      transform: translateY(1px) rotate(-45deg);
+    }
 
     /* 窄侧栏：模型格子收紧，四个控件都塞得进一行。
        这条必须放在组件规则之后，否则同优先级的 max-width 会被后面的大值盖掉。 */
@@ -760,7 +773,7 @@
         <span class="spacer"></span>
         <select class="pn-tier-mini" id="pn-tier-mini" title="精度档：turbo 最快、high 居中、reference 最准" hidden></select>
         <button class="pn-model-chip" id="pn-model-chip" type="button" title="模型与精度档：点了去参数区"></button>
-        <button class="pn-send" id="pn-generate" type="button" title="生成"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
+        <button class="pn-send" id="pn-generate" type="button" title="生成"></button>
         <button class="btn ghost small" id="pn-cancel" type="button" hidden>取消</button>
       </div>
     </div>
