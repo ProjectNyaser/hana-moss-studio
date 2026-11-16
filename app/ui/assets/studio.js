@@ -1244,6 +1244,17 @@ function pushExtras() {
 composer.negative?.addEventListener("input", pushExtras);
 composer.seed?.addEventListener("input", pushExtras);
 
+// 反向提示词与种子默认收起，需要时再展开。
+const extraBox = document.getElementById("composer-extra");
+const moreBtn = document.getElementById("composer-more");
+moreBtn?.addEventListener("click", () => {
+  if (!extraBox) return;
+  const open = extraBox.hidden;
+  extraBox.hidden = !open;
+  moreBtn.hidden = open;
+  if (open) (composer.negative ?? composer.seed)?.focus();
+});
+
 composer.send?.addEventListener("click", sendCompose);
 
 // 底图与参考图都是「加图」，合在加号那张菜单里。
@@ -1717,6 +1728,14 @@ function renderComposerModel() {
   }
   if (composer.seed && document.activeElement !== composer.seed) {
     composer.seed.value = defaults.seed != null && defaults.seed !== "" ? String(defaults.seed) : "";
+  }
+  // 已经有值时把这一行展开，不能让内容藏着看不见。
+  if (extraBox && moreBtn) {
+    const used = Boolean((defaults.negativePrompt ?? "").trim()) || (defaults.seed != null && defaults.seed !== "");
+    if (used && extraBox.hidden) {
+      extraBox.hidden = false;
+      moreBtn.hidden = true;
+    }
   }
   renderCpop();
 }
