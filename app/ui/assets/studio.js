@@ -1256,17 +1256,52 @@ const TIER_OPTIONS = [
   ["reference", "reference", "最准"],
 ];
 
-const SIZE_OPTIONS = [
-  [1024, 1024],
-  [1216, 832],
-  [832, 1216],
-  [1344, 768],
-  [768, 1344],
-  [1536, 640],
-  [1920, 1080],
-  [1080, 1920],
-  [1920, 1920],
+// 尺寸分两级：先选比例，再选这比例下的分辨率。
+const RATIOS = [
+  ["1:1", 1, 1],
+  ["3:2", 3, 2],
+  ["2:3", 2, 3],
+  ["16:9", 16, 9],
+  ["9:16", 9, 16],
+  ["4:3", 4, 3],
+  ["3:4", 3, 4],
 ];
+
+const SIZE_TABLE = {
+  "1:1": [[1024, 1024], [1536, 1536], [1920, 1920]],
+  "3:2": [[1216, 832], [1536, 1024], [1824, 1216]],
+  "2:3": [[832, 1216], [1024, 1536], [1216, 1824]],
+  "16:9": [[1280, 720], [1536, 864], [2048, 1152]],
+  "9:16": [[720, 1280], [864, 1536], [1152, 2048]],
+  "4:3": [[1152, 864], [1408, 1056], [1600, 1200]],
+  "3:4": [[864, 1152], [1056, 1408], [1200, 1600]],
+};
+
+/** 当前尺寸属于哪个比例：取最接近的一档。 */
+function ratioOf(width, height) {
+  if (!width || !height) return "1:1";
+  const value = width / height;
+  let best = RATIOS[0][0];
+  let diff = Infinity;
+  for (const [id, rw, rh] of RATIOS) {
+    const d = Math.abs(rw / rh - value);
+    if (d < diff) {
+      diff = d;
+      best = id;
+    }
+  }
+  return best;
+}
+
+/** 当前 DiT 只支持某一档时返回它，bundle 自带则为空。 */
+function ditLimit() {
+  const target = latest?.settings?.modelFiles?.dit;
+  if (!target) return null;
+  const file = (Array.isArray(latest?.files) ? latest.files : []).find(
+    (item) => item.role === "dit" && item.installed && item.target === target,
+  );
+  return file?.tier ?? null;
+}
 
 const STEP_OPTIONS = [8, 16, 20, 28, 40];
 const CFG_OPTIONS = [1, 2, 3, 4, 6];
@@ -1321,7 +1356,9 @@ composer.params?.addEventListener("click", (event) => {
 for (const which of Object.keys(panels)) {
   panels[which].back?.addEventListener("click", (event) => {
     event.stopPropagation();
-    panels[which].view = "root";
+    const panel = panels[which];
+    // 分辨率退到比例，比例退到一层。
+    panel.view = panel.view.startsWith("size:") ? "ratio" : "root";
     renderPanel(which);
   });
 }
@@ -1411,7 +1448,7 @@ function renderPanelRoot(which) {
     return;
   }
   panel.body.replaceChildren(
-    panelRow(which, "尺寸", `${defaults.width ?? 1024} × ${defaults.height ?? 1024}`, "size"),
+    panelRow(which, "尺寸", `${defaults.width ?? 1024} × ${defaults.height ?? 1024}`, "ratio"),
     panelRow(which, "步数", String(defaults.steps ?? 20), "steps"),
     panelRow(which, "CFG", String(defaults.cfg ?? 3), "cfg"),
   );
@@ -1420,12 +1457,12 @@ function renderPanelRoot(which) {
 function renderPanelList(which, kind) {
   const panel = panels[which];
   if (!panel?.body) return;
-  const titles = { model: "模型", tier: "精度档", size: "尺寸", steps: "步数", cfg: "CFG" };
+  const titles = { model: "模型", tier: "精度档", steps: "步数", cfg: "CFG" };
   if (panel.head) panel.head.hidden = false;
   if (panel.back) panel.back.hidden = false;
   if (panel.title) {
     panel.title.hidden = false;
-    panel.title.textContent = titles[kind] ?? "";
+    panel.title.textContent = kind === "ratio" ? "比例" : kind.startsWith("size:") ? `${kind.slice(5)} 的分辨率` : (titles[kind] ?? "");
   }
   const items = [];
   if (kind === "model") {
@@ -1438,18 +1475,42 @@ function renderPanelList(which, kind) {
     }
   } else if (kind === "tier") {
     const current = latest?.settings?.tier ?? "reference";
+    const limit = ditLimit();
     for (const [value, text, note] of TIER_OPTIONS) {
-      items.push({ text, note, selected: current === value, apply: () => setTier(value) });
+      const allowed = !limit || value === limit;
+      items.push({
+        text,
+        note: allowed ? note : "当前 DiT 不支持",
+        selected: current === value,
+        disabled: !allowed,
+        apply: () => setTier(value),
+      });
     }
-  } else if (kind === "size") {
+  } else if (kind === "ratio") {
+    const defaults = latest?.settings?.defaults ?? {};
+    const current = ratioOf(Number(defaults.width), Number(defaults.height));
+    for (const [id] of RATIOS) {
+      items.push({
+        text: id,
+        selected: id === current,
+        keep: true,
+        apply: () => {
+          panels.params.view = `size:${id}`;
+          renderPanel("params");
+        },
+      });
+    }
+  } else if (kind.startsWith("size:")) {
+    const ratio = kind.slice(5);
     const defaults = latest?.settings?.defaults ?? {};
     const curW = Number(defaults.width ?? 1024);
     const curH = Number(defaults.height ?? 1024);
-    // 当前尺寸不在预置里也要能看到自己：放到第一行，否则整列没有一项是选中的。
-    const options = SIZE_OPTIONS.some(([w, h]) => w === curW && h === curH)
-      ? SIZE_OPTIONS
-      : [[curW, curH], ...SIZE_OPTIONS];
-    for (const [width, height] of options) {
+    const list = [...(SIZE_TABLE[ratio] ?? [])];
+    // 当前尺寸不在表里也要能看到自己，否则整列没有一项是选中的。
+    if (ratioOf(curW, curH) === ratio && !list.some(([w, h]) => w === curW && h === curH)) {
+      list.unshift([curW, curH]);
+    }
+    for (const [width, height] of list) {
       items.push({
         text: `${width} × ${height}`,
         selected: width === curW && height === curH,
@@ -1481,6 +1542,10 @@ function renderPanelList(which, kind) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = item.selected ? "cpop-item on" : "cpop-item";
+      if (item.disabled) {
+        btn.disabled = true;
+        btn.classList.add("off");
+      }
       const text = document.createElement("span");
       text.textContent = item.text;
       btn.append(text);
@@ -1496,7 +1561,8 @@ function renderPanelList(which, kind) {
       }
       btn.addEventListener("click", (event) => {
         event.stopPropagation();
-        closePanel(which);
+        if (item.disabled) return;
+        if (!item.keep) closePanel(which);
         void item.apply();
       });
       return btn;
