@@ -88,6 +88,7 @@ const nodes = {
   model: el("pn-model"),
   modelField: el("pn-model-field"),
   tierMini: el("pn-tier-mini"),
+  modelChip: el("pn-model-chip"),
   modelHint: el("pn-model-hint"),
   dit: el("pn-dit"),
   ditNote: el("pn-dit-note"),
@@ -144,7 +145,6 @@ const nodes = {
   latentInpaint: el("pn-latent-inpaint"),
   chips: el("pn-chips"),
   paramsToggle: el("pn-params-toggle"),
-  paramsNote: el("pn-params-note"),
   addImage: el("pn-add-image"),
   mask: el("pn-mask"),
   maskInfo: el("pn-mask-info"),
@@ -506,8 +506,8 @@ function renderSize() {
     ? `${width}×${height}${scaleLabel} → ${finalW}×${finalH} · ${finalMP.toFixed(2)}MP`
     : `${width}×${height} · ${finalMP.toFixed(2)}MP`;
   nodes.sizeNote.className = base.adjusted ? "hint bad" : "hint";
-  // 输入框下方那颗「参数」报当前尺寸，不展开也知道会出多大的图。
-  nodes.paramsNote.textContent = `${finalW}×${finalH}`;
+  // 尺寸不占着工具行：参数按钮的悬浮说明里报。
+  nodes.paramsToggle.title = `参数：${finalW}×${finalH} · 画幅、步数、采样与模型`;
 
   // 容器还没撑开（切视图的中间帧）时，下一帧再量一次就够，
   // 不能在这里递归自己：宽度一直是 0 的话会每帧重跑一遍整块渲染。
@@ -1729,6 +1729,14 @@ function renderModels(data) {
   nodes.tierMini.title = ditFile?.tier
     ? `当前 DiT 只能跑 ${ditFile.tier} 档`
     : "精度档：turbo 最快、high 居中、reference 最准";
+  // 输入框右下那格只报名字：模型与精度档合在一起，点它去参数区。
+  const modelLabel = current?.label ?? "MOSS-Image";
+  // 前缀在这栏里重复出现四次，去掉只留变体名。
+  const shortLabel = modelLabel.replace(/^MOSS-Image[-_ ]?/i, "") || modelLabel;
+  nodes.modelChip.textContent = `${shortLabel} · ${tierNow}`;
+  nodes.modelChip.title = ditFile?.tier
+    ? `${modelLabel} · 当前 DiT 只能跑 ${ditFile.tier} 档`
+    : `${modelLabel} · 精度档 ${tierNow}`;
 }
 
 /**
@@ -2257,6 +2265,13 @@ nodes.tier.addEventListener("change", async () => {
 nodes.tierMini.addEventListener("change", () => {
   nodes.tier.value = nodes.tierMini.value;
   nodes.tier.dispatchEvent(new window.Event("change"));
+});
+// 输入框旁的模型格子不直接开菜单：跳到参数区那一栏，那里能改的东西更多。
+nodes.modelChip.addEventListener("click", () => {
+  const fold = document.getElementById("pn-model-fold");
+  if (!fold) return;
+  fold.open = true;
+  fold.scrollIntoView({ block: "center", behavior: "smooth" });
 });
 nodes.model.addEventListener("change", async () => {
   const variant = nodes.model.value;

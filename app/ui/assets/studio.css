@@ -3,6 +3,9 @@
 
 html, body { height: 100%; }
 
+/* iframe 底色也铺上，内容短一像素时不会露出窗口的黑底。 */
+html { background: var(--panel-card-bg); }
+
 body {
   overflow: hidden;
   background: var(--panel-card-bg);

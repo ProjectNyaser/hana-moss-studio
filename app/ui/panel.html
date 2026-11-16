@@ -210,14 +210,6 @@
       container-type: inline-size;
     }
 
-    /* 侧栏窄下来时工具行只留图标：尺寸数字与按钮文字让位，三个控件也得塞得下。 */
-    @container (max-width: 300px) {
-      #pn-params-note { display: none; }
-      #pn-generate span { display: none; }
-      .pn-tool { padding: 0 7px; }
-      .pn-tools { gap: 4px; }
-      .pn-tier-mini { max-width: 78px; }
-    }
     .pn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .pn-chips[hidden] { display: none; }
     .pn-chip {
@@ -267,15 +259,16 @@
     .pn-tool {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 5px;
+      width: 26px;
       height: 26px;
-      padding: 0 9px;
+      padding: 0;
       border: 1px solid var(--ui-line);
       border-radius: 999px;
       background: transparent;
       color: var(--ui-text-2);
       font: inherit;
-      font-size: 11.5px;
       cursor: pointer;
     }
     .pn-tool:hover { background: var(--ui-overlay); color: var(--ui-text); }
@@ -293,6 +286,55 @@
       font-size: 11.5px;
     }
     .pn-tier-mini:disabled { opacity: 0.5; }
+    .pn-tier-mini[hidden] { display: none; }
+    /* 模型与精度合成一格：窄侧栏里最占地方的是两串名称。 */
+    .pn-model-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 150px;
+      height: 26px;
+      padding: 0 9px;
+      border: 1px solid var(--ui-line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ui-text-2);
+      font: inherit;
+      font-size: 11.5px;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .pn-model-chip::after { content: "⌄"; flex: none; opacity: 0.6; margin-left: 2px; }
+    .pn-model-chip:hover { background: var(--ui-overlay); color: var(--ui-text); }
+    .pn-send {
+      flex: none;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--ui-accent);
+      color: #fff;
+      cursor: pointer;
+      transition: filter 120ms var(--ui-ease);
+    }
+    .pn-send:hover { filter: brightness(1.07); }
+    .pn-send:disabled { opacity: 0.5; cursor: default; }
+    .pn-send .ic { width: 15px; height: 15px; opacity: 1; stroke-width: 1.9; }
+
+    /* 窄侧栏：模型格子收紧，四个控件都塞得进一行。
+       这条必须放在组件规则之后，否则同优先级的 max-width 会被后面的大值盖掉。 */
+    @container (max-width: 360px) {
+      .pn-tools { gap: 4px; }
+      .pn-model-chip { max-width: 96px; }
+    }
     /* 点「参数」就把它滚到眼前，闪一下底色 */
     .pn-block.pn-flash { animation: pn-flash 900ms ease; border-radius: 10px; }
     @keyframes pn-flash {
@@ -433,6 +475,9 @@
       <rect x="2.2" y="3.4" width="11.6" height="9.2" rx="1.6"/>
       <circle cx="5.9" cy="6.7" r="1"/>
       <path d="M2.8 11.2 6 8.6l2.2 2 1.9-1.6 2.1 2.2"/>
+    </symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 16 16">
+      <path d="M8 12.6V3.4M4.2 7.2 8 3.4l3.8 3.8"/>
     </symbol>
   </svg>
 
@@ -710,15 +755,12 @@
           <svg class="ic"><use href="#i-image"/></svg>
         </button>
         <button class="pn-tool" id="pn-params-toggle" type="button" aria-expanded="true" title="画幅、步数、采样与模型">
-          <svg class="ic"><use href="#i-sliders"/></svg><span id="pn-params-note">参数</span>
+          <svg class="ic"><use href="#i-sliders"/></svg>
         </button>
         <span class="spacer"></span>
-        <select class="pn-tier-mini" id="pn-tier-mini" title="精度档：turbo 最快、high 居中、reference 最准">
-          <option value="turbo">turbo</option>
-          <option value="high">high</option>
-          <option value="reference">reference</option>
-        </select>
-        <button class="btn primary small" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg><span>生成</span></button>
+        <select class="pn-tier-mini" id="pn-tier-mini" title="精度档：turbo 最快、high 居中、reference 最准" hidden></select>
+        <button class="pn-model-chip" id="pn-model-chip" type="button" title="模型与精度档：点了去参数区"></button>
+        <button class="pn-send" id="pn-generate" type="button" title="生成"><svg class="ic"><use href="#i-arrow-up"/></svg></button>
         <button class="btn ghost small" id="pn-cancel" type="button" hidden>取消</button>
       </div>
     </div>
