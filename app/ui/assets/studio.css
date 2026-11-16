@@ -1466,6 +1466,7 @@ body {
   min-height: 22px;
   padding: 2px 4px 2px 2px;
 }
+.cpop-head[hidden] { display: none; }
 .cpop-title { font-size: 11px; color: var(--ui-text-3); padding-left: 4px; }
 .cpop-title[hidden] { display: none; }
 .cpop-back {
@@ -1532,9 +1533,9 @@ body {
 }
 .cpop-item:hover { background: var(--ui-overlay); }
 .cpop-item.on { background: var(--ui-tint); }
-.cpop-item > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cpop-item em { font-style: normal; font-size: 11px; color: var(--ui-text-3); }
-.cpop-check { position: relative; flex: none; width: 12px; height: 12px; }
+.cpop-item > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cpop-item em { flex: none; font-style: normal; font-size: 11px; color: var(--ui-text-3); }
+.cpop-check { position: relative; flex: none; width: 12px; height: 12px; margin-left: auto; }
 .cpop-check::before {
   content: "";
   position: absolute;

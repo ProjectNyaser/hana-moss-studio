@@ -1237,6 +1237,7 @@ const panels = {
     title: document.getElementById("cpop-title"),
     back: document.getElementById("cpop-back"),
     body: document.getElementById("cpop-body"),
+    head: document.getElementById("cpop-title")?.parentElement,
     view: "root",
   },
   params: {
@@ -1244,6 +1245,7 @@ const panels = {
     title: document.getElementById("ppop-title"),
     back: document.getElementById("ppop-back"),
     body: document.getElementById("ppop-body"),
+    head: document.getElementById("ppop-title")?.parentElement,
     view: "root",
   },
 };
@@ -1389,6 +1391,7 @@ function renderPanelRoot(which) {
   const panel = panels[which];
   if (!panel?.body) return;
   panel.view = "root";
+  if (panel.head) panel.head.hidden = true;
   if (panel.back) panel.back.hidden = true;
   if (panel.title) {
     panel.title.hidden = true;
@@ -1415,6 +1418,7 @@ function renderPanelList(which, kind) {
   const panel = panels[which];
   if (!panel?.body) return;
   const titles = { model: "模型", tier: "精度档", size: "尺寸", steps: "步数", cfg: "CFG" };
+  if (panel.head) panel.head.hidden = false;
   if (panel.back) panel.back.hidden = false;
   if (panel.title) {
     panel.title.hidden = false;
