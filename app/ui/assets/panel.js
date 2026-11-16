@@ -2616,6 +2616,16 @@ reuseChannel?.addEventListener("message", (event) => {
     nodes.prompt.value = String(msg.text ?? "");
     return;
   }
+  if (msg.type === "compose-negative") {
+    nodes.negative.value = String(msg.text ?? "");
+    scheduleSave();
+    return;
+  }
+  if (msg.type === "compose-seed") {
+    nodes.seed.value = String(msg.value ?? "");
+    scheduleSave();
+    return;
+  }
   if (msg.type === "compose-send") {
     if (typeof msg.text === "string") nodes.prompt.value = msg.text;
     void onGenerate();

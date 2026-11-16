@@ -1185,6 +1185,8 @@ function applyEditState(state) {
 // 提示词与发送按钮在主界面；真正提交仍由侧栏那一侧完成，它拿着全部参数。
 const composer = {
   input: document.getElementById("composer-input"),
+  negative: document.getElementById("composer-negative"),
+  seed: document.getElementById("composer-seed"),
   send: document.getElementById("composer-send"),
   plus: document.getElementById("composer-plus"),
   menu: document.getElementById("cmenu"),
@@ -1228,6 +1230,19 @@ composer.input?.addEventListener("keydown", (event) => {
     sendCompose();
   }
 });
+
+// 反向提示词与种子也交给侧栏，提交时一并带上。
+let extraTimer = null;
+function pushExtras() {
+  clearTimeout(extraTimer);
+  extraTimer = setTimeout(() => {
+    layChannel?.postMessage({ type: "compose-negative", text: composer.negative?.value ?? "" });
+    layChannel?.postMessage({ type: "compose-seed", value: composer.seed?.value ?? "" });
+  }, 120);
+}
+
+composer.negative?.addEventListener("input", pushExtras);
+composer.seed?.addEventListener("input", pushExtras);
 
 composer.send?.addEventListener("click", sendCompose);
 
@@ -1696,6 +1711,13 @@ function renderComposerModel() {
   const short = modelLabel.replace(/^MOSS-Image[-_ ]?/i, "") || modelLabel;
   const tier = latest?.settings?.tier ?? "reference";
   composer.model.textContent = `${short} · ${tier}`;
+  const defaults = latest?.settings?.defaults ?? {};
+  if (composer.negative && document.activeElement !== composer.negative) {
+    composer.negative.value = defaults.negativePrompt ?? "";
+  }
+  if (composer.seed && document.activeElement !== composer.seed) {
+    composer.seed.value = defaults.seed != null && defaults.seed !== "" ? String(defaults.seed) : "";
+  }
   renderCpop();
 }
 

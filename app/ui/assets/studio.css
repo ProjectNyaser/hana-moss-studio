@@ -1441,6 +1441,27 @@ body {
 #composer-input::placeholder { color: var(--ui-text-3); }
 #composer-input:focus { outline: none !important; box-shadow: none !important; }
 
+/* 反向提示词与种子：跟正面提示词同在输入框里，不往侧栏跑。 */
+.composer-extra {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 2px;
+}
+.composer-extra input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 12px;
+}
+.composer-extra input::placeholder { color: var(--ui-text-3); }
+.composer-extra input:focus { outline: none; }
+#composer-seed { flex: none; width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+
 .composer-tools {
   position: relative;
   display: flex;

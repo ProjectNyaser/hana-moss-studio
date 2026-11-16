@@ -578,7 +578,7 @@
         <label class="field"><span class="label">步数</span><input id="pn-steps" type="number" min="1" max="80" value="8"></label>
         <label class="field"><span class="label">修正步数</span><input id="pn-hires-steps" type="number" min="0" max="80" value="0" placeholder="跟主步数"></label>
       </div>
-      <div class="pn-grid">
+      <div class="pn-grid" hidden>
         <label class="field" hidden><span class="label">CFG</span><input id="pn-cfg" type="number" min="0" max="20" step="0.5" value="3"></label>
         <label class="field"><span class="label">种子</span><input id="pn-seed" type="number" min="0" placeholder="留空随机"></label>
       </div>
@@ -780,7 +780,7 @@
       </div>
     </details>
 
-    <div class="pn-block">
+    <div class="pn-block" hidden>
       <div class="pn-head"><span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>反向提示词</span></div>
       <label class="field">
         <textarea id="pn-negative" rows="2" placeholder="模糊，畸变，水印"></textarea>
