@@ -387,6 +387,35 @@
       30% { background: var(--ui-tint); }
     }
 
+    .pn-history { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+    .pn-hist-item {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 6px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--ui-text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .pn-hist-item:hover { background: var(--ui-overlay); }
+    .pn-hist-item.on { background: var(--ui-tint); }
+    .pn-hist-thumb {
+      width: 38px;
+      height: 38px;
+      flex: none;
+      border-radius: 8px;
+      object-fit: cover;
+      background: var(--ui-overlay);
+    }
+    .pn-hist-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .pn-hist-prompt { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pn-hist-meta { font-size: 10.5px; color: var(--ui-text-3); }
+    .pn-hist-empty { padding: 18px 6px; font-size: 11.5px; color: var(--ui-text-3); text-align: center; }
+
     .pn-foot { flex: none; padding: 0 12px 8px; display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--ui-text-3); }
 
     /* LoRA 行：勾选、名字、强度、删除 */
@@ -527,7 +556,7 @@
   </svg>
 
   <div class="pn" id="pn-root">
-    <div class="pn-body" id="pn-body">
+    <div class="pn-body" id="pn-body" hidden>
     <div class="pn-block">
       <div class="pn-state">
         <span class="dot" id="pn-dot"></span>
@@ -791,6 +820,8 @@
       <div class="pn-head"><span class="pn-head-title">片段</span><span class="hint">点一下接在主界面那段后面</span></div>
       <div class="pn-presets" id="pn-presets"></div>
     </div>
+
+    <div class="pn-history" id="pn-history"></div>
 
     <div class="pn-foot">
       <span id="pn-errors"></span>

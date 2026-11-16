@@ -2099,7 +2099,6 @@ layChannel?.addEventListener("message", (event) => {
     return;
   }
   if (msg.type === "edit-refs") {
-    // 侧栏删掉或调整了顺序：按名字对齐本地缩略图，数量与顺序都跟它走。
     const names = Array.isArray(msg.names) ? msg.names : null;
     if (names) {
       const pool = [...refFiles];
@@ -2113,6 +2112,11 @@ layChannel?.addEventListener("message", (event) => {
       refFiles.push(...kept);
       renderComposerChips(lastEditState);
     }
+    return;
+  }
+  if (msg.type === "open-job") {
+    showView("canvas");
+    openViewer(msg.id);
     return;
   }
   if (msg.type === "compose-prompt") {

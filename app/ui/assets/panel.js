@@ -149,6 +149,7 @@ const nodes = {
   chips: el("pn-chips"),
   paramsToggle: el("pn-params-toggle"),
   presets: el("pn-presets"),
+  history: el("pn-history"),
   addImage: el("pn-add-image"),
   mask: el("pn-mask"),
   maskInfo: el("pn-mask-info"),
@@ -1816,6 +1817,49 @@ async function refreshCheckpoint(force = false) {
   }
 }
 
+/** 侧栏是一张记录表：出过的图按时间倒序排，点一下在主界面打开。 */
+function renderHistory(data) {
+  const list = nodes.history;
+  if (!list) return;
+  const jobs = (Array.isArray(data?.jobs) ? data.jobs : [])
+    .filter((job) => job.status === "done" && job.output)
+    .slice(0, 30);
+  if (!jobs.length) {
+    const empty = document.createElement("p");
+    empty.className = "pn-hist-empty";
+    empty.textContent = "还没有出过图。";
+    list.replaceChildren(empty);
+    return;
+  }
+  list.replaceChildren(
+    ...jobs.map((job) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pn-hist-item";
+      btn.dataset.jobId = job.id;
+      const img = document.createElement("img");
+      img.className = "pn-hist-thumb";
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = inputUrl(job.output);
+      const text = document.createElement("span");
+      text.className = "pn-hist-text";
+      const line = document.createElement("span");
+      line.className = "pn-hist-prompt";
+      line.textContent = job.prompt || "（无提示词）";
+      const meta = document.createElement("span");
+      meta.className = "pn-hist-meta";
+      meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
+      text.append(line, meta);
+      btn.append(img, text);
+      btn.addEventListener("click", () => {
+        editChannel?.postMessage({ type: "open-job", id: job.id });
+      });
+      return btn;
+    }),
+  );
+}
+
 function render(data) {
   latest = data;
   facets = data.facets ?? facets;
@@ -1824,6 +1868,7 @@ function render(data) {
   catchUpSettings(data);
   renderEngine(data);
   renderModels(data);
+  renderHistory(data);
   syncTier(data);
   nodes.generate.disabled = submitting;
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。
