@@ -1817,14 +1817,45 @@ async function refreshCheckpoint(force = false) {
   }
 }
 
-/** 侧栏是一张记录表：出过的图按时间倒序排，点一下在主界面打开。 */
-function renderHistory(data) {
+/** 侧栏是会话列表：相邻的生成归成一段，点一下打开那段最近的一张。 */
+let sessionsCache = [];
+let sessionsAt = 0;
+
+function groupSessions(jobs) {
+  const GAP = 30 * 60 * 1000;
+  const sorted = jobs
+    .filter((job) => job.status === "done" && job.output)
+    .sort((a, b) => (Date.parse(b.createdAt ?? "") || 0) - (Date.parse(a.createdAt ?? "") || 0));
+  const out = [];
+  for (const job of sorted) {
+    const t = Date.parse(job.createdAt ?? "") || 0;
+    const last = out[out.length - 1];
+    if (!last || last.t - t > GAP) out.push({ t, jobs: [job] });
+    else {
+      last.jobs.push(job);
+      last.t = t;
+    }
+  }
+  return out;
+}
+
+async function loadSessions(force = false) {
+  if (!force && Date.now() - sessionsAt < 4000) return;
+  sessionsAt = Date.now();
+  try {
+    const response = await hana.api.fetch(`${API}/jobs?offset=0&limit=200`);
+    const page = await response.json();
+    sessionsCache = groupSessions(Array.isArray(page.jobs) ? page.jobs : []);
+    paintSessions();
+  } catch {
+    /* 拉不到就保持现状 */
+  }
+}
+
+function paintSessions() {
   const list = nodes.history;
   if (!list) return;
-  const jobs = (Array.isArray(data?.jobs) ? data.jobs : [])
-    .filter((job) => job.status === "done" && job.output)
-    .slice(0, 30);
-  if (!jobs.length) {
+  if (!sessionsCache.length) {
     const empty = document.createElement("p");
     empty.className = "pn-hist-empty";
     empty.textContent = "还没有出过图。";
@@ -1832,23 +1863,26 @@ function renderHistory(data) {
     return;
   }
   list.replaceChildren(
-    ...jobs.map((job) => {
+    ...sessionsCache.map((session) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "pn-hist-item";
-      btn.dataset.jobId = job.id;
+      const head = session.jobs[session.jobs.length - 1];
       const text = document.createElement("span");
       text.className = "pn-hist-text";
       const line = document.createElement("span");
       line.className = "pn-hist-prompt";
-      line.textContent = job.prompt || "（无提示词）";
+      line.textContent = head.prompt || "（无提示词）";
       const meta = document.createElement("span");
       meta.className = "pn-hist-meta";
-      meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
+      const when = head.createdAt
+        ? new Date(head.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+        : "";
+      meta.textContent = `${session.jobs.length} 条${when ? ` · ${when}` : ""}`;
       text.append(line, meta);
       btn.append(text);
       btn.addEventListener("click", () => {
-        editChannel?.postMessage({ type: "open-job", id: job.id });
+        editChannel?.postMessage({ type: "open-job", id: head.id });
       });
       return btn;
     }),
@@ -1863,7 +1897,7 @@ function render(data) {
   catchUpSettings(data);
   renderEngine(data);
   renderModels(data);
-  renderHistory(data);
+  void loadSessions();
   syncTier(data);
   nodes.generate.disabled = submitting;
   // 忙的时候不禁用：串行队列排得下，按钮变成「加入队列」才有意义。

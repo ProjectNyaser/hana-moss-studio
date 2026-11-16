@@ -1404,7 +1404,7 @@ body {
 }
 .chat-text { margin: 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
 .chat-meta { margin: 6px 0 0; font-size: 11px; color: var(--ui-text-3); }
-.chat-shot { max-width: min(560px, 78%); display: flex; flex-direction: column; gap: 6px; }
+.chat-shot { max-width: 280px; display: flex; flex-direction: column; gap: 6px; }
 .chat-shot img {
   width: 100%;
   border-radius: 12px;
