@@ -1191,6 +1191,7 @@ const composer = {
   plus: document.getElementById("composer-plus"),
   menu: document.getElementById("cmenu"),
   params: document.getElementById("composer-params"),
+  sample: document.getElementById("composer-sample"),
   model: document.getElementById("composer-model"),
   chips: document.getElementById("composer-chips"),
 };
@@ -1369,6 +1370,14 @@ const panels = {
     head: document.getElementById("ppop-title")?.parentElement,
     view: "root",
   },
+  sample: {
+    box: document.getElementById("spop"),
+    title: document.getElementById("spop-title"),
+    back: document.getElementById("spop-back"),
+    body: document.getElementById("spop-body"),
+    head: document.getElementById("spop-title")?.parentElement,
+    view: "root",
+  },
 };
 
 const TIER_OPTIONS = [
@@ -1495,6 +1504,14 @@ composer.params?.addEventListener("click", (event) => {
   else closePanel("params");
 });
 
+composer.sample?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const panel = panels.sample;
+  if (!panel?.box) return;
+  if (panel.box.hidden) openPanel("sample");
+  else closePanel("sample");
+});
+
 for (const which of Object.keys(panels)) {
   panels[which].back?.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -1604,6 +1621,13 @@ function renderPanelRoot(which) {
     );
     return;
   }
+  if (which === "sample") {
+    panel.body.replaceChildren(
+      panelRow(which, "采样器", defaults.sampler ?? "euler", "sampler"),
+      panelRow(which, "调度器", defaults.scheduler ?? "moss", "scheduler"),
+    );
+    return;
+  }
   panel.body.replaceChildren(
     panelRow(which, "比例", ratioOf(Number(defaults.width), Number(defaults.height)), "ratio"),
     panelRow(which, "分辨率", `${defaults.width ?? 1024} × ${defaults.height ?? 1024}`, `size:${ratioOf(Number(defaults.width), Number(defaults.height))}`),
@@ -1680,6 +1704,19 @@ function renderPanelList(which, kind) {
         text: `${width} × ${height}`,
         selected: width === curW && height === curH,
         apply: () => saveDefaults({ width, height }),
+      });
+    }
+  } else if (kind === "sampler" || kind === "scheduler") {
+    const menus = latest?.facets?.menus ?? {};
+    const list =
+      (kind === "sampler" ? menus.sampler : menus.scheduler) ??
+      (kind === "sampler" ? ["euler"] : ["moss"]);
+    const current = latest?.settings?.defaults?.[kind] ?? list[0];
+    for (const value of list) {
+      items.push({
+        text: String(value),
+        selected: current === value,
+        apply: () => saveDefaults({ [kind]: value }),
       });
     }
   } else if (kind === "steps") {

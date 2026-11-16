@@ -139,6 +139,12 @@
               <circle cx="10.4" cy="11" r="1.7"/>
             </svg>
           </button>
+          <button class="cbtn" id="composer-sample" type="button" title="采样器与调度器">
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="8" cy="8" r="5.4"/>
+              <path d="M8 4.8v6.4"/>
+            </svg>
+          </button>
           <span class="spacer"></span>
           <button class="model-chip" id="composer-model" type="button" title="模型与精度档"></button>
           <div class="cpop" id="cpop" hidden>
@@ -154,6 +160,13 @@
               <span class="cpop-title" id="ppop-title"></span>
             </div>
             <div class="cpop-body" id="ppop-body"></div>
+          </div>
+          <div class="cpop cpop-left" id="spop" hidden>
+            <div class="cpop-head">
+              <button class="cpop-back" id="spop-back" type="button" title="返回" hidden>‹</button>
+              <span class="cpop-title" id="spop-title"></span>
+            </div>
+            <div class="cpop-body" id="spop-body"></div>
           </div>
           <button class="send" id="composer-send" type="button" title="生成"></button>
         </div>
