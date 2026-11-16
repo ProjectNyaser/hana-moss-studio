@@ -105,7 +105,6 @@
           <input id="composer-negative" type="text" placeholder="反向提示词（可选）">
           <input id="composer-seed" type="number" min="0" placeholder="种子">
         </div>
-        <button class="composer-more" id="composer-more" type="button">＋ 反向提示词 · 种子</button>
         <textarea id="composer-input" rows="1" placeholder="描述画面，或者把图拖进来改"></textarea>
         <div class="composer-tools">
           <button class="cbtn cbtn-plus" id="composer-plus" type="button" title="加图">
@@ -122,6 +121,15 @@
             <button class="cmenu-item" type="button" data-act="reference">
               <span class="cmenu-title">参考图</span>
               <span class="cmenu-note">交给编辑适配器，照着这张改</span>
+            </button>
+            <p class="cmenu-group">可选</p>
+            <button class="cmenu-item" type="button" data-act="negative">
+              <span class="cmenu-title">反向提示词</span>
+              <span class="cmenu-note">不要什么</span>
+            </button>
+            <button class="cmenu-item" type="button" data-act="seed">
+              <span class="cmenu-title">种子</span>
+              <span class="cmenu-note">留空随机</span>
             </button>
           </div>
           <button class="cbtn" id="composer-params" type="button" title="尺寸、步数、CFG">

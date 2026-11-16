@@ -1244,16 +1244,7 @@ function pushExtras() {
 composer.negative?.addEventListener("input", pushExtras);
 composer.seed?.addEventListener("input", pushExtras);
 
-// 反向提示词与种子默认收起，需要时再展开。
-const extraBox = document.getElementById("composer-extra");
-const moreBtn = document.getElementById("composer-more");
-moreBtn?.addEventListener("click", () => {
-  if (!extraBox) return;
-  const open = extraBox.hidden;
-  extraBox.hidden = !open;
-  moreBtn.hidden = open;
-  if (open) (composer.negative ?? composer.seed)?.focus();
-});
+// 反向提示词与种子展开后就留着，自己看不见内容比多一行更糟。
 
 composer.send?.addEventListener("click", sendCompose);
 
@@ -1283,6 +1274,11 @@ composer.menu?.addEventListener("click", (event) => {
     nodes.layFile.click();
   } else if (act === "reference") {
     document.getElementById("composer-ref-file")?.click();
+  } else if (act === "negative" || act === "seed") {
+    // 两者不是必填，平时不占位，从这里展开。
+    const box = document.getElementById("composer-extra");
+    if (box) box.hidden = false;
+    (act === "negative" ? composer.negative : composer.seed)?.focus();
   }
 });
 
@@ -1745,13 +1741,9 @@ function renderComposerModel() {
     composer.seed.value = defaults.seed != null && defaults.seed !== "" ? String(defaults.seed) : "";
   }
   // 已经有值时把这一行展开，不能让内容藏着看不见。
-  if (extraBox && moreBtn) {
-    const used = Boolean((defaults.negativePrompt ?? "").trim()) || (defaults.seed != null && defaults.seed !== "");
-    if (used && extraBox.hidden) {
-      extraBox.hidden = false;
-      moreBtn.hidden = true;
-    }
-  }
+  const box = document.getElementById("composer-extra");
+  const used = Boolean(String(defaults.negativePrompt ?? "").trim()) || (defaults.seed != null && defaults.seed !== "");
+  if (box && used) box.hidden = false;
   renderCpop();
 }
 
