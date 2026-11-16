@@ -1788,7 +1788,15 @@ function renderComposerChips(state) {
     img.alt = item.name;
     const label = document.createElement("span");
     label.textContent = item.name;
-    card.append(img, label);
+    const remove = document.createElement("span");
+    remove.className = "x";
+    remove.textContent = "×";
+    remove.title = "移出参考图";
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      layChannel?.postMessage({ type: "compose-remove-reference", index: refFiles.indexOf(item) });
+    });
+    card.append(img, label, remove);
     card.addEventListener("click", () => openRefBox(item.url, item.name));
     items.push(card);
   }
@@ -2091,10 +2099,18 @@ layChannel?.addEventListener("message", (event) => {
     return;
   }
   if (msg.type === "edit-refs") {
-    const count = Number(msg.count) || 0;
-    // 侧栏删掉了某几张：这边跟着截断，不然缩略图会比实际多。
-    if (count < refFiles.length) {
-      for (const item of refFiles.splice(count)) URL.revokeObjectURL(item.url);
+    // 侧栏删掉或调整了顺序：按名字对齐本地缩略图，数量与顺序都跟它走。
+    const names = Array.isArray(msg.names) ? msg.names : null;
+    if (names) {
+      const pool = [...refFiles];
+      const kept = [];
+      for (const name of names) {
+        const index = pool.findIndex((item) => item.name === name);
+        if (index >= 0) kept.push(pool.splice(index, 1)[0]);
+      }
+      for (const item of pool) URL.revokeObjectURL(item.url);
+      refFiles.length = 0;
+      refFiles.push(...kept);
       renderComposerChips(lastEditState);
     }
     return;

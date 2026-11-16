@@ -1129,7 +1129,11 @@ function renderEditRefs() {
     }),
   );
   nodes.editRefNote.textContent = editSources.length ? `${editSources.length} 张` : "未选择";
-  editChannel?.postMessage({ type: "edit-refs", count: editSources.length });
+  editChannel?.postMessage({
+    type: "edit-refs",
+    count: editSources.length,
+    names: editSources.map((item) => item.name),
+  });
   renderComposer();
 }
 
@@ -2645,6 +2649,10 @@ reuseChannel?.addEventListener("message", (event) => {
   }
   if (msg.type === "compose-drop-reference") {
     if (msg.file) void addEditReference(msg.file, msg.file.name ?? "拖进来的图");
+    return;
+  }
+  if (msg.type === "compose-remove-reference") {
+    removeEditReference(Number(msg.index) || 0);
     return;
   }
   if (msg.type === "compose-focus-params") {

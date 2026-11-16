@@ -1425,7 +1425,15 @@ body {
   line-height: 1.4;
   cursor: pointer;
 }
-.composer-chip.ref { padding: 3px 9px 3px 3px; }
+.composer-chip.ref { padding: 3px 9px 3px 3px; position: relative; }
+.composer-chip.ref .x {
+  margin-left: 2px;
+  color: var(--ui-text-3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.composer-chip.ref .x:hover { color: var(--danger, #c4553f); }
 .composer-chip.ref img {
   width: 24px;
   height: 24px;
