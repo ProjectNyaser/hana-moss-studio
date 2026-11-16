@@ -1229,14 +1229,23 @@ composer.input?.addEventListener("keydown", (event) => {
 
 composer.send?.addEventListener("click", sendCompose);
 composer.image?.addEventListener("click", () => layChannel?.postMessage({ type: "compose-add-image" }));
-composer.params?.addEventListener("click", () => layChannel?.postMessage({ type: "compose-focus-params" }));
 
-// 模型名点开是一块浮层：一级是几行设置，点进二级是列表，当前项打勾。
-const cpop = {
-  box: document.getElementById("cpop"),
-  title: document.getElementById("cpop-title"),
-  back: document.getElementById("cpop-back"),
-  body: document.getElementById("cpop-body"),
+// 两个浮层：模型名点开是模型与精度档；左侧参数图标点开是尺寸、步数、CFG。
+const panels = {
+  model: {
+    box: document.getElementById("cpop"),
+    title: document.getElementById("cpop-title"),
+    back: document.getElementById("cpop-back"),
+    body: document.getElementById("cpop-body"),
+    view: "root",
+  },
+  params: {
+    box: document.getElementById("ppop"),
+    title: document.getElementById("ppop-title"),
+    back: document.getElementById("ppop-back"),
+    body: document.getElementById("ppop-body"),
+    view: "root",
+  },
 };
 
 const TIER_OPTIONS = [
@@ -1255,8 +1264,7 @@ const SIZE_OPTIONS = [
 ];
 
 const STEP_OPTIONS = [8, 16, 20, 28, 40];
-
-let cpopView = "root";
+const CFG_OPTIONS = [1, 2, 3, 4, 6];
 
 function cpopModels() {
   return (Array.isArray(latest?.models) ? latest.models : []).filter((item) => item.installed);
@@ -1268,44 +1276,67 @@ function shortModel(label) {
   return text.replace(/^MOSS-Image[-_ ]?/i, "") || text;
 }
 
-function closeCpop() {
-  if (cpop.box) cpop.box.hidden = true;
-  cpopView = "root";
+function closePanel(which) {
+  const panel = panels[which];
+  if (!panel?.box) return;
+  panel.box.hidden = true;
+  panel.view = "root";
+}
+
+function closeAllPanels() {
+  closePanel("model");
+  closePanel("params");
+}
+
+function openPanel(which) {
+  const panel = panels[which];
+  if (!panel?.box) return;
+  closeAllPanels();
+  panel.view = "root";
+  renderPanel(which);
+  panel.box.hidden = false;
 }
 
 composer.model?.addEventListener("click", (event) => {
   event.stopPropagation();
-  if (!cpop.box) return;
-  if (cpop.box.hidden) {
-    cpopView = "root";
-    renderCpopRoot();
-    cpop.box.hidden = false;
-  } else {
-    closeCpop();
-  }
+  const panel = panels.model;
+  if (!panel?.box) return;
+  if (panel.box.hidden) openPanel("model");
+  else closePanel("model");
 });
 
-cpop.back?.addEventListener("click", (event) => {
+composer.params?.addEventListener("click", (event) => {
   event.stopPropagation();
-  cpopView = "root";
-  renderCpopRoot();
+  const panel = panels.params;
+  if (!panel?.box) return;
+  if (panel.box.hidden) openPanel("params");
+  else closePanel("params");
 });
+
+for (const which of Object.keys(panels)) {
+  panels[which].back?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    panels[which].view = "root";
+    renderPanel(which);
+  });
+}
 
 document.addEventListener("click", (event) => {
-  if (!cpop.box || cpop.box.hidden) return;
-  if (cpop.box.contains(event.target) || composer.model.contains(event.target)) return;
-  closeCpop();
+  const inside = Object.values(panels).some(
+    (panel) => panel.box && !panel.box.hidden && panel.box.contains(event.target),
+  );
+  if (!inside) closeAllPanels();
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeCpop();
+  if (event.key === "Escape") closeAllPanels();
 });
 
 async function useModel(variant) {
   try {
     await post("/weights/use", { variant });
     toast("模型已切换，下次出图重新加载");
-    closeCpop();
+    closePanel("model");
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), "error");
   }
@@ -1317,7 +1348,6 @@ async function saveDefaults(patch) {
     await post("/settings", { defaults });
     if (latest?.settings?.defaults) Object.assign(latest.settings.defaults, defaults);
     renderComposerModel();
-    renderCpopRoot();
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), "error");
   }
@@ -1328,13 +1358,12 @@ async function setTier(tier) {
     await post("/settings", { tier });
     if (latest?.settings) latest.settings.tier = tier;
     renderComposerModel();
-    renderCpopRoot();
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), "error");
   }
 }
 
-function cpopRow(label, value, kind) {
+function panelRow(which, label, value, kind) {
   const row = document.createElement("button");
   row.type = "button";
   row.className = "cpop-row";
@@ -1345,37 +1374,51 @@ function cpopRow(label, value, kind) {
   val.className = "cpop-val";
   val.textContent = value;
   row.append(name, val);
-  row.addEventListener("click", () => renderCpopList(kind));
+  row.addEventListener("click", (event) => {
+    // 这行马上会被替换掉；不拦住，冒泡到 document 就成了「点在浮层外」。
+    event.stopPropagation();
+    const panel = panels[which];
+    if (!panel) return;
+    panel.view = kind;
+    renderPanel(which);
+  });
   return row;
 }
 
-function renderCpopRoot() {
-  if (!cpop.box || !cpop.body) return;
-  cpopView = "root";
-  if (cpop.back) cpop.back.hidden = true;
-  if (cpop.title) {
-    cpop.title.hidden = true;
-    cpop.title.textContent = "";
+function renderPanelRoot(which) {
+  const panel = panels[which];
+  if (!panel?.body) return;
+  panel.view = "root";
+  if (panel.back) panel.back.hidden = true;
+  if (panel.title) {
+    panel.title.hidden = true;
+    panel.title.textContent = "";
   }
   const defaults = latest?.settings?.defaults ?? {};
-  const models = cpopModels();
-  const active = models.find((item) => item.active) ?? models[0];
-  cpop.body.replaceChildren(
-    cpopRow("模型", active ? shortModel(active.label ?? active.variant) : "未安装", "model"),
-    cpopRow("精度档", latest?.settings?.tier ?? "reference", "tier"),
-    cpopRow("尺寸", `${defaults.width ?? 1024} × ${defaults.height ?? 1024}`, "size"),
-    cpopRow("步数", String(defaults.steps ?? 20), "steps"),
+  if (which === "model") {
+    const models = cpopModels();
+    const active = models.find((item) => item.active) ?? models[0];
+    panel.body.replaceChildren(
+      panelRow(which, "模型", active ? shortModel(active.label ?? active.variant) : "未安装", "model"),
+      panelRow(which, "精度档", latest?.settings?.tier ?? "reference", "tier"),
+    );
+    return;
+  }
+  panel.body.replaceChildren(
+    panelRow(which, "尺寸", `${defaults.width ?? 1024} × ${defaults.height ?? 1024}`, "size"),
+    panelRow(which, "步数", String(defaults.steps ?? 20), "steps"),
+    panelRow(which, "CFG", String(defaults.cfg ?? 3), "cfg"),
   );
 }
 
-function renderCpopList(kind) {
-  if (!cpop.box || !cpop.body) return;
-  cpopView = kind;
-  const titles = { model: "模型", tier: "精度档", size: "尺寸", steps: "步数" };
-  if (cpop.back) cpop.back.hidden = false;
-  if (cpop.title) {
-    cpop.title.hidden = false;
-    cpop.title.textContent = titles[kind] ?? "";
+function renderPanelList(which, kind) {
+  const panel = panels[which];
+  if (!panel?.body) return;
+  const titles = { model: "模型", tier: "精度档", size: "尺寸", steps: "步数", cfg: "CFG" };
+  if (panel.back) panel.back.hidden = false;
+  if (panel.title) {
+    panel.title.hidden = false;
+    panel.title.textContent = titles[kind] ?? "";
   }
   const items = [];
   if (kind === "model") {
@@ -1405,15 +1448,20 @@ function renderCpopList(kind) {
     for (const steps of STEP_OPTIONS) {
       items.push({ text: String(steps), selected: current === steps, apply: () => saveDefaults({ steps }) });
     }
+  } else if (kind === "cfg") {
+    const current = Number(latest?.settings?.defaults?.cfg ?? 3);
+    for (const cfg of CFG_OPTIONS) {
+      items.push({ text: String(cfg), selected: current === cfg, apply: () => saveDefaults({ cfg }) });
+    }
   }
   if (!items.length) {
     const empty = document.createElement("p");
     empty.className = "cpop-empty";
     empty.textContent = kind === "model" ? "没有已安装的模型" : "没有可选项";
-    cpop.body.replaceChildren(empty);
+    panel.body.replaceChildren(empty);
     return;
   }
-  cpop.body.replaceChildren(
+  panel.body.replaceChildren(
     ...items.map((item) => {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -1431,7 +1479,9 @@ function renderCpopList(kind) {
         mark.className = "cpop-check";
         btn.append(mark);
       }
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        closePanel(which);
         void item.apply();
       });
       return btn;
@@ -1439,10 +1489,18 @@ function renderCpopList(kind) {
   );
 }
 
+function renderPanel(which) {
+  const panel = panels[which];
+  if (!panel) return;
+  if (panel.view === "root") renderPanelRoot(which);
+  else renderPanelList(which, panel.view);
+}
+
 function renderCpop() {
-  if (!cpop.box) return;
-  if (cpopView === "root") renderCpopRoot();
-  else renderCpopList(cpopView);
+  for (const which of Object.keys(panels)) {
+    const panel = panels[which];
+    if (panel.box && !panel.box.hidden) renderPanel(which);
+  }
 }
 
 /** 模型名与精度档跟着设置走。 */
