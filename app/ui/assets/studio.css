@@ -1384,11 +1384,11 @@ body {
 /* 提示词、附件、模型与发送都在主界面：侧栏留给参数，两边不必抢同一块宽度。 */
 .composer {
   flex: none;
-  width: min(760px, calc(100% - 32px));
-  margin: 0 auto 14px;
-  padding: 8px 8px 6px;
+  width: min(1040px, calc(100% - 40px));
+  margin: 0 auto 16px;
+  padding: 12px 12px 8px;
   border: 1px solid var(--ui-line);
-  border-radius: 16px;
+  border-radius: 18px;
   background: var(--ui-surface);
 }
 
@@ -1411,19 +1411,27 @@ body {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  min-height: 38px;
+  min-height: 52px;
   max-height: 132px;
   resize: none;
-  padding: 6px;
-  border: 0;
-  background: transparent;
+  margin: 0;
+  padding: 4px 6px 2px;
+  /* 整张卡片就是输入框：内层不能再长出一个框。 */
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  -webkit-appearance: none;
+  appearance: none;
   color: var(--ui-text);
   font: inherit;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
   overflow-y: auto;
 }
-#composer-input:focus { outline: none; }
+#composer-input::placeholder { color: var(--ui-text-3); }
+#composer-input:focus { outline: none !important; box-shadow: none !important; }
 
 .composer-tools {
   position: relative;
