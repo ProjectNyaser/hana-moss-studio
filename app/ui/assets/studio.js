@@ -121,7 +121,7 @@ let newestJobId = null;
 let bootstrapped = false;
 let currentView = "canvas";
 let releasesLoaded = false;
-/** 上次的布局只在第一次拿到设置时接回来，不要每帧重读。 */
+/** 上一次的布局跟着底图恢复，不跟着页面加载恢复。 */
 let layoutRestored = false;
 
 async function withTimeout(promise, ms) {
@@ -654,13 +654,25 @@ function openLayBoxMenu(event, item) {
 }
 
 const LAYOUT_KEY = "hana-moss-studio:layout";
-/** 框存本地：刷新、重装都不该把画好的框弄丢。存百分比，换画幅也不会偏。 */
+/** 框归属于哪张底图：换图就该从零开始，同一张图回来框还在。 */
+function layoutUnderlayKey(underlay) {
+  if (!underlay) return "";
+  return `${underlay.name}:${underlay.width}x${underlay.height}`;
+}
+
+/** 框存本地：刷新、重装不丢。存百分比，换画幅也不会偏；跟着底图走，不跟全局走。 */
 function saveLayoutLocal() {
   try {
+    const key = layoutUnderlayKey(lay.underlay);
+    if (!key) {
+      localStorage.removeItem(LAYOUT_KEY);
+      return;
+    }
     const size = layoutCanvasSize();
     localStorage.setItem(
       LAYOUT_KEY,
       JSON.stringify({
+        underlay: key,
         boxes: lay.boxes.map((item) => ({
           label: item.label,
           caption: item.caption,
@@ -679,12 +691,19 @@ function saveLayoutLocal() {
   }
 }
 
-function restoreLayoutLocal() {
+/** 只恢复同一张底图的框；换了图就从空开始。 */
+function restoreLayoutFor(underlay) {
+  lay.boxes = [];
+  lay.selected = null;
+  lay.seq = 0;
+  const key = layoutUnderlayKey(underlay);
+  if (!key) return;
   try {
     const raw = localStorage.getItem(LAYOUT_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
     if (!Array.isArray(data?.boxes) || !data.boxes.length) return;
+    if (data.underlay !== key) return;
     const size = layoutCanvasSize();
     lay.boxes = data.boxes.map((item) => {
       const box = Array.isArray(item.box) ? item.box.map(Number) : [0, 0, 0, 0];
@@ -696,8 +715,7 @@ function restoreLayoutLocal() {
         box: [box[0] * size.width, box[1] * size.height, box[2] * size.width, box[3] * size.height].map((value) => Math.round(value)),
       };
     });
-    // 不说一句的话，重开 App 后画布上凭空多出几个框，像是界面自己乱画的。
-    toast(`上次的 ${lay.boxes.length} 个框还在，工具条上「清空框」可以全部去掉`);
+    toast(`这张图上次的 ${lay.boxes.length} 个框已恢复`);
   } catch {
     /* 坏了当没有 */
   }
@@ -874,6 +892,8 @@ async function setUnderlay(file) {
   if (lay.underlay?.url) URL.revokeObjectURL(lay.underlay.url);
   lay.underlay = { url, name: file.name, width: image.naturalWidth, height: image.naturalHeight };
   nodes.laySheet.style.backgroundImage = `url(${url})`;
+  // 框跟着底图走：换图清空，同一张图回来再从本地接上。
+  restoreLayoutFor(lay.underlay);
   // 底图就是图生图的源图（initImage）：传上去，让侧栏那张也跟着换成它。
   try {
     const uploaded = await api("/inputs/upload?kind=init", { method: "POST", body: file }, 60000);
@@ -1103,6 +1123,7 @@ async function openEditSheet(file) {
     }
     // 布局那边也用这张：两条路共一个底图，不各传一份。
     lay.underlay = { url, name: file.name, width: edit.width, height: edit.height };
+    restoreLayoutFor(lay.underlay);
     closeLayout();
     edit.open = true;
     nodes.base.hidden = false;
@@ -2615,10 +2636,9 @@ function useAsEditReference(job) {
 // ── 总渲染 ─────────────────────────────────────────────────────────────
 function render(data) {
   latest = data;
-  // 第一次拿到设置时把上次的框接回来（存的是百分比，画幅变了也不偏）。
-  if (!layoutRestored && data.settings) {
+  // 框属于底图：设置晚到时，已恢复过的框需要按当前画幅重算一次位置。
+  if (!layoutRestored && data.settings && lay.boxes.length) {
     layoutRestored = true;
-    restoreLayoutLocal();
     if (lay.open) {
       laySheetSize();
       renderLayBoxes();
