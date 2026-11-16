@@ -193,6 +193,9 @@
 
     /* 参考图缩略 */
     .pn-ref { position: relative; border: 1px solid var(--ui-line); border-radius: 8px; overflow: hidden; background: var(--ui-overlay); }
+    /* 拖放提示：整页拖进图片时铺一层，松手就当底图 */
+    .pn-drop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--ui-sidebar) 82%, transparent); border: 2px dashed var(--ui-accent); border-radius: 10px; font-size: 13px; color: var(--ui-text); text-align: center; pointer-events: none; }
+    .pn-drop[hidden] { display: none; }
     .pn-ref img { display: block; width: 100%; max-height: 140px; object-fit: contain; }
     .pn-ref-x { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: var(--ui-overlay-strong); color: var(--ui-text); cursor: pointer; line-height: 1; font-size: 13px; }
     /* 编辑参考图：只是一个小标签，不占位置 */
@@ -457,7 +460,7 @@
         <button class="btn ghost small" id="pn-ref-pick" type="button">选底图</button>
         <button class="btn ghost small" id="pn-mask-edit" type="button" hidden>画蒙版</button>
       </div>
-      <p class="hint">作品区右键「用这张做底图」可以把画廊里的图带进来。蒙版用白色区域告诉引擎「哪里重画」。</p>
+      <p class="hint">图可以直接拖进来；也可以在作品区右键「用这张做底图」。拖到工作区画布上会落进改图台，直接在上面抹蒙版。</p>
       <div class="pn-editref" id="pn-editref" hidden>
         <span class="name" id="pn-editref-name"></span>
         <button class="drop" id="pn-editref-clear" type="button" title="移除参考图">×</button>
@@ -541,6 +544,8 @@
       <span class="hint" id="pn-mask-pct"></span>
     </div>
   </div>
+
+  <div class="pn-drop" id="pn-drop" hidden>松手当作底图</div>
 
   <script type="module" src="./assets/panel.js"></script>
 </body>

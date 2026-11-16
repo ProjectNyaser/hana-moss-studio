@@ -32,7 +32,7 @@
           <p class="canvas-empty-title">画布还空着</p>
           <p class="hint">在左侧栏写下提示词，按「开始生成」。出图会落在这里，旧图收进「画廊」。</p>
           <button class="btn small" id="canvas-layout" type="button">导入底图框选布局</button>
-          <p class="hint canvas-empty-sub">也可以直接把图拖进来：它就是图生图的底图</p>
+          <p class="hint canvas-empty-sub">也可以直接把图拖进来：它当底图，在上面抹出要重画的地方就能改</p>
         </div>
 
         <div class="lay" id="lay" hidden>
@@ -65,6 +65,27 @@
             <option value="person"></option>
           </datalist>
         </div>
+        <div class="base" id="base" hidden>
+          <div class="base-bar">
+            <span class="base-info" id="base-info"></span>
+            <span class="spacer"></span>
+            <label class="base-brush" id="base-brush-field" hidden><span>笔刷</span>
+              <input id="base-brush" type="range" min="6" max="240" step="2" value="60"></label>
+            <button class="btn small" id="base-paint" type="button">画蒙版</button>
+            <button class="btn small" id="base-erase" type="button" hidden>擦</button>
+            <button class="btn small" id="base-mask-clear" type="button" hidden>清空</button>
+            <button class="btn small" id="base-mask-save" type="button" hidden>保存蒙版</button>
+            <button class="btn small" id="base-layout" type="button" title="把这张底图交给布局框选">框选布局</button>
+            <button class="btn small" id="base-close" type="button">关闭</button>
+          </div>
+          <div class="base-stage" id="base-stage">
+            <div class="base-frame" id="base-frame">
+              <img id="base-image" alt="底图">
+              <canvas id="base-mask"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="canvas-drop-hint" id="canvas-drop-hint" hidden>松手：这张当底图改</div>
         <input type="file" id="lay-file" accept="image/*" hidden>
       </div>
     </section>

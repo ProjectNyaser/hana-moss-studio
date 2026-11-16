@@ -114,6 +114,7 @@ const nodes = {
   refClear: el("pn-ref-clear"),
   refPick: el("pn-ref-pick"),
   refFile: el("pn-ref-file"),
+  dropHint: el("pn-drop"),
   refResize: el("pn-ref-resize"),
   strength: el("pn-strength"),
   maskEdit: el("pn-mask-edit"),
@@ -630,6 +631,10 @@ let refImage = null;
 let refPrepared = null;
 /** 已保存的蒙版路径（必须与 refPrepared 同尺寸）。 */
 let maskPath = null;
+/** 同一张蒙版的 PNG：交给画布直接显示，不再取一次网络。 */
+let maskBlob = null;
+/** 蒙版覆盖的百分比，只用于说明文字。 */
+let maskShare = 0;
 /** 编辑适配器的源图与已准备好的参考图。 */
 let editSource = null;
 let editRef = null;
@@ -804,12 +809,14 @@ async function prepareRef(width, height) {
   if (refPrepared && refPrepared.width === width && refPrepared.height === height) return refPrepared;
   const blob = await canvasBlob(drawFitted(refImage, width, height, nodes.refResize.value));
   const result = await uploadBinary("/inputs/upload?kind=init", blob);
-  refPrepared = { path: result.path, url: inputUrl(result.name), width, height };
+  refPrepared = { path: result.path, url: inputUrl(result.name), width, height, blob };
   // 尺寸换了的旧蒙版不能再用：它和新的 init_image 不同尺寸，引擎会拒。
   if (maskPath) {
     maskPath = null;
     say("尺寸变了，蒙版已清空，需要重新画。", "bad");
   }
+  maskBlob = null;
+  maskShare = 0;
   updateRefNote();
   return refPrepared;
 }
@@ -830,6 +837,7 @@ function updateRefNote() {
     nodes.maskEdit.hidden = true;
     // 没参考图时重绘强度与适配无处可用，不摆在那里让用户以为它们会生效。
     nodes.refControls.hidden = true;
+    broadcastEditState();
     return;
   }
   const size = `${refPrepared.width}×${refPrepared.height}`;
@@ -837,6 +845,7 @@ function updateRefNote() {
   nodes.maskEdit.hidden = false;
   nodes.maskEdit.textContent = maskPath ? "改蒙版" : "画蒙版";
   nodes.refControls.hidden = false;
+  broadcastEditState();
 }
 
 async function setReference(blobOrUrl) {
@@ -851,11 +860,27 @@ async function setReference(blobOrUrl) {
     refImage = image;
     refPrepared = null;
     maskPath = null;
+    maskBlob = null;
+    maskShare = 0;
     nodes.ref.hidden = false;
     nodes.refImg.src = typeof blobOrUrl === "string" ? blobOrUrl : url;
     nodes.refNote.textContent = "准备中…";
+    // 比例差得多就按底图改画幅：crop 掉一半构图，比多等几秒更糟。
+    let resized = false;
+    if (image.naturalWidth && image.naturalHeight) {
+      const imageRatio = Math.min(RATIO_MAX, Math.max(RATIO_MIN, image.naturalWidth / image.naturalHeight));
+      if (Math.abs(imageRatio - currentRatio()) / imageRatio > 0.02) {
+        const megapixels = Math.max(MIN_MP, Math.min(MAX_MP, currentMP()));
+        const [width, height] = sizeFor(imageRatio, megapixels);
+        setSize(width, height);
+        // 画幅是长期设置：拖一张图改掉它，下次打开也该是这个尺寸。
+        scheduleSave();
+        resized = true;
+      }
+    }
     await prepareRef(Number(nodes.width.value), Number(nodes.height.value));
-    say("底图已就绪，可以另写提示词，也可以直接跑。", "ok");
+    const size = `${nodes.width.value}×${nodes.height.value}`;
+    say(resized ? `底图已就绪，画幅按它的比例改成 ${size}。` : `底图已就绪（${size}），可以另写提示词，也可以直接跑。`, "ok");
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
   }
@@ -865,6 +890,8 @@ function clearReference() {
   refImage = null;
   refPrepared = null;
   maskPath = null;
+  maskBlob = null;
+  maskShare = 0;
   nodes.ref.hidden = true;
   nodes.refImg.removeAttribute("src");
   updateRefNote();
@@ -1200,6 +1227,42 @@ layoutChannel?.addEventListener("message", (event) => {
   else if (data.type === "layout-underlay" && typeof data.name === "string") void setReference(inputUrl(data.name));
 });
 
+/** 底图与蒙版的全貌：画布那边只按这份数据画。blob 不做变化键，广播时单看 size。 */
+function editStatePayload() {
+  return {
+    hasBase: Boolean(refPrepared),
+    width: refPrepared?.width ?? null,
+    height: refPrepared?.height ?? null,
+    maskBlob: maskBlob ?? null,
+    share: maskShare,
+  };
+}
+
+let lastEditSent = "";
+
+function broadcastEditState(force = false) {
+  const state = editStatePayload();
+  const key = JSON.stringify({ ...state, maskBlob: state.maskBlob ? state.maskBlob.size : 0 });
+  if (!force && key === lastEditSent) return;
+  lastEditSent = key;
+  layoutChannel?.postMessage({ type: "edit-state", state });
+}
+
+/** 画布上画好的蒙版回到这里：上传只在这边做，提交时用的也还是这一个 maskPath。 */
+async function adoptCanvasMask(blob, share) {
+  if (!refPrepared) return;
+  try {
+    const result = await uploadBinary("/inputs/upload?kind=mask", blob);
+    maskPath = result.path;
+    maskBlob = blob;
+    maskShare = Number(share) || 0;
+    updateRefNote();
+    say(`画布上的蒙版已保存，重画面积 ${maskShare}%。`, "ok");
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+}
+
 // 蒙版画布：白色笔触就是「重画这里」。保存时按 alpha 阈值二值化，避免半透明边。
 let maskCtx = null;
 let maskPainting = false;
@@ -1321,6 +1384,8 @@ async function saveMask() {
     nodes.maskSave.disabled = true;
     const result = await uploadBinary("/inputs/upload?kind=mask", blob);
     maskPath = result.path;
+    maskBlob = blob;
+    maskShare = share;
     nodes.mask.hidden = true;
     updateRefNote();
     say(`蒙版已保存，重画面积 ${share}%。`, "ok");
@@ -1968,6 +2033,43 @@ nodes.controlKind.addEventListener("input", () => {
 
 // 参考图
 nodes.refPick.addEventListener("click", () => nodes.refFile.click());
+
+// 侧栏整页都是拖放落点：文件从桌面拖进来就当作底图。
+// 计数是为了在子元素之间移动时不被误判成离开（dragleave 会连发）。
+let dropDepth = 0;
+const carriesFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes("Files");
+const hideDropHint = () => {
+  dropDepth = 0;
+  if (nodes.dropHint) nodes.dropHint.hidden = true;
+};
+window.addEventListener("dragenter", (event) => {
+  if (!carriesFiles(event)) return;
+  event.preventDefault();
+  dropDepth += 1;
+  if (nodes.dropHint) nodes.dropHint.hidden = false;
+});
+window.addEventListener("dragover", (event) => {
+  if (!carriesFiles(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+});
+window.addEventListener("dragleave", (event) => {
+  if (!carriesFiles(event)) return;
+  dropDepth = Math.max(0, dropDepth - 1);
+  if (!dropDepth) hideDropHint();
+});
+window.addEventListener("drop", async (event) => {
+  if (!carriesFiles(event)) return;
+  event.preventDefault();
+  hideDropHint();
+  const files = Array.from(event.dataTransfer?.files ?? []);
+  const file = files.find((item) => (item.type ? item.type.startsWith("image/") : /\.(png|jpe?g|webp|bmp|avif)$/i.test(item.name ?? "")));
+  if (!file) {
+    say("拖进来的不是图片（要 png / jpg / webp）。", "bad");
+    return;
+  }
+  await setReference(file);
+});
 nodes.refFile.addEventListener("change", async () => {
   const file = nodes.refFile.files?.[0];
   nodes.refFile.value = "";
@@ -2125,6 +2227,17 @@ reuseChannel?.addEventListener("message", (event) => {
   if (data?.type === "edit-reference" && typeof data.name === "string") {
     void setEditReference(outputUrl(data.name), data.name);
   }
+  // 画布上画好的蒙版：上传交给这里，提交时用的还是同一个 maskPath。
+  if (data?.type === "canvas-mask" && data.blob) {
+    void adoptCanvasMask(data.blob, data.share);
+    return;
+  }
+  if (data?.type === "canvas-clear") {
+    clearReference();
+    return;
+  }
+  // 画布刚起来，问一遍当前底图。
+  if (data?.type === "edit-hello") broadcastEditState(true);
 });
 
 async function boot() {
@@ -2176,6 +2289,8 @@ async function boot() {
   setTimeout(() => {
     if (!lastBroadcast) void takeOver();
   }, 2000);
+  // 主界面可能比侧栏晚起来：它到时候会发 edit-hello，这里先把底图报一次。
+  broadcastEditState(true);
   // 主界面关闭后广播会断，超过十五秒没收到就自己重新接上。
   setInterval(() => {
     if (ownLive) return;

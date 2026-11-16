@@ -39,6 +39,21 @@ const nodes = {
   layClear: el("lay-clear"),
   layClose: el("lay-close"),
   layFile: el("lay-file"),
+  base: el("base"),
+  baseInfo: el("base-info"),
+  baseStage: el("base-stage"),
+  baseFrame: el("base-frame"),
+  baseImage: el("base-image"),
+  baseMask: el("base-mask"),
+  baseBrush: el("base-brush"),
+  baseBrushField: el("base-brush-field"),
+  basePaint: el("base-paint"),
+  baseErase: el("base-erase"),
+  baseMaskClear: el("base-mask-clear"),
+  baseMaskSave: el("base-mask-save"),
+  baseLayout: el("base-layout"),
+  baseClose: el("base-close"),
+  canvasDropHint: el("canvas-drop-hint"),
   galleryCount: el("gallery-count"),
   thumbs: el("thumbs"),
   ctxMenu: el("ctx-menu"),
@@ -312,6 +327,15 @@ async function renderCanvas(data) {
   const active = data?.engine?.active;
   const img = nodes.resultImage;
 
+  // 改图台开着就由它占画布；生成中先让给采样预览。
+  const showEdit = edit.open && !active;
+  nodes.base.hidden = !showEdit;
+  if (showEdit) {
+    nodes.result.hidden = true;
+    nodes.canvasEmpty.hidden = true;
+    return;
+  }
+
   // 生成中：画面交给采样预览，下面那行换成参数与实时用时（排队时间不算）。
   if (active) {
     nodes.canvasEmpty.hidden = true;
@@ -572,6 +596,8 @@ function renderLayDraft() {
 }
 
 function openLayout(selectId) {
+  // 画布只有一块：框选与改图台不共存。
+  if (edit.open) closeEditSheet();
   lay.open = true;
   nodes.lay.hidden = false;
   nodes.laySheet.style.backgroundImage = lay.underlay ? `url(${lay.underlay.url})` : "";
@@ -720,22 +746,30 @@ async function setUnderlay(file) {
   } catch (error) {
     toast(`底图没传上去：${error instanceof Error ? error.message : String(error)}`, "error");
   }
+  const resized = await alignCanvasToRatio(image.naturalWidth, image.naturalHeight);
   const size = layoutCanvasSize();
-  const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
-  const canvasRatio = size.width / Math.max(1, size.height);
-  if (Math.abs(ratio - canvasRatio) / canvasRatio > 0.02) {
-    // 保持像素总量不变，只换比例。
-    const area = size.width * size.height;
-    const width = Math.max(256, Math.round(Math.sqrt(area * ratio) / 8) * 8);
-    const height = Math.max(256, Math.round(width / ratio / 8) * 8);
-    await applyCanvasSize(width, height);
-    toast(`画幅已按底图调成 ${ratioText(width, height)}`);
+  if (resized) {
+    toast(`画幅已按底图调成 ${ratioText(size.width, size.height)}`);
   } else {
     toast(`底图：${file.name}（${ratioText(image.naturalWidth, image.naturalHeight)}），已作为图生图底图`);
   }
   laySheetSize();
   renderLayBoxes();
   renderLayInfo();
+}
+
+/** 画幅比例往底图上靠：像素总量不变，只换比例。 */
+async function alignCanvasToRatio(width, height) {
+  const size = layoutCanvasSize();
+  const ratio = width / Math.max(1, height);
+  const canvasRatio = size.width / Math.max(1, size.height);
+  if (Math.abs(ratio - canvasRatio) / canvasRatio <= 0.02) return false;
+  // 保持像素总量不变，只换比例。
+  const area = size.width * size.height;
+  const w = Math.max(256, Math.round(Math.sqrt(area * ratio) / 8) * 8);
+  const h = Math.max(256, Math.round(w / ratio / 8) * 8);
+  await applyCanvasSize(w, h);
+  return true;
 }
 
 /** 画幅改动落到设置，并告诉侧栏把输入框也改过来。 */
@@ -779,6 +813,299 @@ function pinLayoutRatio() {
 }
 
 
+// ── 改图台（底图 + 蒙版，在主画布上）──────────────────────────────
+// 底图就是 init_image，蒙版直接抹在它上面。上传与提交仍然归侧栏，
+// 这边只负责显示与涂抹，存好的 PNG 通过广播交回去。
+const edit = {
+  open: false,
+  url: null,
+  name: "",
+  width: 0,
+  height: 0,
+  /** 蒙版覆盖的百分比，只用于说明。 */
+  share: 0,
+  /** null：不画；paint / erase：当前笔。 */
+  mode: null,
+  /** 侧栏交回来的那张蒙版（已保存的那份）。 */
+  maskBlob: null,
+};
+let maskDrawing = false;
+let maskLastPoint = null;
+let maskLoadToken = 0;
+const MASK_STROKE = "rgba(255, 96, 96, 0.55)";
+
+/** 蒙版画布的内部尺寸就是出图尺寸：与侧栏裁好的 init 图一一对应。 */
+function baseCanvasSize() {
+  return layoutCanvasSize();
+}
+
+function baseSheetSize() {
+  if (!edit.open) return;
+  const size = baseCanvasSize();
+  const stage = nodes.baseStage;
+  const ratio = size.width / Math.max(1, size.height);
+  const fitWidth = Math.max(80, stage.clientWidth - 44);
+  const fitHeight = Math.max(80, stage.clientHeight - 44);
+  let width = fitWidth;
+  let height = width / ratio;
+  if (height > fitHeight) {
+    height = fitHeight;
+    width = height * ratio;
+  }
+  nodes.baseFrame.style.width = `${Math.round(width)}px`;
+  nodes.baseFrame.style.height = `${Math.round(height)}px`;
+}
+
+/** 画幅变了就重设蒙版画布；返回是否真的换了尺寸（旧蒙版作废）。 */
+function resetBaseMaskCanvas() {
+  const size = baseCanvasSize();
+  if (nodes.baseMask.width === size.width && nodes.baseMask.height === size.height) return false;
+  nodes.baseMask.width = size.width;
+  nodes.baseMask.height = size.height;
+  edit.share = 0;
+  return true;
+}
+
+function renderBaseBar() {
+  const size = baseCanvasSize();
+  const bits = [`${edit.width}×${edit.height}`, `目标 ${size.width}×${size.height}`];
+  bits.push(edit.share ? `蒙版重画 ${edit.share}%` : edit.maskBlob ? "蒙版已保存" : "抹出要重画的地方，保存后回侧栏点生成");
+  nodes.baseInfo.textContent = bits.join(" · ");
+  const painting = edit.mode !== null;
+  nodes.basePaint.classList.toggle("on", painting);
+  nodes.basePaint.textContent = painting ? "退出蒙版" : "画蒙版";
+  nodes.baseErase.hidden = !painting;
+  nodes.baseErase.classList.toggle("on", edit.mode === "erase");
+  nodes.baseBrushField.hidden = !painting;
+  nodes.baseMaskClear.hidden = !painting;
+  nodes.baseMaskSave.hidden = !painting;
+  nodes.baseMask.classList.toggle("painting", painting);
+}
+
+/** 已保存的蒙版是黑白图：直接叠上去看不清，按亮度换成红色半透明。 */
+function paintMaskOverlay(image) {
+  const canvas = nodes.baseMask;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!image) return;
+  const scratch = document.createElement("canvas");
+  scratch.width = canvas.width;
+  scratch.height = canvas.height;
+  const sctx = scratch.getContext("2d");
+  sctx.drawImage(image, 0, 0, scratch.width, scratch.height);
+  const frame = sctx.getImageData(0, 0, scratch.width, scratch.height);
+  const data = frame.data;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] <= 8) {
+      data[i + 3] = 0;
+      continue;
+    }
+    data[i] = 255;
+    data[i + 1] = 96;
+    data[i + 2] = 96;
+    data[i + 3] = 140;
+  }
+  sctx.putImageData(frame, 0, 0);
+  ctx.drawImage(scratch, 0, 0);
+}
+
+async function showMaskBlob(blob) {
+  const token = ++maskLoadToken;
+  const canvas = nodes.baseMask;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!blob) return;
+  try {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("蒙版读不出来"));
+      image.src = url;
+    });
+    URL.revokeObjectURL(url);
+    // 加载是异步的：期间画幅又换了就不要回填旧蒙版。
+    if (token !== maskLoadToken) return;
+    paintMaskOverlay(image);
+  } catch {
+    /* 旧蒙版读不出就当没有 */
+  }
+}
+
+/** 底图落进改图台：同一张图交给侧栏当 init_image，不重复上传两次。 */
+async function openEditSheet(file) {
+  let url = null;
+  try {
+    url = URL.createObjectURL(file);
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("这张图读不出来"));
+      image.src = url;
+    });
+    if (edit.url) URL.revokeObjectURL(edit.url);
+    edit.url = url;
+    edit.name = file.name || "底图";
+    edit.width = image.naturalWidth;
+    edit.height = image.naturalHeight;
+    edit.share = 0;
+    edit.mode = null;
+    edit.maskBlob = null;
+    try {
+      const uploaded = await api("/inputs/upload?kind=init", { method: "POST", body: file }, 60000);
+      if (uploaded?.name) layChannel?.postMessage({ type: "layout-underlay", name: uploaded.name });
+    } catch (error) {
+      toast(`底图没传上去：${error instanceof Error ? error.message : String(error)}`, "error");
+    }
+    // 布局那边也用这张：两条路共一个底图，不各传一份。
+    lay.underlay = { url, name: file.name, width: edit.width, height: edit.height };
+    closeLayout();
+    edit.open = true;
+    nodes.base.hidden = false;
+    nodes.baseImage.src = url;
+    resetBaseMaskCanvas();
+    baseSheetSize();
+    renderBaseBar();
+    void renderCanvas(latest);
+    const resized = await alignCanvasToRatio(edit.width, edit.height);
+    resetBaseMaskCanvas();
+    baseSheetSize();
+    renderBaseBar();
+    const size = baseCanvasSize();
+    toast(
+      resized
+        ? `画幅已按底图调成 ${ratioText(size.width, size.height)}，抹出要重画的地方`
+        : `${edit.name}：底图已就位，抹出要重画的地方`,
+    );
+  } catch (error) {
+    if (url && url !== edit.url) URL.revokeObjectURL(url);
+    toast(error instanceof Error ? error.message : String(error), "error");
+  }
+}
+
+function closeEditSheet() {
+  edit.open = false;
+  edit.mode = null;
+  maskDrawing = false;
+  maskLastPoint = null;
+  nodes.base.hidden = true;
+  renderBaseBar();
+  void renderCanvas(latest);
+}
+
+/** 侧栏报过来的底图/蒙版状态。 */
+function applyEditState(state) {
+  if (!state) return;
+  if (!state.hasBase) {
+    if (edit.open) closeEditSheet();
+    return;
+  }
+  const changed = resetBaseMaskCanvas();
+  edit.share = Number(state.share) || 0;
+  const next = state.maskBlob ?? null;
+  const isNew = next && next !== edit.maskBlob;
+  edit.maskBlob = next;
+  if (edit.open) {
+    if (changed) {
+      baseSheetSize();
+      if (edit.mode === null) toast("画幅变了，蒙版已清空");
+    }
+    // 正在抹的时候不抢画面：那几笔还没保存。
+    if (isNew && edit.mode === null) void showMaskBlob(next);
+    renderBaseBar();
+  }
+}
+
+/** 画幅改了（侧栏改尺寸、或比例跟底图对齐）就在这里跟上。 */
+function syncBaseSheet() {
+  if (!edit.open) return;
+  if (resetBaseMaskCanvas()) {
+    nodes.baseMask.getContext("2d").clearRect(0, 0, nodes.baseMask.width, nodes.baseMask.height);
+    baseSheetSize();
+    renderBaseBar();
+  }
+}
+
+function basePoint(event) {
+  const canvas = nodes.baseMask;
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    scale: canvas.width / Math.max(1, rect.width),
+  };
+}
+
+function paintBaseMask(point) {
+  const canvas = nodes.baseMask;
+  const ctx = canvas.getContext("2d");
+  // 笔刷尺寸是屏幕像素，画到画布上要按显示比例放大。
+  const radius = ((Number(nodes.baseBrush.value) || 60) / 2) * point.scale;
+  ctx.globalCompositeOperation = edit.mode === "erase" ? "destination-out" : "source-over";
+  ctx.strokeStyle = MASK_STROKE;
+  ctx.fillStyle = MASK_STROKE;
+  ctx.lineWidth = radius * 2;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (!maskLastPoint) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(maskLastPoint.x, maskLastPoint.y);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+  }
+  maskLastPoint = { x: point.x, y: point.y };
+}
+
+async function saveBaseMask() {
+  if (!edit.open || edit.mode === null) return;
+  const source = nodes.baseMask;
+  const out = document.createElement("canvas");
+  out.width = source.width;
+  out.height = source.height;
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(source, 0, 0);
+  // 二值化：笔触是白（叠在黑底上约 217），没碰过的地方是 0。
+  // 看亮度而不是 alpha：整张已铺了不透明黑底，alpha 处处是 255。
+  const frame = ctx.getImageData(0, 0, out.width, out.height);
+  const data = frame.data;
+  let painted = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const on = data[i] > 8;
+    data[i] = on ? 255 : 0;
+    data[i + 1] = on ? 255 : 0;
+    data[i + 2] = on ? 255 : 0;
+    data[i + 3] = 255;
+    if (on) painted += 1;
+  }
+  if (!painted) {
+    toast("蒙版是空的：至少抹一块要重画的区域");
+    return;
+  }
+  ctx.putImageData(frame, 0, 0);
+  const share = Math.round((painted / (out.width * out.height)) * 1000) / 10;
+  const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png"));
+  if (!blob) {
+    toast("蒙版编码失败");
+    return;
+  }
+  nodes.baseMaskSave.disabled = true;
+  edit.mode = null;
+  maskDrawing = false;
+  maskLastPoint = null;
+  edit.share = share;
+  edit.maskBlob = blob;
+  renderBaseBar();
+  layChannel?.postMessage({ type: "canvas-mask", blob, share });
+  nodes.baseMaskSave.disabled = false;
+  toast(`蒙版已交给侧栏，重画面积 ${share}%。回侧栏点生成`);
+}
+
 /** 拖到画布上也进布局：这是“导入底图”的第二条路。 */
 function canvasHasFiles(event) {
   return Array.from(event.dataTransfer?.types ?? []).includes("Files");
@@ -789,15 +1116,18 @@ nodes.canvas.addEventListener("dragover", (event) => {
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
   nodes.canvas.classList.add("dropping");
+  nodes.canvasDropHint.hidden = false;
 });
 nodes.canvas.addEventListener("dragleave", (event) => {
   if (event.relatedTarget && nodes.canvas.contains(event.relatedTarget)) return;
   nodes.canvas.classList.remove("dropping");
+  nodes.canvasDropHint.hidden = true;
 });
 nodes.canvas.addEventListener("drop", async (event) => {
   if (!canvasHasFiles(event)) return;
   event.preventDefault();
   nodes.canvas.classList.remove("dropping");
+  nodes.canvasDropHint.hidden = true;
   const file = event.dataTransfer?.files?.[0];
   if (!file) return;
   if (!String(file.type).startsWith("image/")) {
@@ -805,9 +1135,10 @@ nodes.canvas.addEventListener("drop", async (event) => {
     return;
   }
   showView("canvas");
-  if (!lay.open) openLayout();
+  // 拖进来就是「接着这张改」：落进改图台，蒙版直接在上面抹。
+  // 想框选布局就在台子上点「框选布局」，底图不会重传。
   try {
-    await setUnderlay(file);
+    await openEditSheet(file);
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), "error");
   }
@@ -862,6 +1193,60 @@ nodes.layText.addEventListener("input", () => {
 nodes.laySheet.addEventListener("pointerdown", onLayPointerDown);
 nodes.laySheet.addEventListener("pointermove", onLayPointerMove);
 nodes.laySheet.addEventListener("pointerup", onLayPointerUp);
+
+// ── 改图台的按钮与涂抹 ─────────────────────────────────────────────
+nodes.basePaint.addEventListener("click", () => {
+  if (!edit.open) return;
+  edit.mode = edit.mode === null ? "paint" : null;
+  maskDrawing = false;
+  maskLastPoint = null;
+  renderBaseBar();
+  if (edit.mode) toast("在底图上抹出要重画的区域，抹完点「保存蒙版」");
+});
+nodes.baseErase.addEventListener("click", () => {
+  edit.mode = edit.mode === "erase" ? "paint" : "erase";
+  maskLastPoint = null;
+  renderBaseBar();
+});
+nodes.baseMaskClear.addEventListener("click", () => {
+  const ctx = nodes.baseMask.getContext("2d");
+  ctx.clearRect(0, 0, nodes.baseMask.width, nodes.baseMask.height);
+  edit.share = 0;
+  renderBaseBar();
+  toast("画布上的笔触已清空，保存新的才会换掉侧栏那份");
+});
+nodes.baseMaskSave.addEventListener("click", () => void saveBaseMask());
+nodes.baseClose.addEventListener("click", closeEditSheet);
+nodes.baseLayout.addEventListener("click", () => {
+  if (!edit.open) return;
+  // 底图已经传给侧栏了：布局直接接这张走，不再重传。
+  const hasUnderlay = Boolean(lay.underlay);
+  closeEditSheet();
+  openLayout();
+  if (!hasUnderlay) nodes.layFile.click();
+});
+nodes.baseMask.addEventListener("pointerdown", (event) => {
+  if (edit.mode === null) return;
+  event.preventDefault();
+  nodes.baseMask.setPointerCapture?.(event.pointerId);
+  maskDrawing = true;
+  maskLastPoint = null;
+  paintBaseMask(basePoint(event));
+});
+nodes.baseMask.addEventListener("pointermove", (event) => {
+  if (!maskDrawing) return;
+  paintBaseMask(basePoint(event));
+});
+const endMaskStroke = () => {
+  maskDrawing = false;
+  maskLastPoint = null;
+};
+nodes.baseMask.addEventListener("pointerup", endMaskStroke);
+nodes.baseMask.addEventListener("pointercancel", endMaskStroke);
+nodes.baseMask.addEventListener("pointerleave", () => {
+  // 拖出画面再回来不该把上一笔连上去。
+  maskLastPoint = null;
+});
 nodes.laySheet.addEventListener("pointercancel", onLayPointerUp);
 
 document.addEventListener("keydown", (event) => {
@@ -881,19 +1266,27 @@ document.addEventListener("keydown", (event) => {
 
 window.addEventListener("resize", () => {
   if (lay.open) laySheetSize();
+  if (edit.open) baseSheetSize();
 });
 
 // 表单显隐、窗口缩放、字体变化都会改 stage 高度：跟着重算画布尺寸，免得出滚动条。
 if (typeof ResizeObserver === "function") {
-  new ResizeObserver(() => {
+  const observer = new ResizeObserver(() => {
     if (lay.open) laySheetSize();
-  }).observe(nodes.layStage);
+    if (edit.open) baseSheetSize();
+  });
+  observer.observe(nodes.layStage);
+  observer.observe(nodes.baseStage);
 }
 
 /** 侧栏点「去画布框选」时把这一层打开。 */
 const layChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
 layChannel?.addEventListener("message", (event) => {
   const msg = event.data ?? {};
+  if (msg.type === "edit-state") {
+    applyEditState(msg.state);
+    return;
+  }
   if (msg.type !== "layout-open") return;
   showView("canvas");
   const target = Number.isFinite(msg.index) ? lay.boxes[msg.index]?.id : undefined;
@@ -2078,9 +2471,12 @@ function render(data) {
   const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;
   if (newest && newest !== newestJobId) {
     newestJobId = newest;
+    // 刚出一张：画布回到结果；正在抹蒙版时不抢画面。
+    if (bootstrapped && edit.open && edit.mode === null) closeEditSheet();
     if (bootstrapped) selectedId = newest;
   }
   bootstrapped = true;
+  syncBaseSheet();
   void renderCanvas(data);
   // key 带上「有没有预览」：从没有到有的时候要重画那格，之后同状态内只换图。
   const previewing = data.engine.active?.previewAt ? "p" : "";
@@ -2346,6 +2742,8 @@ async function boot() {
     /* 非宿主环境 */
   }
   showView("canvas");
+  // 侧栏那边存着底图与蒙版，起来之后问一遍当前状态。
+  layChannel?.postMessage({ type: "edit-hello" });
   // 首屏靠事件流的首帧，不再单独拉一次 /state。万一流一时连不上，两秒后再补一次。
   let gotFrame = false;
   setTimeout(() => {
