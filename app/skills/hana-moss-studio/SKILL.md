@@ -107,6 +107,7 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 | 参数 | 说明 |
 |---|---|
 | `action` | `run` 新开一次；`resume` 从断点接着跑；`list` 列断点；`encode` PNG → latent；`decode` latent → PNG |
+| `batch` | 一次出 1~4 张（缺省 1）。2 张以上走 host guidance，种子逐张 +1；断点里的张数要与这次一致才能续 |
 | `prompt` / `negativePrompt` / `width` / `height` / `steps` / `cfg` / `shift` / `seed` | 同 `moss_generate`。`resume` 时用断点里的值 |
 | `checkpointId` | `resume` 用：断点 id（就是任务 id）或 meta 文件绝对路径 |
 | `imagePath` | `encode` 用：PNG 路径，尺寸要是 16 的倍数 |
@@ -128,11 +129,8 @@ latent 是模型空间的 F32 `[128, h/16, w/16]`，与 ComfyUI 的 Flux2 `LATEN
 
 ## 引擎里还没接的部分
 
-component session 还有三块没用上，原因写在这里，免得下次重复调研：
-
-- **多 latent batch**：`run_begin` 在 `guidance: "moss"` 下只能 1 个 latent（文档明确写 `L = 1`），而 MOSS 官方组合就是这个 guidance。要用 batch 得改走 `guidance: "host"` 自己算 CFG，行数与合并顺序都得对着引擎对一遍，才能保证结果与官方一致。
-- **crop 调用**（`MI_RUN_CROPS`）：用于局部区域以更高分辨率重绘。现在用现有的局部重绘（`initImage` + `mask`）能得到接近的效果，但它是像素级的，不是 latent 级的。
-- **conditioning 导入**（`conditioning_import`）：把外部算好的文本条件直接灌进去。苔室的文本编码一直在引擎里，没有需要复用的外部条件。
+- **crop 调用**（`MI_RUN_CROPS`）：它是分块计算，不是「任意位置局部重绘」——块的位置由客户端裁好 latent 写进槽位、再用 `shape` 声明尺寸，所以要做的是裁 latent → 跑 → 贴回。现在的高分辨率局部重绘用的是底图 + 蒙版（像素级），效果接近但不如 latent 级保真。
+- **conditioning 导入**（`conditioning_import`）：把外部算好的文本条件直接灌进去。苔室的文本编码一直在引擎里，没有需要复用的外部条件；`encode_text` 本身也很快（17 token 毫秒级）。
 
 ## 三条硬边界
 
