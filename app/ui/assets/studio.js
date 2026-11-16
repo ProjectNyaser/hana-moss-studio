@@ -23,7 +23,6 @@ const nodes = {
   resultCaption: el("result-caption"),
   resultBar: el("result-bar"),
   canvasEmpty: el("canvas-empty"),
-  canvasBase: el("canvas-base"),
   lay: el("lay"),
   layInfo: el("lay-info"),
   layStage: el("lay-stage"),
@@ -1188,7 +1187,7 @@ const composer = {
   input: document.getElementById("composer-input"),
   send: document.getElementById("composer-send"),
   plus: document.getElementById("composer-plus"),
-  image: document.getElementById("composer-image"),
+  menu: document.getElementById("cmenu"),
   params: document.getElementById("composer-params"),
   model: document.getElementById("composer-model"),
   chips: document.getElementById("composer-chips"),
@@ -1232,16 +1231,33 @@ composer.input?.addEventListener("keydown", (event) => {
 
 composer.send?.addEventListener("click", sendCompose);
 
+// 底图与参考图都是「加图」，合在加号那张菜单里。
+function closeComposerMenu() {
+  if (composer.menu) composer.menu.hidden = true;
+}
+
 composer.plus?.addEventListener("click", (event) => {
   event.stopPropagation();
+  if (!composer.menu) return;
+  const willOpen = composer.menu.hidden;
   closeAllPanels();
-  layChannel?.postMessage({ type: "compose-add-base" });
+  composer.menu.hidden = !willOpen;
 });
 
-composer.image?.addEventListener("click", (event) => {
+composer.menu?.addEventListener("click", (event) => {
   event.stopPropagation();
-  closeAllPanels();
-  layChannel?.postMessage({ type: "compose-add-reference" });
+  const item = event.target.closest(".cmenu-item");
+  if (!item) return;
+  const act = item.dataset.act;
+  closeComposerMenu();
+  if (act === "base") layChannel?.postMessage({ type: "compose-add-base" });
+  else if (act === "reference") layChannel?.postMessage({ type: "compose-add-reference" });
+});
+
+document.addEventListener("click", (event) => {
+  if (!composer.menu || composer.menu.hidden) return;
+  if (composer.menu.contains(event.target) || composer.plus?.contains(event.target)) return;
+  closeComposerMenu();
 });
 
 // 拖到输入框当参考图，拖到画布当底图。
@@ -1393,6 +1409,7 @@ function closeAllPanels() {
 function openPanel(which) {
   const panel = panels[which];
   if (!panel?.box) return;
+  closeComposerMenu();
   closeAllPanels();
   panel.stack = [];
   panel.view = "root";
@@ -1834,11 +1851,6 @@ nodes.canvas.addEventListener("drop", async (event) => {
 // 选一张图进来后去哪儿：改图台，还是布局框选。同一个选图框，两种用途。
 let fileIntent = "layout";
 
-nodes.canvasBase.addEventListener("click", () => {
-  showView("canvas");
-  fileIntent = "edit";
-  nodes.layFile.click();
-});
 nodes.layImport.addEventListener("click", () => {
   fileIntent = "layout";
   nodes.layFile.click();
