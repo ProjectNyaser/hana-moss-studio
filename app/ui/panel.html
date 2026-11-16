@@ -421,6 +421,36 @@
         <input id="pn-step-threshold" type="number" min="0.001" max="1" step="0.005" placeholder="模型默认 0.03">
       </label>
       <p class="hint" id="pn-accel-note" hidden>fbcache 跳过快稳定的 DiT 块：更快，但这张图会跟不加速的不同。阈值越大越快。</p>
+
+      <details class="pn-fold" id="pn-adv-sampling">
+        <summary><svg class="ic"><use href="#i-sliders"/></svg>采样面<span class="hint" id="pn-adv-sampling-note">默认</span></summary>
+        <div class="fold-body">
+          <div class="pn-grid">
+            <label class="field"><span class="label">跳过层</span><input id="pn-uncond-layers" type="text" placeholder="22" spellcheck="false"></label>
+            <label class="field"><span class="label">SLG 层</span><input id="pn-slg-layers" type="text" placeholder="空 = 不用" spellcheck="false"></label>
+          </div>
+          <div class="pn-grid">
+            <label class="field"><span class="label">SLG 强度</span><input id="pn-slg-scale" type="number" min="0" max="20" step="0.1" value="0"></label>
+            <label class="field"><span class="label">序列长度</span><input id="pn-max-seq" type="number" min="1" max="4096" step="1" value="4096"></label>
+          </div>
+          <div class="pn-grid">
+            <label class="field"><span class="label">SLG 起</span><input id="pn-slg-start" type="number" min="0" max="1" step="0.05" value="0"></label>
+            <label class="field"><span class="label">SLG 止</span><input id="pn-slg-stop" type="number" min="0" max="1" step="0.05" value="1"></label>
+          </div>
+          <div class="pn-grid">
+            <label class="field"><span class="label">噪声排布</span><select id="pn-noise-layout"><option value="official">official</option><option value="batch_stream">batch_stream</option></select></label>
+            <label class="field"><span class="label">随机源</span><select id="pn-noise-source"><option value="philox">philox</option><option value="philox_device">philox_device</option><option value="brownian_tree">brownian_tree</option></select></label>
+          </div>
+          <div class="pn-grid">
+            <label class="field"><span class="label">eta</span><input id="pn-eta" type="number" min="0" max="100" step="0.05" value="1"></label>
+            <label class="field"><span class="label">s_noise</span><input id="pn-s-noise" type="number" min="0" max="100" step="0.05" value="1"></label>
+          </div>
+          <label class="field"><span class="label">flow 倍率</span><input id="pn-flow" type="number" min="0.01" max="100" step="0.05" value="1"></label>
+          <label class="field"><span class="label">dataspace 参数</span><input id="pn-dataspace" type="text" placeholder="选 dataspace 采样器时必填" spellcheck="false"></label>
+          <label class="field"><span class="label">distill 目录</span><input id="pn-distill" type="text" placeholder="加速蒸馏包的目录（可选）" spellcheck="false"></label>
+          <p class="hint">跳过层是负向分支不跑的那几层，官方是 22；SLG 是一套额外的跳层引导，和编辑参考图不能同时开。eta / s_noise 只影响随机采样器。</p>
+        </div>
+      </details>
     </div>
 
     <div class="pn-block">

@@ -44,6 +44,20 @@ export const DEFAULT_SETTINGS = {
     // 加速器默认关：它们是 lossy 的，得用户自己决定。
     stepCache: "off",
     stepCacheThreshold: null,
+    // 采样面：层跳过、SLG、序列长度、flow、噪声源与随机项。
+    uncondSkipLayers: [22],
+    slgLayers: [],
+    slgScale: 0,
+    slgStart: 0,
+    slgStop: 1,
+    maxSequenceLength: 4096,
+    flowMultiplier: 1,
+    noiseLayout: "official",
+    noiseSource: "philox",
+    eta: 1,
+    sNoise: 1,
+    dataspace: null,
+    distill: null,
     // LoRA 库：[{path, strength, enabled}]，跟面板上的勾选一致。
     loras: [],
     // 控制适配器：路径 + kind（depth / canny / …），图每次再说。
@@ -127,6 +141,19 @@ export function createStore(dataDir, outputsDir) {
         stepCache: VALUES.stepCache.includes(defaults.stepCache) ? defaults.stepCache : "off",
         stepCacheThreshold:
           defaults.stepCacheThreshold == null ? null : clampFloat(defaults.stepCacheThreshold, 0.0001, 1, 0.03),
+        uncondSkipLayers: normalizeLayers(defaults.uncondSkipLayers, DEFAULT_SETTINGS.defaults.uncondSkipLayers),
+        slgLayers: normalizeLayers(defaults.slgLayers, DEFAULT_SETTINGS.defaults.slgLayers),
+        slgScale: clampFloat(defaults.slgScale, 0, 20, 0),
+        slgStart: clampFloat(defaults.slgStart, 0, 1, 0),
+        slgStop: clampFloat(defaults.slgStop, 0, 1, 1),
+        maxSequenceLength: clamp(defaults.maxSequenceLength, 1, 4096, 4096),
+        flowMultiplier: clampFloat(defaults.flowMultiplier, 0.01, 100, 1),
+        noiseLayout: VALUES.noiseLayout.includes(defaults.noiseLayout) ? defaults.noiseLayout : "official",
+        noiseSource: VALUES.noiseSource.includes(defaults.noiseSource) ? defaults.noiseSource : "philox",
+        eta: clampFloat(defaults.eta, 0, 100, 1),
+        sNoise: clampFloat(defaults.sNoise, 0, 100, 1),
+        dataspace: safeExists(defaults.dataspace) ? defaults.dataspace : null,
+        distill: safeExists(defaults.distill) ? defaults.distill : null,
         loras: normalizeLoras(defaults.loras).filter((item) => safeExists(item.path)),
         control: {
           // 文件已经被删掉的适配器不留在设置里：留着就会让每次生成都报错。
@@ -212,6 +239,21 @@ function normalizeLoras(raw) {
     seen.add(path);
     out.push({ path, strength: clampFloat(item?.strength ?? 1, -8, 8, 1), enabled: item?.enabled !== false });
     if (out.length >= 64) break;
+  }
+  return out;
+}
+
+/** 层号列表：只留非负整数，去重保序。 */
+function normalizeLayers(raw, fallback) {
+  const source = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/[,\s]+/).filter(Boolean) : null;
+  if (!source) return [...fallback];
+  const seen = new Set();
+  const out = [];
+  for (const item of source) {
+    const value = Number(item);
+    if (!Number.isInteger(value) || value < 0 || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
   }
   return out;
 }

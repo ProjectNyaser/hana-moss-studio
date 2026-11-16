@@ -23,6 +23,8 @@ export const VALUES = {
   loraPlacement: ["default", "merge", "side_branch"],
   maskEncoding: ["u8", "binary01"],
   resize: ["crop", "fit", "stretch"],
+  noiseLayout: ["official", "batch_stream"],
+  noiseSource: ["philox", "philox_device", "brownian_tree"],
 };
 
 /** 采样器的显示名。协议名照样传，界面只是多一层好读的标签。 */
@@ -56,6 +58,20 @@ const GENERATION_DEFAULTS = {
   stepCacheThreshold: null,
   cfgTruncation: 1,
   loraPlacement: "default",
+  // 采样面：协议缺省值直接写在这里，界面与工具共用一份。
+  uncondSkipLayers: [22],
+  slgLayers: [],
+  slgScale: 0,
+  slgStart: 0,
+  slgStop: 1,
+  maxSequenceLength: 4096,
+  flowMultiplier: 1,
+  noiseLayout: "official",
+  noiseSource: "philox",
+  eta: 1,
+  sNoise: 1,
+  dataspace: null,
+  distill: null,
   loras: [],
   control: { adapter: null, kind: null, loraStrength: 1, strength: 1 },
 };
@@ -290,6 +306,22 @@ export function readLayout(input, width, height) {
   };
 }
 
+/** 层号列表：接受数组或 "22, 24" 这种串。空串与 null 都当「不用」。 */
+export function readLayers(raw, fallback, label) {
+  if (raw === undefined) return [...fallback];
+  if (raw === null) return [];
+  const source = Array.isArray(raw) ? raw : String(raw).split(/[,\s]+/).filter(Boolean);
+  const out = [];
+  for (const item of source) {
+    const value = Number(item);
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`${label} 里只能写非负整数（第 ${out.length + 1} 个是 ${item}）`);
+    }
+    out.push(value);
+  }
+  return out;
+}
+
 /**
  * 把工具/界面传进来的参数收敛成任务记录里的那几项。
  * `defaults` 是设置里的 defaults，缺省值从那里来（这样面板改一次就长期生效）。
@@ -307,17 +339,45 @@ export function readGeneration(input, defaults = {}) {
   const mask = requireFile(input?.mask, "蒙版");
   if (mask && !initImage) throw new Error("局部重绘需要先给一张参考图（蒙版要和它同尺寸）");
 
+  const sampler = pickEnum(input?.sampler, VALUES.sampler, pickEnum(base.sampler, VALUES.sampler, "euler"));
+  const references = readReferences(input);
+  const slgScale = finite(input?.slgScale ?? base.slgScale, 0, 20) ?? 0;
+  // 引擎明确规定：参考图与 SLG 不同时开。两样都是「额外的注意力行」，同时开会撑爆或跑偏。
+  if (references && slgScale > 0) throw new Error("编辑参考图和 SLG 不能同时开（引擎不支持）：把 slgScale 调回 0");
+  const dataspaceRaw = input?.dataspace ?? base.dataspace ?? null;
+  const dataspace = dataspaceRaw ? requireFile(dataspaceRaw, "dataspace 参数文件") : null;
+  if (sampler === "dataspace" && !dataspace) throw new Error("dataspace 采样器要一份参数文件（dataspace）");
+  const distillRaw = input?.distill ?? base.distill ?? null;
+  let distill = null;
+  if (distillRaw) {
+    distill = String(distillRaw).trim();
+    if (!safeExists(distill)) throw new Error(`distill 目录不存在：${distill}`);
+  }
+
   return {
-    sampler: pickEnum(input?.sampler, VALUES.sampler, pickEnum(base.sampler, VALUES.sampler, "euler")),
+    sampler,
     scheduler: pickEnum(input?.scheduler, VALUES.scheduler, pickEnum(base.scheduler, VALUES.scheduler, "moss")),
     shift: finite(input?.shift ?? base.shift, 0.1, 20) ?? 5,
     stepCache,
     stepCacheThreshold: Number.isFinite(threshold) ? threshold : null,
     cfgTruncation: Number.isFinite(cfgTruncation) ? cfgTruncation : 1,
     loraPlacement: pickEnum(input?.loraPlacement, VALUES.loraPlacement, "default"),
+    uncondSkipLayers: readLayers(input?.uncondSkipLayers, base.uncondSkipLayers ?? [22], "uncondSkipLayers"),
+    slgLayers: readLayers(input?.slgLayers, base.slgLayers ?? [], "slgLayers"),
+    slgScale,
+    slgStart: finite(input?.slgStart ?? base.slgStart, 0, 1) ?? 0,
+    slgStop: finite(input?.slgStop ?? base.slgStop, 0, 1) ?? 1,
+    maxSequenceLength: Math.round(finite(input?.maxSequenceLength ?? base.maxSequenceLength, 1, 4096) ?? 4096),
+    flowMultiplier: finite(input?.flowMultiplier ?? base.flowMultiplier, 0.01, 100) ?? 1,
+    noiseLayout: pickEnum(input?.noiseLayout, VALUES.noiseLayout, pickEnum(base.noiseLayout, VALUES.noiseLayout, "official")),
+    noiseSource: pickEnum(input?.noiseSource, VALUES.noiseSource, pickEnum(base.noiseSource, VALUES.noiseSource, "philox")),
+    eta: finite(input?.eta ?? base.eta, 0, 100) ?? 1,
+    sNoise: finite(input?.sNoise ?? base.sNoise, 0, 100) ?? 1,
+    dataspace,
+    distill,
     loras: input?.loras === undefined ? readLoras(base.loras, { lenient: true }) : readLoras(input.loras),
     control: readControl(input, base),
-    references: readReferences(input),
+    references,
     initImage,
     mask,
     maskEncoding: pickEnum(input?.maskEncoding, VALUES.maskEncoding, "u8"),
@@ -336,6 +396,8 @@ export function menuValues(hello) {
     loraPlacement: take("lora_placement", VALUES.loraPlacement),
     maskEncoding: take("mask_encoding", VALUES.maskEncoding),
     resize: take("resize", VALUES.resize),
+    noiseLayout: take("noise_layout", VALUES.noiseLayout),
+    noiseSource: take("noise_source", VALUES.noiseSource),
     memoryMode: take("mode", ["min_memory", "balanced", "max_speed"]),
     tier: take("tier", ["reference", "high", "turbo"]),
   };
@@ -357,6 +419,7 @@ export function capabilityMap(hello) {
     inspect: Boolean(caps.inspect),
     check: Boolean(caps.check),
     preview: Boolean(caps.preview),
+    components: Boolean(caps.components),
   };
 }
 

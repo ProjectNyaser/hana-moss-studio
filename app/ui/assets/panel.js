@@ -97,6 +97,20 @@ const nodes = {
   shift: el("pn-shift"),
   stepCache: el("pn-step-cache"),
   stepThreshold: el("pn-step-threshold"),
+  uncondLayers: el("pn-uncond-layers"),
+  slgLayers: el("pn-slg-layers"),
+  slgScale: el("pn-slg-scale"),
+  slgStart: el("pn-slg-start"),
+  slgStop: el("pn-slg-stop"),
+  maxSeq: el("pn-max-seq"),
+  flow: el("pn-flow"),
+  noiseLayout: el("pn-noise-layout"),
+  noiseSource: el("pn-noise-source"),
+  eta: el("pn-eta"),
+  sNoise: el("pn-s-noise"),
+  dataspace: el("pn-dataspace"),
+  distill: el("pn-distill"),
+  advSamplingNote: el("pn-adv-sampling-note"),
   stepThresholdField: el("pn-threshold-field"),
   accelNote: el("pn-accel-note"),
   samplerNote: el("pn-sampler-note"),
@@ -667,7 +681,58 @@ function fillMenus(defaults) {
   nodes.shift.value = defaults.shift ?? 5;
   nodes.stepCache.value = defaults.stepCache ?? "off";
   nodes.stepThreshold.value = defaults.stepCacheThreshold ?? "";
+  // 采样面：层号存成数组，界面上写成 22, 24。
+  nodes.uncondLayers.value = Array.isArray(defaults.uncondSkipLayers) ? defaults.uncondSkipLayers.join(", ") : "22";
+  nodes.slgLayers.value = Array.isArray(defaults.slgLayers) ? defaults.slgLayers.join(", ") : "";
+  nodes.slgScale.value = defaults.slgScale ?? 0;
+  nodes.slgStart.value = defaults.slgStart ?? 0;
+  nodes.slgStop.value = defaults.slgStop ?? 1;
+  nodes.maxSeq.value = defaults.maxSequenceLength ?? 4096;
+  nodes.flow.value = defaults.flowMultiplier ?? 1;
+  nodes.noiseLayout.value = defaults.noiseLayout ?? "official";
+  nodes.noiseSource.value = defaults.noiseSource ?? "philox";
+  nodes.eta.value = defaults.eta ?? 1;
+  nodes.sNoise.value = defaults.sNoise ?? 1;
+  nodes.dataspace.value = defaults.dataspace ?? "";
+  nodes.distill.value = defaults.distill ?? "";
   syncAccel();
+  summarizeAdvSampling();
+}
+
+/** 把 "22, 24" 这种串读成层号数组；写错的值直接丢掉，不把整张图拖崩。 */
+function readLayerText(value) {
+  return String(value ?? "")
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => Number(item))
+    .filter((number) => Number.isInteger(number) && number >= 0);
+}
+
+/** 高级区折叠着，标题上得能看出有没有改过。 */
+function summarizeAdvSampling() {
+  const bits = [];
+  if (readLayerText(nodes.uncondLayers.value).join(",") !== "22") bits.push("跳过层");
+  if ((Number(nodes.slgScale.value) || 0) > 0) bits.push("SLG");
+  if ((Number(nodes.slgScale.value) || 0) > 0) {
+    nodes.slgLayers.disabled = false;
+    nodes.slgStart.disabled = false;
+    nodes.slgStop.disabled = false;
+  } else {
+    nodes.slgLayers.disabled = true;
+    nodes.slgStart.disabled = true;
+    nodes.slgStop.disabled = true;
+  }
+  if (Number(nodes.maxSeq.value) !== 4096) bits.push("序列长度");
+  if (Math.abs((Number(nodes.flow.value) || 1) - 1) > 1e-6) bits.push("flow");
+  if (nodes.noiseLayout.value !== "official") bits.push("噪声排布");
+  if (nodes.noiseSource.value !== "philox") bits.push("随机源");
+  if (Number(nodes.eta.value) !== 1) bits.push("eta");
+  if (Number(nodes.sNoise.value) !== 1) bits.push("s_noise");
+  if (nodes.dataspace.value.trim()) bits.push("dataspace");
+  if (nodes.distill.value.trim()) bits.push("distill");
+  nodes.advSamplingNote.textContent = bits.length ? `已改 ${bits.length} 项` : "默认";
+  nodes.advSamplingNote.className = bits.length ? "hint bad" : "hint";
 }
 
 /** 加速器开着才需要阈值；关着就把那行收起来，不是禁用。 */
@@ -1639,6 +1704,24 @@ async function onGenerate() {
     steps,
     cfg: Number(nodes.cfg.value),
   };
+  // 采样面：层号、SLG、序列长度与随机项都跟着提交。
+  payload.uncondSkipLayers = readLayerText(nodes.uncondLayers.value);
+  const slgLayers = readLayerText(nodes.slgLayers.value);
+  if (slgLayers.length) payload.slgLayers = slgLayers;
+  const slgScale = Math.min(20, Math.max(0, Number(nodes.slgScale.value) || 0));
+  if (slgScale > 0) {
+    payload.slgScale = slgScale;
+    payload.slgStart = Math.min(1, Math.max(0, Number(nodes.slgStart.value) || 0));
+    payload.slgStop = Math.min(1, Math.max(0, nodes.slgStop.value === "" ? 1 : Number(nodes.slgStop.value)));
+  }
+  payload.maxSequenceLength = Math.round(Number(nodes.maxSeq.value) || 4096);
+  payload.flowMultiplier = Number(nodes.flow.value) || 1;
+  payload.noiseLayout = nodes.noiseLayout.value;
+  payload.noiseSource = nodes.noiseSource.value;
+  payload.eta = nodes.eta.value === "" ? 1 : Number(nodes.eta.value);
+  payload.sNoise = nodes.sNoise.value === "" ? 1 : Number(nodes.sNoise.value);
+  if (nodes.dataspace.value.trim()) payload.dataspace = nodes.dataspace.value.trim();
+  if (nodes.distill.value.trim()) payload.distill = nodes.distill.value.trim();
   // 布局只传左上角坐标的框：中心坐标与 yxyx 排序由 readLayout 换算。
   if (layoutBoxes.length) {
     payload.boxes = layoutBoxes.map((item) => {
@@ -1757,6 +1840,19 @@ function collectDefaults() {
     shift: Number(nodes.shift.value) || 5,
     stepCache: nodes.stepCache.value,
     stepCacheThreshold: nodes.stepThreshold.value === "" ? null : Number(nodes.stepThreshold.value) || null,
+    uncondSkipLayers: readLayerText(nodes.uncondLayers.value),
+    slgLayers: readLayerText(nodes.slgLayers.value),
+    slgScale: Number(nodes.slgScale.value) || 0,
+    slgStart: Number(nodes.slgStart.value) || 0,
+    slgStop: nodes.slgStop.value === "" ? 1 : Number(nodes.slgStop.value),
+    maxSequenceLength: Math.round(Number(nodes.maxSeq.value) || 4096),
+    flowMultiplier: Number(nodes.flow.value) || 1,
+    noiseLayout: nodes.noiseLayout.value,
+    noiseSource: nodes.noiseSource.value,
+    eta: nodes.eta.value === "" ? 1 : Number(nodes.eta.value),
+    sNoise: nodes.sNoise.value === "" ? 1 : Number(nodes.sNoise.value),
+    dataspace: nodes.dataspace.value.trim() || null,
+    distill: nodes.distill.value.trim() || null,
     loras: loras.map((item) => ({ path: item.path, strength: Number(item.strength) || 1, enabled: item.enabled !== false })),
     control: {
       // 不再回退到旧值：控制适配器在面板上是可读可清的，回退会把刚清掉的又写回去。
@@ -1793,11 +1889,30 @@ for (const node of [
   nodes.shift,
   nodes.stepCache,
   nodes.stepThreshold,
+  nodes.uncondLayers,
+  nodes.slgLayers,
+  nodes.slgScale,
+  nodes.slgStart,
+  nodes.slgStop,
+  nodes.maxSeq,
+  nodes.flow,
+  nodes.noiseLayout,
+  nodes.noiseSource,
+  nodes.eta,
+  nodes.sNoise,
+  nodes.dataspace,
+  nodes.distill,
   nodes.controlStrength,
   nodes.controlLoraStrength,
 ]) {
-  node.addEventListener("input", scheduleSave);
-  node.addEventListener("change", scheduleSave);
+  node.addEventListener("input", () => {
+    summarizeAdvSampling();
+    scheduleSave();
+  });
+  node.addEventListener("change", () => {
+    summarizeAdvSampling();
+    scheduleSave();
+  });
 }
 
 nodes.stepCache.addEventListener("change", syncAccel);
@@ -2229,6 +2344,20 @@ function applyReuse(job) {
   if (job.scheduler && nodes.scheduler.querySelector(`option[value="${job.scheduler}"]`)) nodes.scheduler.value = job.scheduler;
   if (job.shift != null) nodes.shift.value = String(job.shift);
   if (job.stepCache) nodes.stepCache.value = job.stepCache;
+  if (Array.isArray(job.uncondSkipLayers)) nodes.uncondLayers.value = job.uncondSkipLayers.join(", ");
+  if (Array.isArray(job.slgLayers)) nodes.slgLayers.value = job.slgLayers.join(", ");
+  if (job.slgScale != null) nodes.slgScale.value = String(job.slgScale);
+  if (job.slgStart != null) nodes.slgStart.value = String(job.slgStart);
+  if (job.slgStop != null) nodes.slgStop.value = String(job.slgStop);
+  if (job.maxSequenceLength != null) nodes.maxSeq.value = String(job.maxSequenceLength);
+  if (job.flowMultiplier != null) nodes.flow.value = String(job.flowMultiplier);
+  if (job.noiseLayout) nodes.noiseLayout.value = job.noiseLayout;
+  if (job.noiseSource) nodes.noiseSource.value = job.noiseSource;
+  if (job.eta != null) nodes.eta.value = String(job.eta);
+  if (job.sNoise != null) nodes.sNoise.value = String(job.sNoise);
+  if (job.dataspace) nodes.dataspace.value = job.dataspace;
+  if (job.distill) nodes.distill.value = job.distill;
+  summarizeAdvSampling();
   syncAccel();
   for (const item of Array.isArray(job.loras) ? job.loras : []) {
     if (item?.path) addLora(item.path, Number(item.strength) || 1);

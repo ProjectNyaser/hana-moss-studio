@@ -80,6 +80,24 @@ export function buildGenerateParams(job, { previewPath = null, previewEvery = 1 
   if (job.sampler) params.sampler = job.sampler;
   if (job.scheduler) params.scheduler = job.scheduler;
   if (Number.isFinite(job.shift)) params.shift = job.shift;
+  // 采样面：只在偏离协议缺省值时写，报文更短，也让引擎自己套缺省。
+  if (Array.isArray(job.uncondSkipLayers)) params.uncond_skip_layers = job.uncondSkipLayers;
+  if (Array.isArray(job.slgLayers) && job.slgLayers.length) params.slg_layers = job.slgLayers;
+  if (Number.isFinite(job.slgScale) && job.slgScale > 0) {
+    params.slg_scale = job.slgScale;
+    params.slg_start = Number.isFinite(job.slgStart) ? job.slgStart : 0;
+    params.slg_stop = Number.isFinite(job.slgStop) ? job.slgStop : 1;
+  }
+  if (Number.isFinite(job.maxSequenceLength) && job.maxSequenceLength !== 4096) {
+    params.max_sequence_length = job.maxSequenceLength;
+  }
+  if (Number.isFinite(job.flowMultiplier) && job.flowMultiplier !== 1) params.flow_multiplier = job.flowMultiplier;
+  if (job.noiseLayout && job.noiseLayout !== "official") params.noise_layout = job.noiseLayout;
+  if (job.noiseSource && job.noiseSource !== "philox") params.noise_source = job.noiseSource;
+  if (Number.isFinite(job.eta) && job.eta !== 1) params.eta = job.eta;
+  if (Number.isFinite(job.sNoise) && job.sNoise !== 1) params.s_noise = job.sNoise;
+  if (job.dataspace) params.dataspace = job.dataspace;
+  if (job.distill) params.distill = job.distill;
   if (job.stepCache && job.stepCache !== "off") {
     params.step_cache = job.stepCache;
     if (Number.isFinite(job.stepCacheThreshold)) params.step_cache_threshold = job.stepCacheThreshold;
