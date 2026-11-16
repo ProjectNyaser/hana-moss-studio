@@ -10,7 +10,7 @@ import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
 import { createInstaller, probeGpu, probeGpuDetailed } from "./lib/installer.js";
 import { shrinkToWebp } from "./lib/image.js";
 import { createSession } from "./lib/session.js";
-import { checkpointPaths, readCheckpoint, runLatentGenerate, writePng } from "./lib/latent.js";
+import { checkpointPaths, readCheckpoint, runLatentGenerate, runLatentInpaint, writePng } from "./lib/latent.js";
 import { decode as decodePng } from "fast-png";
 
 export const name = "hana-moss-studio";
@@ -1682,6 +1682,49 @@ function state() {
       }
     });
 
+    /** 读不读得到：App runtime 的 fs 权限受限，越界路径会直接抡错而不是返回 false。 */
+    const readable = (path) => {
+      try {
+        return Boolean(path) && existsSync(path);
+      } catch {
+        return false;
+      }
+    };
+
+    /** latent 级局部重绘：只在蒙版区域上跑几步，其余 latent 不动。 */
+    app.post(`/${APP_ID}/latent/inpaint`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const imagePath = String(body?.imagePath ?? "").trim();
+      const maskPath = String(body?.maskPath ?? "").trim();
+      if (!readable(imagePath)) return c.json({ error: `找不到底图：${imagePath}` }, 400);
+      if (!readable(maskPath)) return c.json({ error: `找不到蒙版：${maskPath}` }, 400);
+      try {
+        await engine.start();
+        await engine.ensureLoaded({});
+        const output = join(outputsDir, `inpaint-${Date.now().toString(36)}.png`);
+        const preset = store.getSettings().defaults;
+        const result = await runLatentInpaint({
+          session,
+          spec: {
+            imagePath,
+            maskPath,
+            prompt: typeof body?.prompt === "string" ? body.prompt : "",
+            negativePrompt: typeof body?.negativePrompt === "string" ? body.negativePrompt : "",
+            steps: Number(body?.steps) || preset.steps,
+            strength: Number(body?.strength) || 0.6,
+            cfg: Number(body?.cfg) || preset.cfg,
+            shift: Number(body?.shift) || preset.shift,
+            seed: Number(body?.seed) || 0,
+            output,
+          },
+        });
+        void ensureThumb(output);
+        return c.json({ output, name: basename(output), region: result.region, stepsRun: result.stepsRun, totalSteps: result.totalSteps, state: state() });
+      } catch (error) {
+        return c.json({ error: message(error) }, 400);
+      }
+    });
+
     app.post(`/${APP_ID}/cancel`, async (c) => {
       const body = await c.req.json().catch(() => ({}));
       const id = String(body?.id ?? body?.job ?? "");
@@ -1977,7 +2020,9 @@ function state() {
         seed: { type: "integer", description: "种子，缺省随机" },
         checkpointId: { type: "string", description: "resume 用：断点 id（任务 id）或 meta 文件的绝对路径" },
         batch: { type: "integer", description: "一次出几张（1~4，缺省 1）。2 张以上走 host guidance，已实测与 MOSS guidance 逐像素一致" },
-        imagePath: { type: "string", description: "encode 用：PNG 路径（尺寸要是 16 的倍数）" },
+        imagePath: { type: "string", description: "encode / inpaint 用：PNG 路径（尺寸要是 16 的倍数）" },
+        maskPath: { type: "string", description: "inpaint 用：蒙版 PNG，与底图同尺寸，白（≥128）处重画" },
+        strength: { type: "number", description: "inpaint 用：重画幅度 0.05~1，缺省 0.6；1 就是从噪声重新画这块" },
         latentPath: { type: "string", description: "decode 用：latent 文件路径" },
       },
       required: ["action"],
@@ -2045,6 +2090,40 @@ function state() {
           } finally {
             await session.close();
           }
+        }
+
+        if (action === "inpaint") {
+          const imagePath = String(args?.imagePath ?? "").trim();
+          const maskPath = String(args?.maskPath ?? "").trim();
+          if (!imagePath || !existsSync(imagePath)) throw new Error(`找不到底图：${imagePath}`);
+          if (!maskPath || !existsSync(maskPath)) throw new Error(`找不到蒙版：${maskPath}`);
+          await engine.start();
+          await engine.ensureLoaded({});
+          const output = join(outputsDir, `inpaint-${Date.now().toString(36)}.png`);
+          const started = Date.now();
+          const result = await runLatentInpaint({
+            session,
+            spec: {
+              imagePath,
+              maskPath,
+              prompt: typeof args?.prompt === "string" ? args.prompt : "",
+              negativePrompt: typeof args?.negativePrompt === "string" ? args.negativePrompt : "",
+              steps: Number(args?.steps) || settings().defaults.steps,
+              strength: Number(args?.strength) || 0.6,
+              cfg: Number(args?.cfg) || settings().defaults.cfg,
+              shift: Number(args?.shift) || settings().defaults.shift,
+              seed: Number(args?.seed) || 0,
+              output,
+            },
+          });
+          void ensureThumb(output);
+          const lines = [
+            `已重画：${result.region.width}×${result.region.height} 的区域（左上 ${result.region.x},${result.region.y}）`,
+            `- 跑了 ${result.stepsRun} 步（共 ${result.totalSteps}），${((Date.now() - started) / 1000).toFixed(1)}s`,
+            `- 输出：${output}`,
+            "- 这一路是 latent 级：区域不经过 VAE 往返，但整图要重新解码，区域外会有约 0.3% 的再解码差异",
+          ];
+          return { content: [{ type: "text", text: lines.join("\n") }], details: { moss: { output, region: result.region } } };
         }
 
         let input;

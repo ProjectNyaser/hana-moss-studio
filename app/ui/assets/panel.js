@@ -139,6 +139,7 @@ const nodes = {
   refResize: el("pn-ref-resize"),
   strength: el("pn-strength"),
   maskEdit: el("pn-mask-edit"),
+  latentInpaint: el("pn-latent-inpaint"),
   mask: el("pn-mask"),
   maskInfo: el("pn-mask-info"),
   maskStage: el("pn-mask-stage"),
@@ -920,6 +921,7 @@ function updateRefNote() {
   if (!refPrepared) {
     nodes.refNote.textContent = "未选择";
     nodes.maskEdit.hidden = true;
+    nodes.latentInpaint.hidden = true;
     // 没参考图时重绘强度与适配无处可用，不摆在那里让用户以为它们会生效。
     nodes.refControls.hidden = true;
     broadcastEditState();
@@ -929,6 +931,8 @@ function updateRefNote() {
   nodes.refNote.textContent = maskPath ? `局部重绘 · ${size}` : `图生图 · ${size}`;
   nodes.maskEdit.hidden = false;
   nodes.maskEdit.textContent = maskPath ? "改蒙版" : "画蒙版";
+  // 蒙版与底图同尺寸时才能做 latent 级重绘（它要求 16 的倍数）。
+  nodes.latentInpaint.hidden = !(maskPath && refPrepared.width % 16 === 0 && refPrepared.height % 16 === 0);
   nodes.refControls.hidden = false;
   broadcastEditState();
 }
@@ -2348,6 +2352,45 @@ nodes.refResize.addEventListener("change", async () => {
 
 // 蒙版编辑
 nodes.maskEdit.addEventListener("click", openMaskEditor);
+// latent 级重绘：底图与蒙版都在手上，直接发给后端跑，不走队列（它是一次同步调用）。
+nodes.latentInpaint.addEventListener("click", async () => {
+  if (!refPrepared || !maskPath) {
+    say("先选底图、再画一块蒙版", "bad");
+    return;
+  }
+  const width = refPrepared.width;
+  const height = refPrepared.height;
+  if (width % 16 || height % 16) {
+    say(`latent 重绘要求尺寸是 16 的倍数（现在是 ${width}×${height}），把画幅改一下再试`, "bad");
+    return;
+  }
+  nodes.latentInpaint.disabled = true;
+  say("latent 重绘中：只跑蒙版那块，其余 latent 不动…");
+  try {
+    const result = await post(
+      "/latent/inpaint",
+      {
+        imagePath: refPrepared.path,
+        maskPath,
+        prompt: nodes.prompt.value,
+        negativePrompt: nodes.negative.value,
+        width,
+        height,
+        steps: Number(nodes.steps.value) || undefined,
+        strength: Number(nodes.strength.value) || 0.6,
+        seed: Number(nodes.seed.value) || undefined,
+      },
+      600000,
+    );
+    const region = result?.region ?? {};
+    say(`已重画 ${region.width}×${region.height} 那一块（左上 ${region.x},${region.y}），跑了 ${result?.stepsRun ?? "?"} 步`);
+    if (result?.name) void refresh();
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    nodes.latentInpaint.disabled = false;
+  }
+});
 nodes.maskCancel.addEventListener("click", () => {
   nodes.mask.hidden = true;
 });
