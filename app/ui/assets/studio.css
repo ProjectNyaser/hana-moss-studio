@@ -1425,6 +1425,9 @@ body {
 }
 .chat-act:hover { border-color: var(--ui-accent); color: var(--ui-text); }
 .chat-empty { margin: auto; font-size: 12px; color: var(--ui-text-3); }
+/* 从侧栏点过来时闪一下，让人看清落在哪一条。 */
+.chat-row.flash .chat-shot img,
+.chat-row.flash .chat-bubble { box-shadow: 0 0 0 2px var(--ui-accent); }
 
 /* ── 底部输入区 ───────────────────────────────────────────────── */
 /* 提示词、附件、模型与发送都在主界面：侧栏留给参数，两边不必抢同一块宽度。 */

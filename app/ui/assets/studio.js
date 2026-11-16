@@ -267,6 +267,7 @@ function renderChat() {
 
     const botRow = document.createElement("div");
     botRow.className = "chat-row bot";
+    botRow.dataset.jobId = job.id;
     const shot = document.createElement("div");
     shot.className = "chat-shot";
     const img = document.createElement("img");
@@ -2228,8 +2229,13 @@ layChannel?.addEventListener("message", (event) => {
     return;
   }
   if (msg.type === "open-job") {
-    showView("canvas");
-    openViewer(msg.id);
+    showView("chat");
+    const row = document.querySelector(`.chat-row[data-job-id="${msg.id}"]`);
+    if (row) {
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      row.classList.add("flash");
+      setTimeout(() => row.classList.remove("flash"), 1200);
+    }
     return;
   }
   if (msg.type === "compose-prompt") {
