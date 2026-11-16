@@ -74,6 +74,14 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 | `controlAdapter` / `controlKind` / `controlImage` | 控制适配器：文件路径、kind（`depth` / `canny` / `pose` 之类，取适配器支持的）、控制图路径 |
 | `controlStrength` / `controlLoraStrength` | 控制图强度（0~10，缺省 1）与适配器自带 LoRA 部分的强度 |
 | `referenceImages` / `referenceMaxEdge` | 编辑适配器的参考图（最多 4 张，第一张是源图）与长边像素（缺省 512） |
+| `uncondSkipLayers` | 负向分支跳过的 DiT 层，缺省 `[22]`（官方）；`[]` 表示不跳 |
+| `slgLayers` / `slgScale` / `slgStart` / `slgStop` | 跳过层引导：层号、强度（缺省 0 关）、生效区间。与编辑参考图不能同时开 |
+| `maxSequenceLength` | 提示词最大 token，缺省 4096。长布局提示词要够长才不会被截 |
+| `flowMultiplier` | flow 采样倍率，缺省 1；`moss` 调度器忽略它 |
+| `noiseLayout` / `noiseSource` | 噪声排布（`official` / `batch_stream`）与随机源（`philox` / `philox_device` / `brownian_tree`） |
+| `eta` / `sNoise` | 随机采样器的两个系数，缺省 1 |
+| `dataspace` | dataspace 采样器的参数文件路径；选了 `dataspace` 就必须给 |
+| `distill` | 蒸馏包目录：引擎会追入它的 LoRA，并按它的步数与 CFG 1 跑 |
 | `layout` / `layoutPath` | 布局提示（JSON layout）：直接给对象，或给一个 JSON 文件的绝对路径 |
 | `boxes` | 指哪画哪的快捷写法：`[{label, caption, text?, box:[x0,y0,x1,y1]}]`，坐标从左上角算、单位像素 |
 
@@ -92,9 +100,27 @@ moss_generate(prompt="...", width=1024, height=1024, steps=16)
 
 `{path}` → 文件是什么：`dit` / `text_encoder` / `lora` / `control_adapter` / `unknown`，能不能加载，可用 tier，控制适配器支持哪些 kind，LoRA 的 rank 与适配器数。不加载模型、不占显存。给 LoRA 之前先问一句，比出图失败再排查便宜。
 
+### `moss_latent`
+
+可续画的生成，与 `moss_generate` 走同一条队列，但底下是引擎的 component session：采样循环在苔室这边，每一步的 latent 都落盘到 `app-data/hana-moss-studio/checkpoints/`。
+
+| 参数 | 说明 |
+|---|---|
+| `action` | `run` 新开一次；`resume` 从断点接着跑；`list` 列断点；`encode` PNG → latent；`decode` latent → PNG |
+| `prompt` / `negativePrompt` / `width` / `height` / `steps` / `cfg` / `shift` / `seed` | 同 `moss_generate`。`resume` 时用断点里的值 |
+| `checkpointId` | `resume` 用：断点 id（就是任务 id）或 meta 文件绝对路径 |
+| `imagePath` | `encode` 用：PNG 路径，尺寸要是 16 的倍数 |
+| `latentPath` / `width` / `height` | `decode` 用：latent 文件与它的尺寸（文件本身不含形状） |
+
+限制：只做**纯文生图**，采样器固定 `euler`（MOSS 官方组合），不搭底图/蒙版/控制图/编辑参考图。layout 提示词照样能用（它只是提示词的写法）。
+
+续画的边界：断点里存了 `sigmas`。`resume` 时步数与 `shift` 必须与断点一致，否则调度表对不上会直接报错——这是故意的，换了调度还接着跑只会得到一张安静的错图。
+
+latent 是模型空间的 F32 `[128, h/16, w/16]`，与 ComfyUI 的 Flux2 `LATENT` 同构，拿去 ComfyUI 不用转换。
+
 ### `moss_engine`
 
-`{action: "start" | "stop" | "release"}`。`release` 把显存还给显卡但留住引擎（`keepHostCopy` 缺省 true，权重留在内存里，下次出图直接传）；6 GB 卡上跑完一批要给别的工作腾卡时用它。
+`{action: "start" | "stop" | "release" | "preload"}`。`release` 把显存还给显卡但留住引擎（`keepHostCopy` 缺省 true，权重留在内存里，下次出图直接传）；6 GB 卡上跑完一批要给别的工作腾卡时用它。`preload` 按当前设置预热一次（`width` / `height` / `steps` 可覆盖），之后同样形状的生成不付加载代价。
 
 ### `moss_status`
 
