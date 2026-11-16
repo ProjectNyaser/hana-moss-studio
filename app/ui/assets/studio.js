@@ -1194,6 +1194,8 @@ const composer = {
 };
 
 let composerTimer = null;
+let composerRefs = 0;
+let lastEditState = null;
 function composerText() {
   return composer.input?.value ?? "";
 }
@@ -1229,6 +1231,38 @@ composer.input?.addEventListener("keydown", (event) => {
 
 composer.send?.addEventListener("click", sendCompose);
 composer.image?.addEventListener("click", () => layChannel?.postMessage({ type: "compose-add-image" }));
+
+// 拖到输入框当参考图，拖到画布当底图。
+const composerBox = document.querySelector(".composer");
+let composerDragDepth = 0;
+composerBox?.addEventListener("dragenter", (event) => {
+  event.preventDefault();
+  composerDragDepth += 1;
+  composerBox.classList.add("dragging");
+});
+composerBox?.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+});
+composerBox?.addEventListener("dragleave", () => {
+  composerDragDepth = Math.max(0, composerDragDepth - 1);
+  if (!composerDragDepth) composerBox.classList.remove("dragging");
+});
+composerBox?.addEventListener("drop", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  composerDragDepth = 0;
+  composerBox.classList.remove("dragging");
+  const file = event.dataTransfer?.files?.[0];
+  if (!file || !String(file.type).startsWith("image/")) return;
+  layChannel?.postMessage({ type: "compose-drop-reference", file });
+  toast(`${file.name} 已加入参考图`);
+});
+
+// 空态那张卡点了就跳到输入框，不再是个摆设。
+document.getElementById("empty-prompt")?.addEventListener("click", () => {
+  composer.input?.focus();
+});
 
 // 两个浮层：模型名点开是模型与精度档；左侧参数图标点开是尺寸、步数、CFG。
 const panels = {
@@ -1598,11 +1632,13 @@ function renderComposerModel() {
 
 /** 底图、蒙版、布局各自的状态。 */
 function renderComposerChips(state) {
+  lastEditState = state ?? lastEditState;
   if (!composer.chips) return;
   const items = [];
   if (state?.hasBase) items.push("底图");
   const share = Number(state?.share) || 0;
   if (share > 0) items.push(`蒙版 ${Math.round(share * 100)}%`);
+  if (composerRefs > 0) items.push(`参考图 ${composerRefs} 张`);
   if (lay.boxes?.length) items.push(`布局 ${lay.boxes.length} 块`);
   composer.chips.replaceChildren(
     ...items.map((text) => {
@@ -1903,6 +1939,11 @@ layChannel?.addEventListener("message", (event) => {
   const msg = event.data ?? {};
   if (msg.type === "edit-state") {
     applyEditState(msg.state);
+    return;
+  }
+  if (msg.type === "edit-refs") {
+    composerRefs = Number(msg.count) || 0;
+    renderComposerChips(lastEditState);
     return;
   }
   if (msg.type === "compose-prompt") {

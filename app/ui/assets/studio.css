@@ -1390,6 +1390,13 @@ body {
   border: 1px solid var(--ui-line);
   border-radius: 18px;
   background: var(--ui-surface);
+  transition: border-color 120ms var(--ui-ease), background 120ms var(--ui-ease);
+}
+
+/* 图拖到输入框就是参考图，跟画布那块联动反馈。 */
+.composer.dragging {
+  border-color: var(--ui-accent);
+  background: var(--ui-tint);
 }
 
 .composer-chips {

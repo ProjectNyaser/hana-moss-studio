@@ -673,6 +673,8 @@ let maskBlob = null;
 let maskShare = 0;
 /** 编辑适配器的源图与已准备好的参考图。 */
 /** 编辑参考图：最多 4 张，第一张当源图。 */
+/** 跟主界面聊参考图数量用；放在前面声明，初始化时就已有这个频道。 */
+const editChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
 let editSources = [];
 /** 按目标尺寸 fit 好并上传过的那一批：{width, height, key, items}。 */
 let editPrepared = null;
@@ -1127,6 +1129,7 @@ function renderEditRefs() {
     }),
   );
   nodes.editRefNote.textContent = editSources.length ? `${editSources.length} 张` : "未选择";
+  editChannel?.postMessage({ type: "edit-refs", count: editSources.length });
   renderComposer();
 }
 
@@ -2620,6 +2623,10 @@ reuseChannel?.addEventListener("message", (event) => {
   }
   if (msg.type === "compose-add-image") {
     nodes.addImage.click();
+    return;
+  }
+  if (msg.type === "compose-drop-reference") {
+    if (msg.file) void addEditReference(msg.file, msg.file.name ?? "拖进来的图");
     return;
   }
   if (msg.type === "compose-focus-params") {
