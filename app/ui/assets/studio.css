@@ -1464,8 +1464,8 @@ body {
 }
 .cpop[hidden] { display: none; }
 
-/* 参数图标在左侧，浮层就从左边展开，不要跑到发送键那头。 */
-.cpop-left { right: auto; left: 0; }
+/* 参数图标在加号右侧，浮层从它那头展开。 */
+.cpop-left { right: auto; left: 34px; }
 
 .cpop-head {
   display: flex;

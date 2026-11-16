@@ -1188,6 +1188,7 @@ const composer = {
   input: document.getElementById("composer-input"),
   send: document.getElementById("composer-send"),
   plus: document.getElementById("composer-plus"),
+  params: document.getElementById("composer-params"),
   menu: document.getElementById("cmenu"),
   model: document.getElementById("composer-model"),
   chips: document.getElementById("composer-chips"),
@@ -1252,7 +1253,6 @@ composer.menu?.addEventListener("click", (event) => {
   closeComposerMenu();
   if (act === "base") layChannel?.postMessage({ type: "compose-add-base" });
   else if (act === "reference") layChannel?.postMessage({ type: "compose-add-reference" });
-  else if (act === "params") openPanel("params");
 });
 
 document.addEventListener("click", (event) => {
@@ -1405,6 +1405,15 @@ composer.model?.addEventListener("click", (event) => {
   closeComposerMenu();
   if (panel.box.hidden) openPanel("model");
   else closePanel("model");
+});
+
+composer.params?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const panel = panels.params;
+  if (!panel?.box) return;
+  closeComposerMenu();
+  if (panel.box.hidden) openPanel("params");
+  else closePanel("params");
 });
 
 for (const which of Object.keys(panels)) {
@@ -1646,11 +1655,6 @@ function renderComposerModel() {
   const short = modelLabel.replace(/^MOSS-Image[-_ ]?/i, "") || modelLabel;
   const tier = latest?.settings?.tier ?? "reference";
   composer.model.textContent = `${short} · ${tier}`;
-  const note = document.getElementById("cmenu-params-note");
-  if (note) {
-    const defaults = latest?.settings?.defaults ?? {};
-    note.textContent = `${defaults.width ?? 1024} × ${defaults.height ?? 1024} · ${defaults.steps ?? 20} 步`;
-  }
   renderCpop();
 }
 
