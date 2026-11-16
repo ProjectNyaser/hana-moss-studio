@@ -149,6 +149,7 @@ const nodes = {
   chips: el("pn-chips"),
   paramsToggle: el("pn-params-toggle"),
   presets: el("pn-presets"),
+  newConv: el("pn-new-conv"),
   history: el("pn-history"),
   addImage: el("pn-add-image"),
   mask: el("pn-mask"),
@@ -1817,12 +1818,22 @@ async function refreshCheckpoint(force = false) {
   }
 }
 
-/** 侧栏是会话列表：相邻的生成归成一段，点一下打开那段最近的一张。 */
+/** 侧栏是会话列表：当前会话从「新对话」那一刻算起，更早的按间隔归段。 */
 let sessionsCache = [];
 let sessionsAt = 0;
+const CONV_KEY = "hana-moss-studio.conv-start";
+
+function convStart() {
+  try {
+    return Number(localStorage.getItem(CONV_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
 
 function groupSessions(jobs) {
   const GAP = 30 * 60 * 1000;
+  const mark = convStart();
   const sorted = jobs
     .filter((job) => job.status === "done" && job.output)
     .sort((a, b) => (Date.parse(b.createdAt ?? "") || 0) - (Date.parse(a.createdAt ?? "") || 0));
@@ -1830,8 +1841,11 @@ function groupSessions(jobs) {
   for (const job of sorted) {
     const t = Date.parse(job.createdAt ?? "") || 0;
     const last = out[out.length - 1];
-    if (!last || last.t - t > GAP) out.push({ t, jobs: [job] });
-    else {
+    // 当前会话不受间隔限制：从开新对话起，全部归一段。
+    const sameConv = last && (last.current || (mark > 0 && t > mark) || last.t - t <= GAP);
+    if (!sameConv) {
+      out.push({ t, jobs: [job], current: mark > 0 && t > mark });
+    } else {
       last.jobs.push(job);
       last.t = t;
     }
@@ -1879,6 +1893,10 @@ function paintSessions() {
         ? new Date(head.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
         : "";
       meta.textContent = `${session.jobs.length} 条${when ? ` · ${when}` : ""}`;
+      if (session.current) {
+        btn.classList.add("on");
+        meta.textContent = `当前 · ${meta.textContent}`;
+      }
       text.append(line, meta);
       btn.append(text);
       btn.addEventListener("click", () => {
@@ -2744,6 +2762,17 @@ reuseChannel?.addEventListener("message", (event) => {
 
 // ── 片段：点一下接到主界面那段后面 ───────────────────────────
 const PROMPT_PRESETS = ["晨雾", "柔光", "浅景深", "低饱和", "胶片颗粒", "逆光", "湿润的空气", "极简构图"];
+// 开一段新对话：以此刻为界，之后的生成算在这一段里。
+nodes.newConv?.addEventListener("click", () => {
+  try {
+    localStorage.setItem(CONV_KEY, String(Date.now()));
+  } catch {
+    /* 存不了就只刷新列表 */
+  }
+  editChannel?.postMessage({ type: "new-conversation" });
+  void loadSessions(true);
+});
+
 nodes.presets?.replaceChildren(
   ...PROMPT_PRESETS.map((text) => {
     const btn = document.createElement("button");

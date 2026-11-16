@@ -2219,6 +2219,14 @@ layChannel?.addEventListener("message", (event) => {
     }
     return;
   }
+  if (msg.type === "new-conversation") {
+    // 新对话从空输入框开始，不把上一段的提示词带过去。
+    if (composer.input) composer.input.value = "";
+    if (composer.negative) composer.negative.value = "";
+    if (composer.seed) composer.seed.value = "";
+    showView("chat");
+    return;
+  }
   if (msg.type === "open-job") {
     showView("canvas");
     openViewer(msg.id);

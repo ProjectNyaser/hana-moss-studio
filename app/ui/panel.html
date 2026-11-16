@@ -387,6 +387,21 @@
       30% { background: var(--ui-tint); }
     }
 
+    .pn-conv-bar { flex: none; padding: 8px 10px 0; }
+    .pn-new-conv {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid var(--ui-line);
+      border-radius: 9px;
+      background: transparent;
+      color: var(--ui-text-2);
+      font: inherit;
+      font-size: 12px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .pn-new-conv:hover { border-color: var(--ui-accent); color: var(--ui-text); }
+
     .pn-history { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; display: flex; flex-direction: column; gap: 4px; }
     .pn-hist-item {
       display: flex;
@@ -821,6 +836,9 @@
       <div class="pn-presets" id="pn-presets"></div>
     </div>
 
+    <div class="pn-conv-bar">
+      <button class="pn-new-conv" id="pn-new-conv" type="button">＋ 新对话</button>
+    </div>
     <div class="pn-history" id="pn-history"></div>
 
     <div class="pn-foot">
