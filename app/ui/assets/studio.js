@@ -1187,8 +1187,8 @@ function applyEditState(state) {
 const composer = {
   input: document.getElementById("composer-input"),
   send: document.getElementById("composer-send"),
-  image: document.getElementById("composer-image"),
-  params: document.getElementById("composer-params"),
+  plus: document.getElementById("composer-plus"),
+  menu: document.getElementById("cmenu"),
   model: document.getElementById("composer-model"),
   chips: document.getElementById("composer-chips"),
 };
@@ -1230,7 +1230,36 @@ composer.input?.addEventListener("keydown", (event) => {
 });
 
 composer.send?.addEventListener("click", sendCompose);
-composer.image?.addEventListener("click", () => layChannel?.postMessage({ type: "compose-add-image" }));
+
+// 「+」把加图与参数收进一个菜单，工具行只留一个入口。
+function closeComposerMenu() {
+  if (composer.menu) composer.menu.hidden = true;
+}
+
+composer.plus?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (!composer.menu) return;
+  const willOpen = composer.menu.hidden;
+  closeAllPanels();
+  composer.menu.hidden = !willOpen;
+});
+
+composer.menu?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const item = event.target.closest(".cmenu-item");
+  if (!item) return;
+  const act = item.dataset.act;
+  closeComposerMenu();
+  if (act === "base") layChannel?.postMessage({ type: "compose-add-base" });
+  else if (act === "reference") layChannel?.postMessage({ type: "compose-add-reference" });
+  else if (act === "params") openPanel("params");
+});
+
+document.addEventListener("click", (event) => {
+  if (!composer.menu || composer.menu.hidden) return;
+  if (composer.menu.contains(event.target) || composer.plus?.contains(event.target)) return;
+  closeComposerMenu();
+});
 
 // 拖到输入框当参考图，拖到画布当底图。
 const composerBox = document.querySelector(".composer");
@@ -1362,6 +1391,7 @@ function closeAllPanels() {
 function openPanel(which) {
   const panel = panels[which];
   if (!panel?.box) return;
+  closeComposerMenu();
   closeAllPanels();
   panel.view = "root";
   renderPanel(which);
@@ -1372,16 +1402,9 @@ composer.model?.addEventListener("click", (event) => {
   event.stopPropagation();
   const panel = panels.model;
   if (!panel?.box) return;
+  closeComposerMenu();
   if (panel.box.hidden) openPanel("model");
   else closePanel("model");
-});
-
-composer.params?.addEventListener("click", (event) => {
-  event.stopPropagation();
-  const panel = panels.params;
-  if (!panel?.box) return;
-  if (panel.box.hidden) openPanel("params");
-  else closePanel("params");
 });
 
 for (const which of Object.keys(panels)) {
@@ -1393,7 +1416,6 @@ for (const which of Object.keys(panels)) {
     renderPanel(which);
   });
 }
-
 document.addEventListener("click", (event) => {
   const inside = Object.values(panels).some(
     (panel) => panel.box && !panel.box.hidden && panel.box.contains(event.target),
@@ -1624,6 +1646,11 @@ function renderComposerModel() {
   const short = modelLabel.replace(/^MOSS-Image[-_ ]?/i, "") || modelLabel;
   const tier = latest?.settings?.tier ?? "reference";
   composer.model.textContent = `${short} · ${tier}`;
+  const note = document.getElementById("cmenu-params-note");
+  if (note) {
+    const defaults = latest?.settings?.defaults ?? {};
+    note.textContent = `${defaults.width ?? 1024} × ${defaults.height ?? 1024} · ${defaults.steps ?? 20} 步`;
+  }
   renderCpop();
 }
 

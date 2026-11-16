@@ -2621,6 +2621,14 @@ reuseChannel?.addEventListener("message", (event) => {
     void onGenerate();
     return;
   }
+  if (msg.type === "compose-add-base") {
+    nodes.refFile.click();
+    return;
+  }
+  if (msg.type === "compose-add-reference") {
+    nodes.editRefFile.click();
+    return;
+  }
   if (msg.type === "compose-add-image") {
     nodes.addImage.click();
     return;
