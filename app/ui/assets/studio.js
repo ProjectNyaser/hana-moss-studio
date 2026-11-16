@@ -1346,6 +1346,24 @@ function ditLimit() {
   return file?.tier ?? null;
 }
 
+/** 每一档能用哪份权重：bundle 自带的 bf16 先兼 reference 与 high，单文件再补 turbo。 */
+function ditChoices() {
+  const bundleReady = (Array.isArray(latest?.models) ? latest.models : []).some((item) => item.installed);
+  const choices = {};
+  if (bundleReady) {
+    // 完整包里的 DiT 是 bf16：reference 与 high 能跑，turbo 需要 4bit 权重。
+    choices.reference = { dit: null, note: "bundle 自带" };
+    choices.high = { dit: null, note: "bundle 自带" };
+  }
+  const files = (Array.isArray(latest?.files) ? latest.files : []).filter(
+    (item) => item.role === "dit" && item.installed && item.target,
+  );
+  for (const file of files) {
+    if (file.tier && !choices[file.tier]) choices[file.tier] = { dit: file.target, note: "单文件权重" };
+  }
+  return choices;
+}
+
 const STEP_OPTIONS = [8, 16, 20, 28, 40];
 const CFG_OPTIONS = [1, 2, 3, 4, 6];
 
@@ -1438,9 +1456,23 @@ async function saveDefaults(patch) {
 }
 
 async function setTier(tier) {
+  const choice = ditChoices()[tier];
+  const patch = { tier };
+  if (choice) {
+    // 当前 DiT 本来就能跑这档时就留着，不必把单文件换成 bundle。
+    const keep = ditLimit() === tier && latest?.settings?.modelFiles?.dit;
+    patch.modelFiles = {
+      ...(latest?.settings?.modelFiles ?? {}),
+      dit: keep ? latest.settings.modelFiles.dit : (choice.dit ?? null),
+    };
+  }
   try {
-    await post("/settings", { tier });
-    if (latest?.settings) latest.settings.tier = tier;
+    await post("/settings", patch);
+    if (latest?.settings) {
+      latest.settings.tier = tier;
+      if (patch.modelFiles) latest.settings.modelFiles = patch.modelFiles;
+    }
+    toast(`精度档 ${tier}，配套权重已就位，下次出图重新加载`);
     renderComposerModel();
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), "error");
@@ -1518,13 +1550,14 @@ function renderPanelList(which, kind) {
     }
   } else if (kind === "tier") {
     const current = latest?.settings?.tier ?? "reference";
-    const limit = ditLimit();
+    const choices = ditChoices();
     for (const [value, text, note] of TIER_OPTIONS) {
-      // 权重是某一档时不拦选择，只把这件事写清楚；能不能跑交给引擎判定。
-      const mismatch = limit && value !== limit;
+      // 没有能干这档的权重就不列；有的话选中会自动把 DiT 换成对应的那份。
+      const choice = choices[value];
+      if (!choice) continue;
       items.push({
         text,
-        note: mismatch ? `${note} · 权重是 ${limit} 档` : note,
+        note: choice.dit ? choice.note : `${note} · ${choice.note}`,
         selected: current === value,
         apply: () => setTier(value),
       });
