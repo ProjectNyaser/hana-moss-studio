@@ -1259,10 +1259,7 @@ composerBox?.addEventListener("drop", (event) => {
   toast(`${file.name} 已加入参考图`);
 });
 
-// 空态那张卡点了就跳到输入框，不再是个摆设。
-document.getElementById("empty-prompt")?.addEventListener("click", () => {
-  composer.input?.focus();
-});
+// 空态只剩「从底图开始」；写提示词本来就在输入框里。
 
 // 两个浮层：模型名点开是模型与精度档；左侧参数图标点开是尺寸、步数、CFG。
 const panels = {

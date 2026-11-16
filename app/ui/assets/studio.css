@@ -799,10 +799,11 @@ body {
 
 .canvas-empty .hint { max-width: min(100%, 640px); text-wrap: pretty; }
 
-/* 空态三张卡：第一眼就把三条路摆出来，不用猜能干什么。 */
+/* 空态只有一条真实路径：从底图开始；写提示词就在输入框里，不用再给一张卡。 */
 .empty-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 340px);
+  justify-content: center;
   gap: 12px;
   /* 画布是 grid + place-content: center，百分比宽会退回 max-content，所以用定宽。 */
   width: min(640px, 92vw);
