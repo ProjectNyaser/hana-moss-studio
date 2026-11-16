@@ -1520,12 +1520,12 @@ function renderPanelList(which, kind) {
     const current = latest?.settings?.tier ?? "reference";
     const limit = ditLimit();
     for (const [value, text, note] of TIER_OPTIONS) {
-      const allowed = !limit || value === limit;
+      // 权重是某一档时不拦选择，只把这件事写清楚；能不能跑交给引擎判定。
+      const mismatch = limit && value !== limit;
       items.push({
         text,
-        note: allowed ? note : "当前 DiT 不支持",
+        note: mismatch ? `${note} · 权重是 ${limit} 档` : note,
         selected: current === value,
-        disabled: !allowed,
         apply: () => setTier(value),
       });
     }
