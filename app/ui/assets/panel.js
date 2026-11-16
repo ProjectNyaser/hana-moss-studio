@@ -87,7 +87,7 @@ const nodes = {
   tier: el("pn-tier"),
   model: el("pn-model"),
   modelField: el("pn-model-field"),
-  modelMini: el("pn-model-mini"),
+  tierMini: el("pn-tier-mini"),
   modelHint: el("pn-model-hint"),
   dit: el("pn-dit"),
   ditNote: el("pn-dit-note"),
@@ -1630,8 +1630,6 @@ function renderEngine(data) {
  * 两件事分开说，所以是两个框；单文件 DiT 不是另一个模型。
  */
 let modelsKey = "";
-/** 刚切过去、服务端还没回报的那个模型：等 active 跟上再放开。 */
-let pendingModelVariant = null;
 let ditsKey = "";
 let tesKey = "";
 
@@ -1663,12 +1661,6 @@ function renderModels(data) {
     }
     nodes.model.disabled = !models.length;
     nodes.model.value = models.length && current ? current.variant : nodes.model.value;
-    // 输入框旁的小选择器跟参数区那格同源。
-    nodes.modelMini.replaceChildren(
-      ...Array.from(nodes.model.options).map((option) => new window.Option(option.textContent, option.value)),
-    );
-    nodes.modelMini.disabled = !models.length;
-    nodes.modelMini.value = pendingModelVariant ?? nodes.model.value;
   // 自管清单：没装整包时「模型」这一格没有意义（两个仓库的配置与分词器相同），直接收起来。
   nodes.modelField.hidden = !models.length;
   // 轻量包（只有配置与分词器）：模型差异全在 DiT 权重里。
@@ -1730,11 +1722,15 @@ function renderModels(data) {
   }
   nodes.te.value = teFile?.target ?? "";
 
-  // 切模型是一次点击的事：服务端确认前先按用户选的那个显示，别弹回去。
-  const activeVariant = models.find((item) => item.active)?.variant ?? "";
-  if (pendingModelVariant && activeVariant === pendingModelVariant) pendingModelVariant = null;
-  if (!models.length) return;
-  nodes.modelMini.value = pendingModelVariant ?? nodes.model.value;
+  // 输入框旁那格是精度档，跟参数区里的 tier 同一份设置。
+  const tierNow = data?.settings?.tier ?? "reference";
+  nodes.tierMini.value = tierNow;
+  const ditNow = ditFile?.tier ?? null;
+  // 只有能跑当前档位的权重在手时才让切档，否则切了也只会弹回来。
+  nodes.tierMini.disabled = false;
+  nodes.tierMini.title = ditNow
+    ? `当前 DiT 只能跑 ${ditNow} 档`
+    : "精度档：turbo 最快、high 居中、reference 最准";
 }
 
 /**
@@ -2253,17 +2249,18 @@ nodes.tier.addEventListener("change", async () => {
     }
   } catch (error) {
     say(error instanceof Error ? error.message : String(error), "bad");
+  } finally {
+    // 被退回旧档位时，输入框旁那格也得跟着退。
+    nodes.tierMini.value = nodes.tier.value;
   }
 });
 
-// 切模型：只改设置，引擎下次 load 时按新目录读；已加载的缓存由服务端作废。
-nodes.modelMini.addEventListener("change", () => {
-  pendingModelVariant = nodes.modelMini.value;
-  nodes.model.value = nodes.modelMini.value;
-  nodes.model.dispatchEvent(new window.Event("change"));
+// 精度档：跟参数区那个选择器走同一套校验（权重不匹配时会把值退回去）。
+nodes.tierMini.addEventListener("change", () => {
+  nodes.tier.value = nodes.tierMini.value;
+  nodes.tier.dispatchEvent(new window.Event("change"));
 });
 nodes.model.addEventListener("change", async () => {
-  nodes.modelMini.value = nodes.model.value;
   const variant = nodes.model.value;
   if (!variant) return;
   try {

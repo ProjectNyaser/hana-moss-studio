@@ -207,6 +207,16 @@
       padding: 10px 12px 12px;
       border-top: 1px solid var(--ui-line);
       background: var(--ui-sidebar);
+      container-type: inline-size;
+    }
+
+    /* 侧栏窄下来时工具行只留图标：尺寸数字与按钮文字让位，三个控件也得塞得下。 */
+    @container (max-width: 300px) {
+      #pn-params-note { display: none; }
+      #pn-generate span { display: none; }
+      .pn-tool { padding: 0 7px; }
+      .pn-tools { gap: 4px; }
+      .pn-tier-mini { max-width: 78px; }
     }
     .pn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .pn-chips[hidden] { display: none; }
@@ -270,7 +280,8 @@
     }
     .pn-tool:hover { background: var(--ui-overlay); color: var(--ui-text); }
     .pn-tool[aria-expanded="false"] { color: var(--ui-text-3); }
-    .pn-model-mini {
+    .pn-tier-mini {
+      width: auto;
       max-width: 132px;
       height: 26px;
       padding: 0 6px;
@@ -281,7 +292,7 @@
       font: inherit;
       font-size: 11.5px;
     }
-    .pn-model-mini:disabled { opacity: 0.5; }
+    .pn-tier-mini:disabled { opacity: 0.5; }
     /* 点「参数」就把它滚到眼前，闪一下底色 */
     .pn-block.pn-flash { animation: pn-flash 900ms ease; border-radius: 10px; }
     @keyframes pn-flash {
@@ -702,8 +713,12 @@
           <svg class="ic"><use href="#i-sliders"/></svg><span id="pn-params-note">参数</span>
         </button>
         <span class="spacer"></span>
-        <select class="pn-model-mini" id="pn-model-mini" title="模型"></select>
-        <button class="btn primary small" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>生成</button>
+        <select class="pn-tier-mini" id="pn-tier-mini" title="精度档：turbo 最快、high 居中、reference 最准">
+          <option value="turbo">turbo</option>
+          <option value="high">high</option>
+          <option value="reference">reference</option>
+        </select>
+        <button class="btn primary small" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg><span>生成</span></button>
         <button class="btn ghost small" id="pn-cancel" type="button" hidden>取消</button>
       </div>
     </div>
