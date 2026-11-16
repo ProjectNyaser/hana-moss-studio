@@ -64,6 +64,8 @@ const nodes = {
   viewerImage: el("viewer-image"),
   viewerIndex: el("viewer-index"),
   viewerInfo: el("viewer-info"),
+  viewerEdit: el("viewer-edit"),
+  viewerRef: el("viewer-ref"),
   viewerPrev: el("viewer-prev"),
   viewerNext: el("viewer-next"),
   viewerClose: el("viewer-close"),
@@ -1449,6 +1451,17 @@ async function renderGallery(data) {
         // 单行，装不下就省略号。完整写法与耗时在查看器底部那行。
         meta.textContent = `${job.width}×${job.height} · ${job.steps}步 · CFG${job.cfg} · #${job.report?.seedUsed ?? job.seed ?? "?"}`;
         tile.appendChild(meta);
+        // 悬停就能「接着改这张」：比右键菜单早一步。
+        const quick = document.createElement("button");
+        quick.type = "button";
+        quick.className = "thumb-quick";
+        quick.textContent = "改这张";
+        quick.title = "当底图，去画布抹一块重画";
+        quick.addEventListener("click", (event) => {
+          event.stopPropagation();
+          useAsReference(job);
+        });
+        tile.appendChild(quick);
         // 非缺省的采样面才打标：缺省的 euler + moss 不占地方的标签。
         const badges = [];
         if (job.sampler && job.sampler !== "euler") badges.push(job.sampler);
@@ -2649,6 +2662,18 @@ nodes.engineRelease.addEventListener("click", () => {
 nodes.downloadEngine.addEventListener("click", () => void startInstall("/install/engine", {}, "安装最新引擎"));
 bindSplitTabs(nodes.versionsTabs);
 nodes.viewerImage.addEventListener("load", layoutViewerImage);
+nodes.viewerEdit.addEventListener("click", () => {
+  const job = viewerList[viewerIndex];
+  if (!job) return;
+  closeViewer();
+  useAsReference(job);
+});
+nodes.viewerRef.addEventListener("click", () => {
+  const job = viewerList[viewerIndex];
+  if (!job) return;
+  closeViewer();
+  useAsEditReference(job);
+});
 nodes.viewerClose.addEventListener("click", closeViewer);
 nodes.viewerPrev.addEventListener("click", () => stepViewer(-1));
 nodes.viewerNext.addEventListener("click", () => stepViewer(1));

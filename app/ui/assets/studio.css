@@ -45,7 +45,12 @@ body {
   transition: background 140ms var(--ui-ease), color 140ms var(--ui-ease);
 }
 .studio-tab:hover { background: var(--ui-overlay); color: var(--ui-text-2); }
-.studio-tab.on { background: var(--ui-overlay); color: var(--ui-text); font-weight: 600; }
+.studio-tab.on {
+  background: var(--ui-overlay);
+  color: var(--ui-text);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--ui-accent);
+}
 
 .spacer { flex: 1; min-width: 0; }
 
@@ -663,14 +668,16 @@ body {
 .canvas {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background:
-    radial-gradient(circle at 1px 1px, var(--ui-line) 1px, transparent 0) 0 0 / 22px 22px,
-    var(--panel-card-bg);
+  /* 不透明底：主题的装饰层不该透到画布上来。 */
+  background-color: var(--ui-surface);
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--ui-line) 1px, transparent 0);
+  background-size: 22px 22px;
 }
 
 .result {
@@ -748,6 +755,8 @@ body {
 
 @media (hover: none) {
   .result-bar { opacity: 1; pointer-events: auto; transform: translateX(-50%); }
+  .thumb-quick { opacity: 1; transform: none; }
+  .thumb .thumb-meta { opacity: 1; }
 }
 
 /* 采样中的那张：尺寸与结果图一致，只多一层柔化。 */
@@ -769,7 +778,7 @@ body {
   color: var(--ui-text-3);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   align-items: center;
   width: 100%;
   max-width: 100%;
@@ -777,8 +786,9 @@ body {
 
 .canvas-empty-title {
   margin: 0;
-  font-size: 15px;
-  color: var(--ui-text-2);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ui-text);
   letter-spacing: 0.01em;
 }
 
@@ -790,7 +800,7 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   /* 画布是 grid + place-content: center，百分比宽会退回 max-content，所以用定宽。 */
-  width: min(560px, 92vw);
+  width: min(640px, 92vw);
   margin-top: 12px;
   text-align: left;
 }
@@ -802,7 +812,9 @@ body {
 .empty-card {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 5px;
+  min-height: 76px;
   padding: 14px 16px;
   border: 1px solid var(--ui-line);
   border-radius: var(--ui-radius);
@@ -825,8 +837,8 @@ body {
   transform: translateY(-1px);
 }
 
-.ec-title { font-size: 13px; color: var(--ui-text); font-weight: 600; }
-.ec-note { font-size: 11.5px; color: var(--ui-text-3); line-height: 1.6; text-wrap: pretty; }
+.ec-title { font-size: 13.5px; color: var(--ui-text); font-weight: 600; }
+.ec-note { font-size: 12px; color: var(--ui-text-2); line-height: 1.6; text-wrap: pretty; }
 
 /* 空态里的按钮不再需要外边距，卡片本身就是点击面 */
 #canvas-layout { margin-top: 0; }
@@ -1241,6 +1253,34 @@ body {
 }
 
 .thumb:hover .thumb-meta { opacity: 1; }
+
+/* 悬停时左下角的快捷动作：看到一张想接着改的图，直接进去抹，不必先开查看器。 */
+.thumb-quick {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 2;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-accent) 88%, #000);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms var(--ui-ease), transform 140ms var(--ui-ease);
+  transform: translateY(2px);
+}
+
+.thumb:hover .thumb-quick,
+.thumb-quick:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.thumb .thumb-meta { padding-left: 60px; }
 
 .thumb.placeholder {
   flex-direction: column;

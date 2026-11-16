@@ -46,9 +46,23 @@
     .pn {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      padding: 10px 12px 14px;
+      height: 100%;
+      min-height: 0;
       width: 100%;
+      padding: 0;
+    }
+
+    /* 参数区自己滚，生成按钮留在外面：两者不抢同一块空间。 */
+    .pn-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 10px 12px 20px;
+      width: 100%;
+    }
       min-width: 0;
       min-height: 100%;
       max-width: 460px;
@@ -184,14 +198,17 @@
     .pn-fold[open] > summary::after { transform: rotate(90deg); }
     .pn-fold .fold-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
 
-    /* 生成按钮放在参数之后：从上往下读就知道填完该按哪里 */
+    /* 生成按钮固定在侧栏底部，参数区滚动不影响它。 */
     #pn-actions {
-      margin-top: 4px;
-      padding-top: 10px;
+      flex: none;
+      margin-top: 0;
+      padding: 10px 12px 8px;
       border-top: 1px solid var(--ui-line);
+      background: var(--ui-sidebar);
+      z-index: 5;
     }
 
-    .pn-foot { margin-top: auto; display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--ui-text-3); }
+    .pn-foot { flex: none; padding: 0 12px 8px; display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--ui-text-3); }
 
     /* LoRA 行：勾选、名字、强度、删除 */
     .pn-lora { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -323,6 +340,7 @@
   </svg>
 
   <div class="pn" id="pn-root">
+    <div class="pn-body">
     <div class="pn-block">
       <div class="pn-state">
         <span class="dot" id="pn-dot"></span>
@@ -586,13 +604,14 @@
       </div>
     </details>
 
+    <div class="pn-foot">
+      <span id="pn-errors"></span>
+    </div>
+    </div>
+
     <div class="pn-row" id="pn-actions">
       <button class="btn primary wide" id="pn-generate" type="button"><svg class="ic"><use href="#i-spark"/></svg>开始生成</button>
       <button class="btn ghost" id="pn-cancel" type="button" hidden>取消</button>
-    </div>
-
-    <div class="pn-foot">
-      <span id="pn-errors"></span>
     </div>
   </div>
 

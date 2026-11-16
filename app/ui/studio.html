@@ -50,6 +50,7 @@
               <span class="ec-note">导入一张图：抹一块改，或者框几块重排</span>
             </button>
           </div>
+          <p class="hint canvas-empty-sub">图片也可以直接拖到画布上</p>
         </div>
 
         <div class="lay" id="lay" hidden>
@@ -202,6 +203,8 @@
   <div class="viewer" id="viewer" hidden>
     <div class="viewer-top">
       <span class="viewer-index mono" id="viewer-index"></span>
+      <button class="viewer-btn" id="viewer-edit" type="button" title="当底图，去画布抹一块重画">改这张</button>
+      <button class="viewer-btn" id="viewer-ref" type="button" title="当编辑适配器的参考图">当参考图</button>
       <span class="spacer"></span>
       <button class="viewer-btn" id="viewer-zoom-out" type="button" title="缩小（-）">−</button>
       <button class="viewer-btn" id="viewer-zoom-fit" type="button" title="适应窗口（0）">适应</button>
