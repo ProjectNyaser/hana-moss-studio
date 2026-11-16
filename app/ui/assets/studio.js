@@ -1179,6 +1179,151 @@ function applyEditState(state) {
     if (isNew && edit.mode === null) void showMaskBlob(next);
     renderBaseBar();
   }
+  renderComposerChips(state);
+}
+
+// ── 底部输入区 ─────────────────────────────────────────────────────
+// 提示词与发送按钮在主界面；真正提交仍由侧栏那一侧完成，它拿着全部参数。
+const composer = {
+  input: document.getElementById("composer-input"),
+  send: document.getElementById("composer-send"),
+  image: document.getElementById("composer-image"),
+  params: document.getElementById("composer-params"),
+  model: document.getElementById("composer-model"),
+  chips: document.getElementById("composer-chips"),
+};
+
+let composerTimer = null;
+function composerText() {
+  return composer.input?.value ?? "";
+}
+
+function pushComposerPrompt() {
+  clearTimeout(composerTimer);
+  composerTimer = setTimeout(() => {
+    layChannel?.postMessage({ type: "compose-prompt", text: composerText() });
+  }, 120);
+}
+
+function sendCompose() {
+  if (!composer.send || composer.send.disabled) return;
+  composer.send.disabled = true;
+  layChannel?.postMessage({ type: "compose-send", text: composerText() });
+  setTimeout(() => {
+    if (composer.send) composer.send.disabled = false;
+  }, 1400);
+}
+
+composer.input?.addEventListener("input", () => {
+  composer.input.style.height = "auto";
+  composer.input.style.height = `${Math.min(composer.input.scrollHeight, 132)}px`;
+  pushComposerPrompt();
+});
+
+composer.input?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    sendCompose();
+  }
+});
+
+composer.send?.addEventListener("click", sendCompose);
+composer.image?.addEventListener("click", () => layChannel?.postMessage({ type: "compose-add-image" }));
+composer.params?.addEventListener("click", () => layChannel?.postMessage({ type: "compose-focus-params" }));
+
+// 模型名点开是一块浮层，就地改，不去滚滚区。
+const cpop = {
+  box: document.getElementById("cpop"),
+  model: document.getElementById("cpop-model"),
+  tier: document.getElementById("cpop-tier"),
+};
+
+function closeCpop() {
+  if (cpop.box) cpop.box.hidden = true;
+}
+
+composer.model?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (cpop.box) cpop.box.hidden = !cpop.box.hidden;
+});
+
+document.addEventListener("click", (event) => {
+  if (!cpop.box || cpop.box.hidden) return;
+  if (cpop.box.contains(event.target) || composer.model.contains(event.target)) return;
+  closeCpop();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeCpop();
+});
+
+cpop.model?.addEventListener("change", async () => {
+  const model = cpop.model.value;
+  const defaults = { ...(latest?.settings?.defaults ?? {}), model };
+  try {
+    await post("/settings", { defaults });
+    if (latest?.settings?.defaults) latest.settings.defaults.model = model;
+    renderComposerModel();
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), "error");
+  }
+});
+
+cpop.tier?.addEventListener("change", async () => {
+  const tier = cpop.tier.value;
+  try {
+    await post("/settings", { tier });
+    if (latest?.settings) latest.settings.tier = tier;
+    renderComposerModel();
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), "error");
+  }
+});
+
+function renderCpop() {
+  if (!cpop.box) return;
+  const models = (Array.isArray(latest?.models) ? latest.models : []).filter((item) => item.installed);
+  const selected = latest?.settings?.defaults?.model ?? "";
+  const key = `${models.map((item) => item.id).join("|")}:${selected}`;
+  if (cpop.box.dataset.key !== key) {
+    cpop.box.dataset.key = key;
+    cpop.model.replaceChildren(
+      ...models.map((item) => new window.Option(item.label ?? item.id, item.id)),
+    );
+    cpop.model.value = selected;
+  }
+  cpop.tier.value = latest?.settings?.tier ?? "reference";
+}
+
+/** 模型名与精度档跟着设置走。 */
+function renderComposerModel() {
+  if (!composer.model) return;
+  const models = Array.isArray(latest?.models) ? latest.models : [];
+  const active = models.find((item) => item.active) ?? models[0];
+  const modelLabel = active?.label ?? "MOSS-Image";
+  const short = modelLabel.replace(/^MOSS-Image[-_ ]?/i, "") || modelLabel;
+  const tier = latest?.settings?.tier ?? "reference";
+  composer.model.textContent = `${short} · ${tier}`;
+  renderCpop();
+}
+
+/** 底图、蒙版、布局各自的状态。 */
+function renderComposerChips(state) {
+  if (!composer.chips) return;
+  const items = [];
+  if (state?.hasBase) items.push("底图");
+  const share = Number(state?.share) || 0;
+  if (share > 0) items.push(`蒙版 ${Math.round(share * 100)}%`);
+  if (lay.boxes?.length) items.push(`布局 ${lay.boxes.length} 块`);
+  composer.chips.replaceChildren(
+    ...items.map((text) => {
+      const chip = document.createElement("span");
+      chip.className = "composer-chip";
+      chip.textContent = text;
+      return chip;
+    }),
+  );
+  composer.chips.hidden = items.length === 0;
 }
 
 /** 画幅改了（侧栏改尺寸、或比例跟底图对齐）就在这里跟上。 */
@@ -1469,6 +1614,14 @@ layChannel?.addEventListener("message", (event) => {
   const msg = event.data ?? {};
   if (msg.type === "edit-state") {
     applyEditState(msg.state);
+    return;
+  }
+  if (msg.type === "compose-prompt") {
+    const text = String(msg.text ?? "");
+    if (composer.input && text !== composer.input.value) {
+      composer.input.value = text;
+      composer.input.focus();
+    }
     return;
   }
   if (msg.type !== "layout-open") return;
@@ -2668,6 +2821,7 @@ function render(data) {
   renderStage(data);
   renderQueue(data);
   renderVersions(data);
+  renderComposerModel();
   renderDownload(data);
   const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;
   if (newest && newest !== newestJobId) {

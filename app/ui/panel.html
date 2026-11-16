@@ -198,20 +198,11 @@
     .pn-fold[open] > summary::after { transform: rotate(90deg); }
     .pn-fold .fold-body { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
 
-    /* 底部输入区：附件芯片 + 提示词 + 一行工具 */
-    /* 整个输入区是一张圆角卡片：输入框、附件、工具行都在里面，跟侧栏背景分开。 */
-    .pn-composer {
-      flex: none;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin: 8px 10px 10px;
-      padding: 8px 8px 6px;
-      border: 1px solid var(--ui-line);
-      border-radius: 16px;
-      background: var(--ui-surface);
-      container-type: inline-size;
-    }
+    /* 行内动作靠右：主操作在右侧，左侧留给说明。 */
+    .pn-install-actions { justify-content: flex-end; }
+
+    /* 输入区已搬到主界面底部；这里只留一个隐藏字段，收广播写进来的提示词。 */
+    .pn-composer { display: none !important; }
 
     .pn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .pn-chips[hidden] { display: none; }
@@ -256,7 +247,48 @@
     #pn-prompt:focus {
       outline: none;
     }
-    .pn-tools { display: flex; align-items: center; gap: 6px; }
+    .pn-tools { position: relative; display: flex; align-items: center; gap: 6px; }
+
+    /* 点模型名从按钮上方浮出一小块，不去滚滚区。 */
+    .pn-pop {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      z-index: 30;
+      width: 208px;
+      padding: 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      border: 1px solid var(--ui-line);
+      border-radius: 12px;
+      background: var(--ui-surface);
+      box-shadow: 0 14px 32px -18px rgba(0, 0, 0, 0.45);
+    }
+    .pn-pop[hidden] { display: none; }
+    .pn-pop-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 5px 8px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      color: var(--ui-text-2);
+    }
+    .pn-pop-row:hover { background: var(--ui-overlay); }
+    .pn-pop-row > span { flex: none; }
+    .pn-pop-row select {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      color: var(--ui-text-3);
+      font: inherit;
+      font-size: 11.5px;
+      text-align: right;
+      cursor: pointer;
+    }
     .pn-tool {
       display: inline-flex;
       align-items: center;
@@ -755,6 +787,11 @@
       </label>
     </div>
 
+    <div class="pn-block">
+      <div class="pn-head"><span class="pn-head-title">片段</span><span class="hint">点一下接在主界面那段后面</span></div>
+      <div class="pn-presets" id="pn-presets"></div>
+    </div>
+
     <div class="pn-foot">
       <span id="pn-errors"></span>
     </div>
@@ -772,7 +809,15 @@
         </button>
         <span class="spacer"></span>
         <select class="pn-tier-mini" id="pn-tier-mini" title="精度档：turbo 最快、high 居中、reference 最准" hidden></select>
-        <button class="pn-model-chip" id="pn-model-chip" type="button" title="模型与精度档：点了去参数区"></button>
+        <button class="pn-model-chip" id="pn-model-chip" type="button" title="模型与精度档"></button>
+        <div class="pn-pop" id="pn-pop" hidden>
+          <label class="pn-pop-row"><span>模型</span><select id="pn-pop-model"></select></label>
+          <label class="pn-pop-row"><span>精度档</span><select id="pn-pop-tier">
+            <option value="turbo">turbo</option>
+            <option value="high">high</option>
+            <option value="reference">reference</option>
+          </select></label>
+        </div>
         <button class="pn-send" id="pn-generate" type="button" title="生成"></button>
         <button class="btn ghost small" id="pn-cancel" type="button" hidden>取消</button>
       </div>

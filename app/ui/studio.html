@@ -108,6 +108,38 @@
         <div class="canvas-drop-hint" id="canvas-drop-hint" hidden>松手：这张当底图改</div>
         <input type="file" id="lay-file" accept="image/*" hidden>
       </div>
+
+      <div class="composer" id="composer">
+        <div class="composer-chips" id="composer-chips" hidden></div>
+        <textarea id="composer-input" rows="1" placeholder="描述画面，或者把图拖进来改"></textarea>
+        <div class="composer-tools">
+          <button class="cbtn" id="composer-image" type="button" title="加一张图（当底图或参考图）">
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2.2" y="3.4" width="11.6" height="9.2" rx="1.6"/>
+              <circle cx="5.9" cy="6.7" r="1"/>
+              <path d="M2.8 11.2 6 8.6l2.2 2 1.9-1.6 2.1 2.2"/>
+            </svg>
+          </button>
+          <button class="cbtn" id="composer-params" type="button" title="生成参数">
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2.5 5h11M2.5 11h11"/>
+              <circle cx="6" cy="5" r="1.7"/>
+              <circle cx="10.4" cy="11" r="1.7"/>
+            </svg>
+          </button>
+          <span class="spacer"></span>
+          <button class="model-chip" id="composer-model" type="button" title="模型与精度档"></button>
+          <div class="cpop" id="cpop" hidden>
+            <label class="cpop-row"><span>模型</span><select id="cpop-model"></select></label>
+            <label class="cpop-row"><span>精度档</span><select id="cpop-tier">
+              <option value="turbo">turbo</option>
+              <option value="high">high</option>
+              <option value="reference">reference</option>
+            </select></label>
+          </div>
+          <button class="send" id="composer-send" type="button" title="生成"></button>
+        </div>
+      </div>
     </section>
 
     <section class="studio-view" id="view-gallery" hidden>

@@ -89,6 +89,9 @@ const nodes = {
   modelField: el("pn-model-field"),
   tierMini: el("pn-tier-mini"),
   modelChip: el("pn-model-chip"),
+  pop: el("pn-pop"),
+  popModel: el("pn-pop-model"),
+  popTier: el("pn-pop-tier"),
   modelHint: el("pn-model-hint"),
   dit: el("pn-dit"),
   ditNote: el("pn-dit-note"),
@@ -145,6 +148,7 @@ const nodes = {
   latentInpaint: el("pn-latent-inpaint"),
   chips: el("pn-chips"),
   paramsToggle: el("pn-params-toggle"),
+  presets: el("pn-presets"),
   addImage: el("pn-add-image"),
   mask: el("pn-mask"),
   maskInfo: el("pn-mask-info"),
@@ -1729,7 +1733,7 @@ function renderModels(data) {
   nodes.tierMini.title = ditFile?.tier
     ? `当前 DiT 只能跑 ${ditFile.tier} 档`
     : "精度档：turbo 最快、high 居中、reference 最准";
-  // 输入框右下那格只报名字：模型与精度档合在一起，点它去参数区。
+  // 输入框右下那格只报名字：模型与精度档合在一起，点它浮出面板。
   const modelLabel = current?.label ?? "MOSS-Image";
   // 前缀在这栏里重复出现四次，去掉只留变体名。
   const shortLabel = modelLabel.replace(/^MOSS-Image[-_ ]?/i, "") || modelLabel;
@@ -1737,6 +1741,13 @@ function renderModels(data) {
   nodes.modelChip.title = ditFile?.tier
     ? `${modelLabel} · 当前 DiT 只能跑 ${ditFile.tier} 档`
     : `${modelLabel} · 精度档 ${tierNow}`;
+  // 浮层里的两个选择器跟参数区同源。
+  nodes.popModel.replaceChildren(
+    ...Array.from(nodes.model.options).map((option) => new window.Option(option.textContent, option.value)),
+  );
+  nodes.popModel.value = nodes.model.value;
+  nodes.popModel.disabled = !models.length;
+  nodes.popTier.value = tierNow;
 }
 
 /**
@@ -2438,7 +2449,7 @@ nodes.addImage.addEventListener("click", () => {
   else nodes.refFile.click();
 });
 // 「参数」把人带到画幅那一栏，闪一下底让他们看清落在哪。
-nodes.paramsToggle.addEventListener("click", () => {
+function focusParams() {
   const block = document.getElementById("pn-size-note")?.closest(".pn-block");
   if (!block) return;
   block.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -2446,7 +2457,8 @@ nodes.paramsToggle.addEventListener("click", () => {
   void block.offsetWidth;
   block.classList.add("pn-flash");
   setTimeout(() => block.classList.remove("pn-flash"), 900);
-});
+}
+nodes.paramsToggle.addEventListener("click", focusParams);
 nodes.editRefClear.addEventListener("click", () => clearEditReference());
 nodes.editRefPick.addEventListener("click", () => nodes.editRefFile.click());
 nodes.editRefFile.addEventListener("change", async () => {
@@ -2592,6 +2604,51 @@ bindSizeSliders();
 
 // ── 主区域的“用这张的参数” ─────────────────────────────────────
 const reuseChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
+
+// ── 主界面底部的输入区 ─────────────────────────────────────
+// 提示词与发送按钮在主界面，提交仍由这一侧完成：参数、底图、蒙版都在这里。
+reuseChannel?.addEventListener("message", (event) => {
+  const msg = event.data ?? {};
+  if (msg.type === "compose-prompt") {
+    nodes.prompt.value = String(msg.text ?? "");
+    return;
+  }
+  if (msg.type === "compose-send") {
+    if (typeof msg.text === "string") nodes.prompt.value = msg.text;
+    void onGenerate();
+    return;
+  }
+  if (msg.type === "compose-add-image") {
+    nodes.addImage.click();
+    return;
+  }
+  if (msg.type === "compose-focus-params") {
+    focusParams();
+    return;
+  }
+  if (msg.type === "compose-insert") {
+    const insert = String(msg.text ?? "").trim();
+    if (!insert) return;
+    const current = nodes.prompt.value.trim();
+    nodes.prompt.value = current ? `${current}，${insert}` : insert;
+    reuseChannel.postMessage({ type: "compose-prompt", text: nodes.prompt.value });
+  }
+});
+
+// ── 片段：点一下接到主界面那段后面 ───────────────────────────
+const PROMPT_PRESETS = ["晨雾", "柔光", "浅景深", "低饱和", "胶片颗粒", "逆光", "湿润的空气", "极简构图"];
+nodes.presets?.replaceChildren(
+  ...PROMPT_PRESETS.map((text) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pn-preset";
+    btn.textContent = text;
+    btn.addEventListener("click", () => {
+      reuseChannel?.postMessage({ type: "compose-insert", text });
+    });
+    return btn;
+  }),
+);
 
 function applyReuse(job) {
   if (typeof job.prompt === "string") nodes.prompt.value = job.prompt;
