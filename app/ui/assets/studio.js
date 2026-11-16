@@ -1276,8 +1276,23 @@ composer.menu?.addEventListener("click", (event) => {
   if (!item) return;
   const act = item.dataset.act;
   closeComposerMenu();
-  if (act === "base") layChannel?.postMessage({ type: "compose-add-base" });
-  else if (act === "reference") layChannel?.postMessage({ type: "compose-add-reference" });
+  // 两种图都在主界面自己选，不绕到侧栏的文件框。
+  if (act === "base") {
+    showView("canvas");
+    fileIntent = "edit";
+    nodes.layFile.click();
+  } else if (act === "reference") {
+    document.getElementById("composer-ref-file")?.click();
+  }
+});
+
+const refFile = document.getElementById("composer-ref-file");
+refFile?.addEventListener("change", () => {
+  const file = refFile.files?.[0];
+  refFile.value = "";
+  if (!file) return;
+  layChannel?.postMessage({ type: "compose-drop-reference", file });
+  toast(`${file.name} 已加入参考图`);
 });
 
 document.addEventListener("click", (event) => {
