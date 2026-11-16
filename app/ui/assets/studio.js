@@ -1188,8 +1188,8 @@ const composer = {
   input: document.getElementById("composer-input"),
   send: document.getElementById("composer-send"),
   plus: document.getElementById("composer-plus"),
+  image: document.getElementById("composer-image"),
   params: document.getElementById("composer-params"),
-  menu: document.getElementById("cmenu"),
   model: document.getElementById("composer-model"),
   chips: document.getElementById("composer-chips"),
 };
@@ -1232,33 +1232,16 @@ composer.input?.addEventListener("keydown", (event) => {
 
 composer.send?.addEventListener("click", sendCompose);
 
-// 「+」把加图与参数收进一个菜单，工具行只留一个入口。
-function closeComposerMenu() {
-  if (composer.menu) composer.menu.hidden = true;
-}
-
 composer.plus?.addEventListener("click", (event) => {
   event.stopPropagation();
-  if (!composer.menu) return;
-  const willOpen = composer.menu.hidden;
   closeAllPanels();
-  composer.menu.hidden = !willOpen;
+  layChannel?.postMessage({ type: "compose-add-base" });
 });
 
-composer.menu?.addEventListener("click", (event) => {
+composer.image?.addEventListener("click", (event) => {
   event.stopPropagation();
-  const item = event.target.closest(".cmenu-item");
-  if (!item) return;
-  const act = item.dataset.act;
-  closeComposerMenu();
-  if (act === "base") layChannel?.postMessage({ type: "compose-add-base" });
-  else if (act === "reference") layChannel?.postMessage({ type: "compose-add-reference" });
-});
-
-document.addEventListener("click", (event) => {
-  if (!composer.menu || composer.menu.hidden) return;
-  if (composer.menu.contains(event.target) || composer.plus?.contains(event.target)) return;
-  closeComposerMenu();
+  closeAllPanels();
+  layChannel?.postMessage({ type: "compose-add-reference" });
 });
 
 // 拖到输入框当参考图，拖到画布当底图。
@@ -1331,8 +1314,8 @@ const SIZE_TABLE = {
   "1:1": [[1024, 1024], [1536, 1536], [1920, 1920], [2048, 2048]],
   "3:2": [[1536, 1024], [1824, 1216], [2304, 1536]],
   "2:3": [[1024, 1536], [1216, 1824], [1536, 2304]],
-  "16:9": [[1280, 720], [1536, 864], [1920, 1080], [2560, 1440], [3840, 2160]],
-  "9:16": [[720, 1280], [864, 1536], [1080, 1920], [1440, 2560], [2160, 3840]],
+  "16:9": [[1280, 720], [1536, 864], [1920, 1080], [2560, 1440]],
+  "9:16": [[720, 1280], [864, 1536], [1080, 1920], [1440, 2560]],
   "4:3": [[1024, 768], [1408, 1056], [1600, 1200], [2048, 1536]],
   "3:4": [[768, 1024], [1056, 1408], [1200, 1600], [1536, 2048]],
 };
@@ -1391,7 +1374,6 @@ function closeAllPanels() {
 function openPanel(which) {
   const panel = panels[which];
   if (!panel?.box) return;
-  closeComposerMenu();
   closeAllPanels();
   panel.view = "root";
   renderPanel(which);
@@ -1402,7 +1384,6 @@ composer.model?.addEventListener("click", (event) => {
   event.stopPropagation();
   const panel = panels.model;
   if (!panel?.box) return;
-  closeComposerMenu();
   if (panel.box.hidden) openPanel("model");
   else closePanel("model");
 });
@@ -1411,7 +1392,6 @@ composer.params?.addEventListener("click", (event) => {
   event.stopPropagation();
   const panel = panels.params;
   if (!panel?.box) return;
-  closeComposerMenu();
   if (panel.box.hidden) openPanel("params");
   else closePanel("params");
 });
@@ -1510,7 +1490,8 @@ function renderPanelRoot(which) {
     return;
   }
   panel.body.replaceChildren(
-    panelRow(which, "尺寸", `${defaults.width ?? 1024} × ${defaults.height ?? 1024}`, "ratio"),
+    panelRow(which, "比例", ratioOf(Number(defaults.width), Number(defaults.height)), "ratio"),
+    panelRow(which, "分辨率", `${defaults.width ?? 1024} × ${defaults.height ?? 1024}`, `size:${ratioOf(Number(defaults.width), Number(defaults.height))}`),
     panelRow(which, "步数", String(defaults.steps ?? 20), "steps"),
     panelRow(which, "CFG", String(defaults.cfg ?? 3), "cfg"),
   );
@@ -1567,7 +1548,10 @@ function renderPanelList(which, kind) {
     const defaults = latest?.settings?.defaults ?? {};
     const curW = Number(defaults.width ?? 1024);
     const curH = Number(defaults.height ?? 1024);
-    const list = [...(SIZE_TABLE[ratio] ?? [])];
+    const list = [...(SIZE_TABLE[ratio] ?? [])].filter(
+      // 引擎硬限制：单边 4096、总量 4.2 MP，超了的档不列出来。
+      ([w, h]) => w <= 4096 && h <= 4096 && w * h <= 4.2e6,
+    );
     // 当前尺寸不在表里也要能看到自己，否则整列没有一项是选中的。
     if (ratioOf(curW, curH) === ratio && !list.some(([w, h]) => w === curW && h === curH)) {
       list.unshift([curW, curH]);
