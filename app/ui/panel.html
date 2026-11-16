@@ -570,21 +570,21 @@
         <span class="pn-slider-thumb" id="pn-hires-thumb" role="slider" tabindex="0"
               aria-label="高清修正倍率" aria-valuemin="1" aria-valuemax="3">×1.0</span>
       </div>
-      <div class="pn-grid">
+      <div class="pn-grid" hidden>
         <label class="field"><span class="label">宽</span><input id="pn-width" type="number" min="256" max="4096" step="16" value="768"></label>
         <label class="field"><span class="label">高</span><input id="pn-height" type="number" min="256" max="4096" step="16" value="768"></label>
       </div>
-      <div class="pn-grid">
+      <div class="pn-grid" hidden>
         <label class="field"><span class="label">步数</span><input id="pn-steps" type="number" min="1" max="80" value="8"></label>
         <label class="field"><span class="label">修正步数</span><input id="pn-hires-steps" type="number" min="0" max="80" value="0" placeholder="跟主步数"></label>
       </div>
       <div class="pn-grid">
-        <label class="field"><span class="label">CFG</span><input id="pn-cfg" type="number" min="0" max="20" step="0.5" value="3"></label>
+        <label class="field" hidden><span class="label">CFG</span><input id="pn-cfg" type="number" min="0" max="20" step="0.5" value="3"></label>
         <label class="field"><span class="label">种子</span><input id="pn-seed" type="number" min="0" placeholder="留空随机"></label>
       </div>
       <details class="pn-fold" id="pn-model-fold">
         <summary><svg class="ic"><use href="#i-sliders"/></svg>模型与显存<span class="hint" id="pn-model-fold-note">默认</span></summary>
-      <label class="field" id="pn-model-field">
+      <label class="field" id="pn-model-field" hidden>
         <span class="label">模型</span>
         <select id="pn-model"></select>
       </label>
@@ -607,7 +607,7 @@
             <option value="max_speed">max_speed</option>
           </select>
         </label>
-        <label class="field">
+        <label class="field" hidden>
           <span class="label">DiT 精度（tier）</span>
           <select id="pn-tier">
             <option value="reference" title="DiT GEMM 用 bf16；注意力精确计算">reference</option>
