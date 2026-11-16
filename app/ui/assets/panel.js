@@ -1630,6 +1630,8 @@ function renderEngine(data) {
  * 两件事分开说，所以是两个框；单文件 DiT 不是另一个模型。
  */
 let modelsKey = "";
+/** 刚切过去、服务端还没回报的那个模型：等 active 跟上再放开。 */
+let pendingModelVariant = null;
 let ditsKey = "";
 let tesKey = "";
 
@@ -1666,7 +1668,7 @@ function renderModels(data) {
       ...Array.from(nodes.model.options).map((option) => new window.Option(option.textContent, option.value)),
     );
     nodes.modelMini.disabled = !models.length;
-    nodes.modelMini.value = nodes.model.value;
+    nodes.modelMini.value = pendingModelVariant ?? nodes.model.value;
   // 自管清单：没装整包时「模型」这一格没有意义（两个仓库的配置与分词器相同），直接收起来。
   nodes.modelField.hidden = !models.length;
   // 轻量包（只有配置与分词器）：模型差异全在 DiT 权重里。
@@ -1727,6 +1729,12 @@ function renderModels(data) {
     nodes.te.disabled = !tes.length;
   }
   nodes.te.value = teFile?.target ?? "";
+
+  // 切模型是一次点击的事：服务端确认前先按用户选的那个显示，别弹回去。
+  const activeVariant = models.find((item) => item.active)?.variant ?? "";
+  if (pendingModelVariant && activeVariant === pendingModelVariant) pendingModelVariant = null;
+  if (!models.length) return;
+  nodes.modelMini.value = pendingModelVariant ?? nodes.model.value;
 }
 
 /**
@@ -2250,6 +2258,7 @@ nodes.tier.addEventListener("change", async () => {
 
 // 切模型：只改设置，引擎下次 load 时按新目录读；已加载的缓存由服务端作废。
 nodes.modelMini.addEventListener("change", () => {
+  pendingModelVariant = nodes.modelMini.value;
   nodes.model.value = nodes.modelMini.value;
   nodes.model.dispatchEvent(new window.Event("change"));
 });
