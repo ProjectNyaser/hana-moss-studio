@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine, buildGenerateParams } from "./lib/engine.js";
 import { clamp, clampFloat, createStore } from "./lib/store.js";
@@ -8,6 +9,8 @@ import { capabilityMap, menuValues, readGeneration, readLayout, VALUES } from ".
 import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
 import { createInstaller, probeGpu, probeGpuDetailed } from "./lib/installer.js";
 import { shrinkToWebp } from "./lib/image.js";
+import { createSession } from "./lib/session.js";
+import { checkpointPaths, readCheckpoint, runLatentGenerate } from "./lib/latent.js";
 
 export const name = "hana-moss-studio";
 
@@ -174,6 +177,7 @@ export default defineApp(async (sdk) => {
       cardId: cardIdOf(job.id),
       prompt: job.caption ?? job.prompt,
       negativePrompt: job.negativePrompt,
+      mode: job.mode ?? "generate",
       width: job.width,
       height: job.height,
       steps: job.steps,
@@ -397,12 +401,23 @@ export default defineApp(async (sdk) => {
     return error instanceof Error ? error.message : String(error);
   }
 
+  // 可续画的断点：每一步一份 latent + 一份参数，取消或重开之后还能接着跑。
+  const checkpointsDir = join(dataDir, "checkpoints");
+  mkdirSync(checkpointsDir, { recursive: true });
+  const session = createSession({
+    engine,
+    exePath: fileURLToPath(new URL("./vendor-bin/shm-bridge.exe", import.meta.url)),
+    tmpDir: join(runtimeDir, "shm"),
+    onLog: (entry) => sdk.logger.info(`[组件会话] ${entry.message}`),
+  });
+
   function pickReport(report) {
     if (!report || typeof report !== "object") return null;
     return {
       seedUsed: typeof report.seed_used === "number" ? report.seed_used : null,
       quality: report.quality ?? null,
       timings: report.timings_s ?? null,
+      latent: report.latent ?? null,
     };
   }
 
@@ -486,7 +501,26 @@ export default defineApp(async (sdk) => {
       }
       gen.loras = kept;
     }
+    // 可续画（component session）：只做文生图，采样器必须 euler。
+    const mode = input?.mode === "latent" ? "latent" : "generate";
+    if (mode === "latent") {
+      if (gen.sampler !== "euler") throw new Error("可续画模式只支持 euler（MOSS 官方组合）");
+      if (gen.initImage || gen.mask) throw new Error("可续画模式只做文生图：不要给底图或蒙版");
+      // 控制适配器与编辑参考图是设置里的长期选择：没显式要就默默摘下，
+      // 不能因为上次选过一个就让可续画任务卡在那里。
+      const explicitControl = Boolean(input?.control?.adapter ?? input?.controlAdapter);
+      if (explicitControl && gen.control?.adapter) throw new Error("可续画模式暂不支持控制适配器");
+      gen.control = null;
+      const explicitReferences = Boolean(
+        (Array.isArray(input?.referenceImages) && input.referenceImages.length) ||
+          (Array.isArray(input?.references) && input.references.length) ||
+          (Array.isArray(input?.references?.images) && input.references.images.length),
+      );
+      if (explicitReferences && gen.references?.images?.length) throw new Error("可续画模式暂不支持编辑参考图");
+      gen.references = null;
+    }
     const record = {
+      mode,
       prompt: layout ? layout.prompt : caption,
       caption,
       layout: layout ? { items: layout.items, caption: layout.caption } : null,
@@ -564,7 +598,7 @@ export default defineApp(async (sdk) => {
     store.upsertJob(record);
     const entry = remember(liveEntry(record));
     if (record.notices) entry.notices = record.notices;
-    queue.push({ ...record, output: join(outputsDir, fileName) });
+    queue.push({ ...record, output: join(outputsDir, fileName), resumeFrom: input?.resumeFrom ?? null });
     // 有新任务就把待停的计时取消掉。
     clearTimeout(idleStopTimer);
     schedulePush(0);
@@ -595,7 +629,56 @@ export default defineApp(async (sdk) => {
     store.upsertJob({ id: job.id, status: "running", startedAt: startedAt.toISOString() });
     schedulePush(0);
     try {
-      const result = await engine.generate(job);
+      let result;
+      if (job.mode === "latent") {
+        // 可续画：每一步的 latent 落盘，取消只在步与步之间生效。
+        const stopFlag = { stopped: false };
+        if (entry) entry.stopFlag = stopFlag;
+        try {
+          await engine.ensureLoaded(job);
+          const latent = await runLatentGenerate({
+            session,
+            spec: {
+              id: job.id,
+              prompt: job.prompt,
+              negativePrompt: job.negativePrompt,
+              width: job.width,
+              height: job.height,
+              steps: job.steps,
+              cfg: job.cfg,
+              shift: job.shift,
+              seed: job.seed,
+              sampler: job.sampler,
+              output: job.output,
+              from: job.resumeFrom ?? null,
+            },
+            checkpointDir: checkpointsDir,
+            onProgress: (progress) => {
+              if (!entry) return;
+              entry.step = progress.step;
+              entry.total = progress.total;
+              entry.percent = Math.round((progress.step / Math.max(1, progress.total)) * 1000) / 10;
+              entry.phase = "denoise";
+              syncTask(entry, { progress: taskProgress(entry) });
+              schedulePush(0);
+            },
+            shouldStop: () => stopFlag.stopped,
+          });
+          result = {
+            status: "ok",
+            output: job.output,
+            report: {
+              seed_used: job.seed,
+              latent: { stepsRun: latent.stepsRun, totalSteps: latent.totalSteps, checkpoint: latent.checkpoint, latents: latent.latents },
+            },
+          };
+        } catch (error) {
+          if (error?.cancelled) result = { status: "cancelled", output: job.output };
+          else throw error;
+        }
+      } else {
+        result = await engine.generate(job);
+      }
       const elapsedMs = Date.now() - startedAt.getTime();
       if (result.status === "ok") {
         const report = pickReport(result.report);
@@ -623,6 +706,8 @@ export default defineApp(async (sdk) => {
       }
     } catch (error) {
       const text = message(error);
+      // 权限、缺文件这类错误只看一行没法定位，堆栈写进日志。
+      sdk.logger.warn(`[苔室] 任务 ${job.id} 失败：${error?.stack ?? text}`);
       const elapsedMs = Date.now() - startedAt.getTime();
       store.upsertJob({
         id: job.id,
@@ -916,6 +1001,7 @@ function state() {
       height: source.height,
       steps: source.steps,
       cfg: source.cfg,
+      mode: source.mode ?? "generate",
       hiresScale: source.hiresScale ?? 0,
       sampler: source.sampler ?? null,
       scheduler: source.scheduler ?? null,
@@ -1512,6 +1598,65 @@ function state() {
       }
     });
 
+    /** 可续画的断点清单：侧栏与工具都靠它列出来。 */
+    app.get(`/${APP_ID}/latent/checkpoints`, (c) => {
+      const items = existsSync(checkpointsDir)
+        ? readdirSync(checkpointsDir)
+            .filter((name) => name.endsWith(".json"))
+            .map((name) => {
+              try {
+                const meta = JSON.parse(readFileSync(join(checkpointsDir, name), "utf8"));
+                return {
+                  id: name.replace(/\.json$/, ""),
+                  prompt: String(meta.prompt ?? "").slice(0, 120),
+                  width: meta.width,
+                  height: meta.height,
+                  steps: meta.steps,
+                  stepIndex: meta.stepIndex,
+                  updatedAt: meta.updatedAt ?? null,
+                  done: Number(meta.stepIndex) >= Number(meta.steps),
+                };
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean)
+            .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        : [];
+      return c.json({ dir: checkpointsDir, items });
+    });
+
+    /** 从断点接着跑：用断点里的提示词、尺寸与调度表，已跑的步不重算。 */
+    app.post(`/${APP_ID}/latent/resume`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const raw = String(body?.id ?? "").trim();
+      if (!raw) return c.json({ error: "要给断点 id" }, 400);
+      const isPath = raw.endsWith(".json");
+      const dir = isPath ? dirname(raw) : checkpointsDir;
+      const id = isPath ? basename(raw).replace(/\.json$/, "") : raw;
+      const checkpoint = readCheckpoint(dir, id);
+      if (!checkpoint) return c.json({ error: `找不到断点：${raw}` }, 404);
+      try {
+        const entry = submit({
+          mode: "latent",
+          prompt: checkpoint.prompt,
+          negativePrompt: checkpoint.negativePrompt,
+          width: checkpoint.width,
+          height: checkpoint.height,
+          steps: checkpoint.steps,
+          cfg: checkpoint.cfg,
+          shift: checkpoint.shift,
+          seed: checkpoint.seed,
+          sampler: "euler",
+          resumeFrom: checkpoint,
+        });
+        await attachTask(entry, null);
+        return c.json({ job: jobView(entry), state: state() });
+      } catch (error) {
+        return c.json({ error: message(error) }, 400);
+      }
+    });
+
     app.post(`/${APP_ID}/cancel`, async (c) => {
       const body = await c.req.json().catch(() => ({}));
       const id = String(body?.id ?? body?.job ?? "");
@@ -1525,6 +1670,12 @@ function state() {
           entry.finishedAt = new Date().toISOString();
           settleTask(entry);
         }
+        return c.json(state());
+      }
+      // 可续画任务在步与步之间检查这个标记：当前这步会被跑完，断点留着能接着跑。
+      const liveEntry = live.get(id);
+      if (liveEntry?.stopFlag) {
+        liveEntry.stopFlag.stopped = true;
         return c.json(state());
       }
       await engine.cancel(id);
@@ -1780,6 +1931,93 @@ function state() {
           },
         },
       };
+    },
+  });
+
+  await sdk.tools.register({
+    name: "moss_latent",
+    description:
+      "可续画的生成：走引擎的组件会话（component session），每一步的 latent 都落盘。取消、关掉 App 之后能从断点接着跑；也产出 latent 文件（与 ComfyUI 的 Flux2 LATENT 同构）。只支持 euler + moss 的文生图。",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "run（新开一次）/ resume（从断点接着跑）/ list（列已有断点）" },
+        prompt: { type: "string", description: "正向提示词（run 用）" },
+        negativePrompt: { type: "string", description: "反向提示词" },
+        width: { type: "integer", description: "宽度，缺省用设置值；必须是 16 的倍数" },
+        height: { type: "integer", description: "高度，缺省用设置值" },
+        steps: { type: "integer", description: "总步数（含已跑过的），resume 时用断点里的值" },
+        cfg: { type: "number", description: "CFG，缺省 3" },
+        shift: { type: "number", description: "噪声偏移，缺省 5；resume 时必须与断点一致" },
+        seed: { type: "integer", description: "种子，缺省随机" },
+        checkpointId: { type: "string", description: "resume 用：断点 id（任务 id）或 meta 文件的绝对路径" },
+      },
+      required: ["action"],
+    },
+    execute: async (args) => {
+      const action = String(args?.action ?? "run");
+      try {
+        if (action === "list") {
+          const files = existsSync(checkpointsDir)
+            ? readdirSync(checkpointsDir).filter((name) => name.endsWith(".json"))
+            : [];
+          const rows = files
+            .map((name) => {
+              try {
+                const meta = JSON.parse(readFileSync(join(checkpointsDir, name), "utf8"));
+                const id = name.replace(/\.json$/, "");
+                return `- ${id}：${meta.stepIndex}/${meta.steps} 步，${meta.width}×${meta.height}，${String(meta.prompt ?? "").slice(0, 40)}`;
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean);
+          return {
+            content: [{ type: "text", text: rows.length ? [`断点 ${rows.length} 份：`, ...rows].join("\n") : "还没有断点。" }],
+          };
+        }
+
+        let input;
+        if (action === "resume") {
+          const raw = String(args?.checkpointId ?? "").trim();
+          if (!raw) throw new Error("resume 要给 checkpointId（断点 id 或 meta 文件路径）");
+          const isPath = raw.endsWith(".json");
+          const dir = isPath ? dirname(raw) : checkpointsDir;
+          const id = isPath ? basename(raw).replace(/\.json$/, "") : raw;
+          const checkpoint = readCheckpoint(dir, id);
+          if (!checkpoint) throw new Error(`找不到断点：${raw}`);
+          input = {
+            mode: "latent",
+            prompt: checkpoint.prompt,
+            negativePrompt: checkpoint.negativePrompt,
+            width: checkpoint.width,
+            height: checkpoint.height,
+            steps: checkpoint.steps,
+            cfg: checkpoint.cfg,
+            shift: checkpoint.shift,
+            seed: checkpoint.seed,
+            sampler: "euler",
+            resumeFrom: checkpoint,
+          };
+        } else {
+          input = { ...args, mode: "latent", sampler: "euler" };
+        }
+
+        const entry = submit(input);
+        await attachTask(entry, typeof args?.context?.callToken === "string" ? args.context.callToken : "");
+        const lines = [
+          `已提交可续画任务：${entry.width}×${entry.height}，${entry.steps} 步，种子 ${entry.seed}。`,
+          action === "resume" ? "- 从断点接着跑，前面已跑的步不会重算。" : "- 每一步的 latent 都会落盘，中断后可以 resume。",
+          `- 断点目录：${checkpointsDir}`,
+          `- 进度：${entry.taskId ? `宿主任务 ${entry.taskId}` : "下方卡片实时刷新"}`,
+        ];
+        return {
+          content: [{ type: "text", text: lines.join("\n") }],
+          details: { moss: { jobId: entry.id, mode: "latent", width: entry.width, height: entry.height, steps: entry.steps } },
+        };
+      } catch (error) {
+        return { content: [{ type: "text", text: `提交失败：${message(error)}` }], isError: true };
+      }
     },
   });
 
