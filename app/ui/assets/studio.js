@@ -1287,10 +1287,18 @@ function renderCpop() {
   const key = `${models.map((item) => item.id).join("|")}:${selected}`;
   if (cpop.box.dataset.key !== key) {
     cpop.box.dataset.key = key;
-    cpop.model.replaceChildren(
-      ...models.map((item) => new window.Option(item.label ?? item.id, item.id)),
-    );
-    cpop.model.value = selected;
+    if (!models.length) {
+      // 一个都没装时给一行说明，比一个空下拉强。
+      cpop.model.replaceChildren(new window.Option("没有已安装的模型", ""));
+      cpop.model.disabled = true;
+    } else {
+      cpop.model.disabled = false;
+      cpop.model.replaceChildren(
+        ...models.map((item) => new window.Option(item.label ?? item.id, item.id)),
+      );
+      // 设置里的模型可能已经不在列表里（换过权重），退回第一个，不要留空。
+      cpop.model.value = models.some((item) => item.id === selected) ? selected : models[0].id;
+    }
   }
   cpop.tier.value = latest?.settings?.tier ?? "reference";
 }
