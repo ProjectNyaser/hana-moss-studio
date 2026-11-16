@@ -1382,6 +1382,7 @@ function closePanel(which) {
   if (!panel?.box) return;
   panel.box.hidden = true;
   panel.view = "root";
+  panel.stack = [];
 }
 
 function closeAllPanels() {
@@ -1393,6 +1394,7 @@ function openPanel(which) {
   const panel = panels[which];
   if (!panel?.box) return;
   closeAllPanels();
+  panel.stack = [];
   panel.view = "root";
   renderPanel(which);
   panel.box.hidden = false;
@@ -1418,8 +1420,7 @@ for (const which of Object.keys(panels)) {
   panels[which].back?.addEventListener("click", (event) => {
     event.stopPropagation();
     const panel = panels[which];
-    // 分辨率退到比例，比例退到一层。
-    panel.view = panel.view.startsWith("size:") ? "ratio" : "root";
+    panel.view = panel.stack?.pop() ?? "root";
     renderPanel(which);
   });
 }
@@ -1495,6 +1496,9 @@ function panelRow(which, label, value, kind) {
     event.stopPropagation();
     const panel = panels[which];
     if (!panel) return;
+    // 记住来处，返回时才知道退回哪一层。
+    panel.stack = panel.stack ?? [];
+    panel.stack.push(panel.view);
     panel.view = kind;
     renderPanel(which);
   });
@@ -1571,7 +1575,10 @@ function renderPanelList(which, kind) {
         selected: id === current,
         keep: true,
         apply: () => {
-          panels.params.view = `size:${id}`;
+          const panel = panels.params;
+          panel.stack = panel.stack ?? [];
+          panel.stack.push("ratio");
+          panel.view = `size:${id}`;
           renderPanel("params");
         },
       });
