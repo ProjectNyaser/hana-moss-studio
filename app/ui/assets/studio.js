@@ -1196,8 +1196,31 @@ const composer = {
 };
 
 let composerTimer = null;
-let composerRefs = 0;
 let lastEditState = null;
+// 主界面自己拿着参考图的本地副本，缩略图与放大都在这一侧。
+const refFiles = [];
+
+function pushRefFile(file) {
+  refFiles.push({ name: file.name, url: URL.createObjectURL(file) });
+  renderComposerChips(lastEditState);
+}
+
+function openRefBox(url, name) {
+  const box = document.getElementById("refbox");
+  const img = document.getElementById("refbox-img");
+  if (!box || !img) return;
+  img.src = url;
+  img.alt = name ?? "参考图";
+  box.hidden = false;
+}
+
+document.getElementById("refbox-close")?.addEventListener("click", () => {
+  const box = document.getElementById("refbox");
+  if (box) box.hidden = true;
+});
+document.getElementById("refbox")?.addEventListener("click", (event) => {
+  if (event.target.id === "refbox") event.currentTarget.hidden = true;
+});
 function composerText() {
   return composer.input?.value ?? "";
 }
@@ -1288,6 +1311,7 @@ refFile?.addEventListener("change", () => {
   refFile.value = "";
   if (!file) return;
   layChannel?.postMessage({ type: "compose-drop-reference", file });
+  pushRefFile(file);
   toast(`${file.name} 已加入参考图`);
 });
 
@@ -1321,6 +1345,7 @@ composerBox?.addEventListener("drop", (event) => {
   const file = event.dataTransfer?.files?.[0];
   if (!file || !String(file.type).startsWith("image/")) return;
   layChannel?.postMessage({ type: "compose-drop-reference", file });
+  pushRefFile(file);
   toast(`${file.name} 已加入参考图`);
 });
 
@@ -1752,19 +1777,31 @@ function renderComposerChips(state) {
   lastEditState = state ?? lastEditState;
   if (!composer.chips) return;
   const items = [];
-  if (state?.hasBase) items.push("底图");
+  // 参考图每张一张缩略图卡，点开看大图。
+  for (const item of refFiles) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "composer-chip ref";
+    card.title = `${item.name} · 点击放大`;
+    const img = document.createElement("img");
+    img.src = item.url;
+    img.alt = item.name;
+    const label = document.createElement("span");
+    label.textContent = item.name;
+    card.append(img, label);
+    card.addEventListener("click", () => openRefBox(item.url, item.name));
+    items.push(card);
+  }
+  const plain = (text) => {
+    const chip = document.createElement("span");
+    chip.className = "composer-chip";
+    chip.textContent = text;
+    return chip;
+  };
   const share = Number(state?.share) || 0;
-  if (share > 0) items.push(`蒙版 ${Math.round(share * 100)}%`);
-  if (composerRefs > 0) items.push(`参考图 ${composerRefs} 张`);
-  if (lay.boxes?.length) items.push(`布局 ${lay.boxes.length} 块`);
-  composer.chips.replaceChildren(
-    ...items.map((text) => {
-      const chip = document.createElement("span");
-      chip.className = "composer-chip";
-      chip.textContent = text;
-      return chip;
-    }),
-  );
+  if (share > 0) items.push(plain(`蒙版 ${Math.round(share * 100)}%`));
+  if (lay.boxes?.length) items.push(plain(`布局 ${lay.boxes.length} 块`));
+  composer.chips.replaceChildren(...items);
   composer.chips.hidden = items.length === 0;
 }
 
@@ -2054,8 +2091,12 @@ layChannel?.addEventListener("message", (event) => {
     return;
   }
   if (msg.type === "edit-refs") {
-    composerRefs = Number(msg.count) || 0;
-    renderComposerChips(lastEditState);
+    const count = Number(msg.count) || 0;
+    // 侧栏删掉了某几张：这边跟着截断，不然缩略图会比实际多。
+    if (count < refFiles.length) {
+      for (const item of refFiles.splice(count)) URL.revokeObjectURL(item.url);
+      renderComposerChips(lastEditState);
+    }
     return;
   }
   if (msg.type === "compose-prompt") {
