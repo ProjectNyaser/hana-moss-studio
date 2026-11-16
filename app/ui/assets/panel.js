@@ -1837,11 +1837,6 @@ function renderHistory(data) {
       btn.type = "button";
       btn.className = "pn-hist-item";
       btn.dataset.jobId = job.id;
-      const img = document.createElement("img");
-      img.className = "pn-hist-thumb";
-      img.loading = "lazy";
-      img.alt = "";
-      img.src = inputUrl(job.output);
       const text = document.createElement("span");
       text.className = "pn-hist-text";
       const line = document.createElement("span");
@@ -1851,7 +1846,7 @@ function renderHistory(data) {
       meta.className = "pn-hist-meta";
       meta.textContent = `${job.width}×${job.height} · ${job.steps} 步`;
       text.append(line, meta);
-      btn.append(img, text);
+      btn.append(text);
       btn.addEventListener("click", () => {
         editChannel?.postMessage({ type: "open-job", id: job.id });
       });

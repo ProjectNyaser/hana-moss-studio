@@ -225,7 +225,8 @@ function showView(view) {
     if (section) section.hidden = name !== view;
   }
   if (view === "versions") void loadReleases();
-  if (view === "chat") renderChat(latest ?? {});
+  if (view === "chat" && !galleryJobs.length) void loadGallery(true);
+  if (view === "chat") renderChat();
   if (view === "gallery" && !galleryJobs.length) void loadGallery(true);
   // 画廊在隐藏状态下 clientWidth 是 0，首次算出来的列数偏少；显出来后重排一次。
   if (view === "gallery" && galleryEntries.length) {
@@ -235,10 +236,10 @@ function showView(view) {
 
 // ── 画布 ───────────────────────────────────────────────────────────────
 /** 会话流水：用户写的靠右，出的图靠左，旧在上新在下。 */
-function renderChat(data) {
+function renderChat() {
   const log = document.getElementById("chat-log");
   if (!log) return;
-  const jobs = (Array.isArray(data?.jobs) ? data.jobs : [])
+  const jobs = galleryJobs
     .filter((job) => job.status === "done" && job.output)
     .slice()
     .reverse();
@@ -2283,6 +2284,7 @@ async function loadGallery(reset = false) {
     galleryOffset = offset + page.jobs.length;
     galleryTotal = page.total ?? galleryJobs.length;
     if (latest) void renderGallery(latest);
+    renderChat();
   } catch (error) {
     nodes.galleryCount.textContent = error instanceof Error ? error.message : String(error);
   } finally {
@@ -3428,7 +3430,7 @@ function render(data) {
   renderStage(data);
   renderQueue(data);
   renderVersions(data);
-  renderChat(data);
+  renderChat();
   renderComposerModel();
   renderDownload(data);
   const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;
@@ -3714,7 +3716,8 @@ async function boot() {
   } catch {
     /* 非宿主环境 */
   }
-  showView("canvas");
+  showView("chat");
+  void loadGallery(true);
   // 侧栏那边存着底图与蒙版，起来之后问一遍当前状态。
   layChannel?.postMessage({ type: "edit-hello" });
   // 首屏靠事件流的首帧，不再单独拉一次 /state。万一流一时连不上，两秒后再补一次。
