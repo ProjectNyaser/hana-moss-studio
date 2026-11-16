@@ -183,6 +183,7 @@ export default defineApp(async (sdk) => {
       height: job.height,
       steps: job.steps,
       cfg: job.cfg,
+      batch: job.batch ?? 1,
       seed: job.seed,
       sampler: job.sampler ?? null,
       scheduler: job.scheduler ?? null,
@@ -522,6 +523,7 @@ export default defineApp(async (sdk) => {
     }
     const record = {
       mode,
+      batch: mode === "latent" ? clamp(input?.batch, 1, 4, 1) : 1,
       prompt: layout ? layout.prompt : caption,
       caption,
       layout: layout ? { items: layout.items, caption: layout.caption } : null,
@@ -650,6 +652,7 @@ export default defineApp(async (sdk) => {
               shift: job.shift,
               seed: job.seed,
               sampler: job.sampler,
+              batch: Number.isFinite(job.batch) ? job.batch : 1,
               output: job.output,
               from: job.resumeFrom ?? null,
             },
@@ -668,6 +671,8 @@ export default defineApp(async (sdk) => {
           result = {
             status: "ok",
             output: job.output,
+            batch: latent.batch,
+            outputs: latent.outputs ?? [job.output],
             report: {
               seed_used: job.seed,
               latent: { stepsRun: latent.stepsRun, totalSteps: latent.totalSteps, checkpoint: latent.checkpoint, latents: latent.latents },
@@ -686,6 +691,24 @@ export default defineApp(async (sdk) => {
         store.upsertJob({ id: job.id, status: "done", finishedAt: new Date().toISOString(), elapsedMs, report });
         // 出图之后就把缩略图做出来，打开画廊時不必现等。
         void ensureThumb(join(outputsDir, job.output));
+        // 多张（component session 的 batch）：其余几张也各记一条，画廊里能单独点开。
+        const extras = Array.isArray(result.outputs) ? result.outputs.slice(1) : [];
+        if (extras.length) {
+          const { resumeFrom: _resume, output: _abs, ...recordBase } = job;
+          const finishedAt = new Date().toISOString();
+          for (const [index, path] of extras.entries()) {
+            store.upsertJob({
+              ...recordBase,
+              id: `${job.id}-${index + 2}`,
+              output: basename(path),
+              seed: (Number.isFinite(job.seed) ? job.seed : 42) + index + 1,
+              status: "done",
+              finishedAt,
+              elapsedMs,
+            });
+            void ensureThumb(path);
+          }
+        }
         if (entry) {
           entry.status = "done";
           entry.percent = 100;
@@ -1003,6 +1026,7 @@ function state() {
       steps: source.steps,
       cfg: source.cfg,
       mode: source.mode ?? "generate",
+      batch: source.batch ?? 1,
       hiresScale: source.hiresScale ?? 0,
       sampler: source.sampler ?? null,
       scheduler: source.scheduler ?? null,
@@ -1952,6 +1976,7 @@ function state() {
         shift: { type: "number", description: "噪声偏移，缺省 5；resume 时必须与断点一致" },
         seed: { type: "integer", description: "种子，缺省随机" },
         checkpointId: { type: "string", description: "resume 用：断点 id（任务 id）或 meta 文件的绝对路径" },
+        batch: { type: "integer", description: "一次出几张（1~4，缺省 1）。2 张以上走 host guidance，已实测与 MOSS guidance 逐像素一致" },
         imagePath: { type: "string", description: "encode 用：PNG 路径（尺寸要是 16 的倍数）" },
         latentPath: { type: "string", description: "decode 用：latent 文件路径" },
       },

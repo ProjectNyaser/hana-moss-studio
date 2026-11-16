@@ -44,6 +44,8 @@ export const DEFAULT_SETTINGS = {
     // 加速器默认关：它们是 lossy 的，得用户自己决定。
     stepCache: "off",
     stepCacheThreshold: null,
+    // 可续画一次出几张：1~4，超过 1 张走 host guidance。
+    batch: 1,
     // 采样面：层跳过、SLG、序列长度、flow、噪声源与随机项。
     uncondSkipLayers: [22],
     slgLayers: [],
@@ -141,6 +143,7 @@ export function createStore(dataDir, outputsDir) {
         stepCache: VALUES.stepCache.includes(defaults.stepCache) ? defaults.stepCache : "off",
         stepCacheThreshold:
           defaults.stepCacheThreshold == null ? null : clampFloat(defaults.stepCacheThreshold, 0.0001, 1, 0.03),
+        batch: clamp(defaults.batch, 1, 4, 1),
         uncondSkipLayers: normalizeLayers(defaults.uncondSkipLayers, DEFAULT_SETTINGS.defaults.uncondSkipLayers),
         slgLayers: normalizeLayers(defaults.slgLayers, DEFAULT_SETTINGS.defaults.slgLayers),
         slgScale: clampFloat(defaults.slgScale, 0, 20, 0),

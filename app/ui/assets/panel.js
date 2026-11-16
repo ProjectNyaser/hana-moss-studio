@@ -113,6 +113,8 @@ const nodes = {
   advSamplingNote: el("pn-adv-sampling-note"),
   latent: el("pn-latent"),
   latentNote: el("pn-latent-note"),
+  batchField: el("pn-batch-field"),
+  batch: el("pn-batch"),
   resumeRow: el("pn-resume-row"),
   resumeName: el("pn-resume-name"),
   resumeGo: el("pn-resume-go"),
@@ -262,6 +264,7 @@ function setSettings(settings) {
   hiresScale = Math.max(1, Number(settings.defaults.hiresScale) || 1);
   nodes.hiresSteps.value = settings.defaults.hiresSteps ?? 0;
   fillMenus(settings.defaults);
+  nodes.batch.value = settings.defaults.batch ?? 1;
   loras = Array.isArray(settings.defaults.loras) ? settings.defaults.loras.map((item) => ({ ...item })) : [];
   renderLoras();
   // 控制适配器是设置里的长期选择：上次用的那个接着用，直到用户清掉。
@@ -1739,6 +1742,8 @@ async function refresh() {
 // ── 交互 ───────────────────────────────────────────────────────────────
 nodes.latent.addEventListener("change", () => {
   nodes.latentNote.hidden = !nodes.latent.checked;
+  nodes.batchField.hidden = !nodes.latent.checked;
+  scheduleSave();
 });
 nodes.resumeGo.addEventListener("click", async () => {
   const item = checkpointCache.item;
@@ -1826,6 +1831,9 @@ async function onGenerate() {
   if (nodes.dataspace.value.trim()) payload.dataspace = nodes.dataspace.value.trim();
   if (nodes.distill.value.trim()) payload.distill = nodes.distill.value.trim();
   if (nodes.latent.checked) payload.mode = "latent";
+  if (nodes.latent.checked && Number(nodes.batch.value) > 1) {
+    payload.batch = Math.min(4, Math.max(1, Math.round(Number(nodes.batch.value))));
+  }
   // 布局只传左上角坐标的框：中心坐标与 yxyx 排序由 readLayout 换算。
   if (layoutBoxes.length) {
     payload.boxes = layoutBoxes.map((item) => {
@@ -1944,6 +1952,7 @@ function collectDefaults() {
     shift: Number(nodes.shift.value) || 5,
     stepCache: nodes.stepCache.value,
     stepCacheThreshold: nodes.stepThreshold.value === "" ? null : Number(nodes.stepThreshold.value) || null,
+    batch: Math.min(4, Math.max(1, Math.round(Number(nodes.batch.value) || 1))),
     uncondSkipLayers: readLayerText(nodes.uncondLayers.value),
     slgLayers: readLayerText(nodes.slgLayers.value),
     slgScale: Number(nodes.slgScale.value) || 0,

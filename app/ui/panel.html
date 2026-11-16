@@ -436,6 +436,9 @@
         <input id="pn-latent" type="checkbox">
         <span>可续画</span>
       </label>
+      <label class="field" id="pn-batch-field" hidden><span class="label">张数</span>
+        <input id="pn-batch" type="number" min="1" max="4" step="1" value="1">
+      </label>
       <p class="hint" id="pn-latent-note" hidden>每一步的 latent 都落盘：取消或关掉之后能从断点接着跑。只做 euler + moss 的文生图，不搭底图/蒙版/控制图/参考图。</p>
       <div class="pn-editref" id="pn-resume-row" hidden>
         <span class="name" id="pn-resume-name"></span>

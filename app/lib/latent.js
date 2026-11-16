@@ -9,6 +9,9 @@
  *
  * 采样只做 euler：MOSS 官方组合（euler + moss + shift 5）。别的采样器公式不同，
  * 乱用会得到一张安静的错图，所以这里直接拒绝。
+ *
+ * 两张以上走 `guidance: "host"`：引擎在 MOSS guidance 下只接受一个 latent
+ * （文档写明 `L = 1`），要并行就得自己把 cond / uncond 两行按 CFG 合起来。
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,6 +21,8 @@ import { encode as encodePng } from "fast-png";
 import { latentSize, SHM_PAYLOAD } from "./session.js";
 
 export const RESUME_SAMPLER = "euler";
+/** 一份任务里最多几张：MOSS 行限制 8 行，每张要 2 行。 */
+export const MAX_BATCH = 4;
 
 export function checkpointPaths(dir, id) {
   return { latents: join(dir, `${id}.latent`), meta: join(dir, `${id}.json`) };
@@ -59,11 +64,18 @@ export function writePng(path, pixels, width, height) {
   writeFileSync(path, encodePng({ width, height, data: rgba, channels: 4, depth: 8 }));
 }
 
+/** 第 index 张的产物路径：单张就是 output，多张在名字后面加 -2、-3。 */
+export function outputForIndex(output, index) {
+  if (index === 0) return output;
+  return output.replace(/\.png$/i, `-${index + 1}.png`);
+}
+
 /**
  * 跑一次可续画的生成。
  *
- * spec: { prompt, negativePrompt, width, height, steps, cfg, shift, seed, output, from }
- *   `from` 是 readCheckpoint 的结果：给了就从它的步号接着跑，不再重新加噪。
+ * spec: { prompt, negativePrompt, width, height, steps, cfg, shift, seed, batch,
+ *         output, from }
+ *   `batch` 1~4；`from` 是 readCheckpoint 的结果：给了就从它的步号接着跑。
  */
 export async function runLatentGenerate(options) {
   const { session, spec, checkpointDir } = options;
@@ -79,25 +91,34 @@ export async function runLatentGenerate(options) {
   mkdirSync(checkpointDir, { recursive: true });
 
   const from = spec.from ?? null;
+  const batch = Math.max(1, Math.min(MAX_BATCH, Math.round(spec.batch ?? from?.batch ?? 1)));
   if (from && (from.width !== width || from.height !== height)) {
     throw new Error(`断点是 ${from.width}×${from.height}，这次是 ${width}×${height}：形状不一致没法接着跑`);
   }
+  if (from && Number(from.batch ?? 1) !== batch) {
+    throw new Error(`断点里有 ${from.batch ?? 1} 张，这次是 ${batch} 张：张数不一致没法接着跑`);
+  }
+  const hostGuidance = spec.guidance ? spec.guidance === "host" : batch > 1;
 
-  await session.open({ maxRows: 2 });
+  await session.open({ maxRows: hostGuidance ? batch * 2 : 2, maxLatents: batch });
   try {
     const conditionings = await session.encodeText([spec.prompt, spec.negativePrompt ?? ""]);
+    const condId = conditionings[0].id;
+    const uncondId = conditionings[1].id;
+    const rows = [];
+    for (let index = 0; index < batch; index += 1) {
+      rows.push({ conditioning: condId, latent: index });
+      rows.push({ conditioning: uncondId, latent: index, skip_layers: [22] });
+    }
     const run = await session.runBegin({
       width,
       height,
       steps,
-      guidance: "moss",
-      output: "guided_velocity",
+      guidance: hostGuidance ? "host" : "moss",
+      output: hostGuidance ? "rows" : "guided_velocity",
       cfg: Number.isFinite(spec.cfg) ? spec.cfg : 3,
       shift: Number.isFinite(spec.shift) ? spec.shift : 5,
-      rows: [
-        { conditioning: conditionings[0].id },
-        { conditioning: conditionings[1].id, skip_layers: [22] },
-      ],
+      rows: hostGuidance ? rows : rows.slice(0, 2),
     });
 
     const sigmas = run.sigmas ?? [];
@@ -109,19 +130,27 @@ export async function runLatentGenerate(options) {
       }
     }
 
+    const totalBytes = bytes * batch;
     let latents;
     let startStep = 0;
     if (from) {
-      if (from.latents.length !== bytes) throw new Error(`断点的 latent 长度不对：${from.latents.length}，期望 ${bytes}`);
+      if (from.latents.length !== totalBytes) {
+        throw new Error(`断点的 latent 长度不对：${from.latents.length}，期望 ${totalBytes}`);
+      }
       latents = from.latents;
       startStep = Math.max(0, Math.min(steps, Math.round(from.stepIndex ?? 0)));
     } else {
-      const noiseShm = await session.alloc(bytes);
-      try {
-        await session.initialNoise({ seed: spec.seed ?? 42, width, height, shm: noiseShm.name });
-        latents = await session.bridge.read(noiseShm.name, SHM_PAYLOAD, bytes);
-      } finally {
-        await session.free(noiseShm.name);
+      latents = Buffer.alloc(totalBytes);
+      for (let index = 0; index < batch; index += 1) {
+        const noiseShm = await session.alloc(bytes);
+        try {
+          const seed = (spec.seed ?? 42) + index;
+          await session.initialNoise({ seed, width, height, shm: noiseShm.name });
+          const noise = await session.bridge.read(noiseShm.name, SHM_PAYLOAD, bytes);
+          noise.copy(latents, index * bytes);
+        } finally {
+          await session.free(noiseShm.name);
+        }
       }
     }
 
@@ -135,6 +164,7 @@ export async function runLatentGenerate(options) {
       cfg: spec.cfg ?? 3,
       shift: spec.shift ?? 5,
       seed: spec.seed ?? 42,
+      batch,
       sampler: RESUME_SAMPLER,
       sigmas,
       stepIndex: startStep,
@@ -144,36 +174,79 @@ export async function runLatentGenerate(options) {
     writeFileSync(paths.latents, latents);
     writeFileSync(paths.meta, JSON.stringify(meta, null, 2), "utf8");
 
-    const outSlot = Array.isArray(run.tensors.out) ? run.tensors.out[0] : run.tensors.out;
-    if (typeof outSlot !== "number") throw new Error("引擎没有给输出槽位");
+    const outSlots = Array.isArray(run.tensors.out) ? run.tensors.out : [run.tensors.out];
+    if (outSlots.some((offset) => typeof offset !== "number")) throw new Error("引擎没有给齐输出槽位");
+    if (hostGuidance && outSlots.length < batch * 2) {
+      throw new Error(`rows 模式给了 ${outSlots.length} 个输出，需要 ${batch * 2} 个`);
+    }
 
+    const xBase = run.tensors.x;
+    const writeX = async () => {
+      if (batch === 1) {
+        await session.writeSlot(xBase, latents);
+        return;
+      }
+      // 多张：x 是一段连续的 [L, 128, h, w]，一次写整块。
+      await session.writeSlot(xBase, latents);
+    };
+
+    await writeX();
     const current = toFloat(latents);
-    await session.writeSlot(run.tensors.x, toBuffer(current, bytes));
     let done = startStep;
     for (let index = startStep; index < steps; index += 1) {
       if (shouldStop()) {
         throw Object.assign(new Error("已取消"), { cancelled: true });
       }
       await session.step(sigmas[index]);
-      const velocity = toFloat(await session.readSlot(outSlot, bytes));
       const delta = sigmas[index + 1] - sigmas[index];
-      for (let i = 0; i < current.length; i += 1) current[i] += delta * velocity[i];
+      if (hostGuidance) {
+        const cfg = Number.isFinite(spec.cfg) ? spec.cfg : 3;
+        for (let item = 0; item < batch; item += 1) {
+          const base = item * bytes;
+          const cond = toFloat(await session.readSlot(outSlots[item * 2], bytes));
+          const uncond = toFloat(await session.readSlot(outSlots[item * 2 + 1], bytes));
+          const float32 = new Float32Array(current.buffer, current.byteOffset + base, bytes / 4);
+          for (let i = 0; i < float32.length; i += 1) {
+            const velocity = uncond[i] + cfg * (cond[i] - uncond[i]);
+            float32[i] += delta * velocity;
+          }
+        }
+      } else {
+        const velocity = toFloat(await session.readSlot(outSlots[0], bytes));
+        for (let i = 0; i < current.length; i += 1) current[i] += delta * velocity[i];
+      }
       done = index + 1;
       // 每步落盘：这一步之后的状态就是下一台机器上的起点。
-      writeFileSync(paths.latents, toBuffer(current, bytes));
+      const snapshot = toBuffer(current, totalBytes);
+      latents = snapshot;
+      writeFileSync(paths.latents, snapshot);
       meta.stepIndex = done;
       meta.updatedAt = new Date().toISOString();
       writeFileSync(paths.meta, JSON.stringify(meta, null, 2), "utf8");
       onProgress({ step: done, total: steps, sigmas: sigmas[index + 1] });
-      if (done < steps) await session.writeSlot(run.tensors.x, toBuffer(current, bytes));
+      if (done < steps) await writeX();
     }
 
     await session.runEnd();
+    const outputs = [];
     if (spec.output) {
-      const decoded = await session.vaeDecode({ latents: toBuffer(current, bytes), width, height });
-      writePng(spec.output, decoded.pixels, width, height);
+      for (let index = 0; index < batch; index += 1) {
+        const slice = toBuffer(current, totalBytes).subarray(index * bytes, (index + 1) * bytes);
+        const decoded = await session.vaeDecode({ latents: Buffer.from(slice), width, height });
+        const path = outputForIndex(spec.output, index);
+        writePng(path, decoded.pixels, width, height);
+        outputs.push(path);
+      }
     }
-    return { output: spec.output ?? null, stepsRun: done - startStep, totalSteps: steps, checkpoint: paths.meta, latents: paths.latents };
+    return {
+      outputs,
+      output: outputs[0] ?? null,
+      stepsRun: done - startStep,
+      totalSteps: steps,
+      batch,
+      checkpoint: paths.meta,
+      latents: paths.latents,
+    };
   } finally {
     await session.close();
   }
