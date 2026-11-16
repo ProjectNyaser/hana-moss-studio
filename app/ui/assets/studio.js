@@ -1231,20 +1231,64 @@ composer.send?.addEventListener("click", sendCompose);
 composer.image?.addEventListener("click", () => layChannel?.postMessage({ type: "compose-add-image" }));
 composer.params?.addEventListener("click", () => layChannel?.postMessage({ type: "compose-focus-params" }));
 
-// 模型名点开是一块浮层，就地改，不去滚滚区。
+// 模型名点开是一块浮层：一级是几行设置，点进二级是列表，当前项打勾。
 const cpop = {
   box: document.getElementById("cpop"),
-  model: document.getElementById("cpop-model"),
-  tier: document.getElementById("cpop-tier"),
+  title: document.getElementById("cpop-title"),
+  back: document.getElementById("cpop-back"),
+  body: document.getElementById("cpop-body"),
 };
+
+const TIER_OPTIONS = [
+  ["turbo", "turbo", "最快"],
+  ["high", "high", "居中"],
+  ["reference", "reference", "最准"],
+];
+
+const SIZE_OPTIONS = [
+  [1024, 1024],
+  [1216, 832],
+  [832, 1216],
+  [1344, 768],
+  [768, 1344],
+  [1536, 640],
+];
+
+const STEP_OPTIONS = [8, 16, 20, 28, 40];
+
+let cpopView = "root";
+
+function cpopModels() {
+  return (Array.isArray(latest?.models) ? latest.models : []).filter((item) => item.installed);
+}
+
+/** MOSS-Image- 在这栏里重复四次，列表里只留变体名。 */
+function shortModel(label) {
+  const text = String(label ?? "MOSS-Image");
+  return text.replace(/^MOSS-Image[-_ ]?/i, "") || text;
+}
 
 function closeCpop() {
   if (cpop.box) cpop.box.hidden = true;
+  cpopView = "root";
 }
 
 composer.model?.addEventListener("click", (event) => {
   event.stopPropagation();
-  if (cpop.box) cpop.box.hidden = !cpop.box.hidden;
+  if (!cpop.box) return;
+  if (cpop.box.hidden) {
+    cpopView = "root";
+    renderCpopRoot();
+    cpop.box.hidden = false;
+  } else {
+    closeCpop();
+  }
+});
+
+cpop.back?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  cpopView = "root";
+  renderCpopRoot();
 });
 
 document.addEventListener("click", (event) => {
@@ -1257,50 +1301,148 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeCpop();
 });
 
-cpop.model?.addEventListener("change", async () => {
-  const model = cpop.model.value;
-  const defaults = { ...(latest?.settings?.defaults ?? {}), model };
+async function useModel(variant) {
   try {
-    await post("/settings", { defaults });
-    if (latest?.settings?.defaults) latest.settings.defaults.model = model;
-    renderComposerModel();
+    await post("/weights/use", { variant });
+    toast("模型已切换，下次出图重新加载");
+    closeCpop();
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), "error");
   }
-});
+}
 
-cpop.tier?.addEventListener("change", async () => {
-  const tier = cpop.tier.value;
+async function saveDefaults(patch) {
+  const defaults = { ...(latest?.settings?.defaults ?? {}), ...patch };
+  try {
+    await post("/settings", { defaults });
+    if (latest?.settings?.defaults) Object.assign(latest.settings.defaults, defaults);
+    renderComposerModel();
+    renderCpopRoot();
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), "error");
+  }
+}
+
+async function setTier(tier) {
   try {
     await post("/settings", { tier });
     if (latest?.settings) latest.settings.tier = tier;
     renderComposerModel();
+    renderCpopRoot();
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), "error");
   }
-});
+}
+
+function cpopRow(label, value, kind) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "cpop-row";
+  const name = document.createElement("span");
+  name.className = "cpop-name";
+  name.textContent = label;
+  const val = document.createElement("span");
+  val.className = "cpop-val";
+  val.textContent = value;
+  row.append(name, val);
+  row.addEventListener("click", () => renderCpopList(kind));
+  return row;
+}
+
+function renderCpopRoot() {
+  if (!cpop.box || !cpop.body) return;
+  cpopView = "root";
+  if (cpop.back) cpop.back.hidden = true;
+  if (cpop.title) {
+    cpop.title.hidden = true;
+    cpop.title.textContent = "";
+  }
+  const defaults = latest?.settings?.defaults ?? {};
+  const models = cpopModels();
+  const active = models.find((item) => item.active) ?? models[0];
+  cpop.body.replaceChildren(
+    cpopRow("模型", active ? shortModel(active.label ?? active.variant) : "未安装", "model"),
+    cpopRow("精度档", latest?.settings?.tier ?? "reference", "tier"),
+    cpopRow("尺寸", `${defaults.width ?? 1024} × ${defaults.height ?? 1024}`, "size"),
+    cpopRow("步数", String(defaults.steps ?? 20), "steps"),
+  );
+}
+
+function renderCpopList(kind) {
+  if (!cpop.box || !cpop.body) return;
+  cpopView = kind;
+  const titles = { model: "模型", tier: "精度档", size: "尺寸", steps: "步数" };
+  if (cpop.back) cpop.back.hidden = false;
+  if (cpop.title) {
+    cpop.title.hidden = false;
+    cpop.title.textContent = titles[kind] ?? "";
+  }
+  const items = [];
+  if (kind === "model") {
+    for (const item of cpopModels()) {
+      items.push({
+        text: shortModel(item.label ?? item.variant),
+        selected: Boolean(item.active),
+        apply: () => useModel(item.variant),
+      });
+    }
+  } else if (kind === "tier") {
+    const current = latest?.settings?.tier ?? "reference";
+    for (const [value, text, note] of TIER_OPTIONS) {
+      items.push({ text, note, selected: current === value, apply: () => setTier(value) });
+    }
+  } else if (kind === "size") {
+    const defaults = latest?.settings?.defaults ?? {};
+    for (const [width, height] of SIZE_OPTIONS) {
+      items.push({
+        text: `${width} × ${height}`,
+        selected: defaults.width === width && defaults.height === height,
+        apply: () => saveDefaults({ width, height }),
+      });
+    }
+  } else if (kind === "steps") {
+    const current = Number(latest?.settings?.defaults?.steps ?? 20);
+    for (const steps of STEP_OPTIONS) {
+      items.push({ text: String(steps), selected: current === steps, apply: () => saveDefaults({ steps }) });
+    }
+  }
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "cpop-empty";
+    empty.textContent = kind === "model" ? "没有已安装的模型" : "没有可选项";
+    cpop.body.replaceChildren(empty);
+    return;
+  }
+  cpop.body.replaceChildren(
+    ...items.map((item) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = item.selected ? "cpop-item on" : "cpop-item";
+      const text = document.createElement("span");
+      text.textContent = item.text;
+      btn.append(text);
+      if (item.note) {
+        const note = document.createElement("em");
+        note.textContent = item.note;
+        btn.append(note);
+      }
+      if (item.selected) {
+        const mark = document.createElement("i");
+        mark.className = "cpop-check";
+        btn.append(mark);
+      }
+      btn.addEventListener("click", () => {
+        void item.apply();
+      });
+      return btn;
+    }),
+  );
+}
 
 function renderCpop() {
   if (!cpop.box) return;
-  const models = (Array.isArray(latest?.models) ? latest.models : []).filter((item) => item.installed);
-  const selected = latest?.settings?.defaults?.model ?? "";
-  const key = `${models.map((item) => item.id).join("|")}:${selected}`;
-  if (cpop.box.dataset.key !== key) {
-    cpop.box.dataset.key = key;
-    if (!models.length) {
-      // 一个都没装时给一行说明，比一个空下拉强。
-      cpop.model.replaceChildren(new window.Option("没有已安装的模型", ""));
-      cpop.model.disabled = true;
-    } else {
-      cpop.model.disabled = false;
-      cpop.model.replaceChildren(
-        ...models.map((item) => new window.Option(item.label ?? item.id, item.id)),
-      );
-      // 设置里的模型可能已经不在列表里（换过权重），退回第一个，不要留空。
-      cpop.model.value = models.some((item) => item.id === selected) ? selected : models[0].id;
-    }
-  }
-  cpop.tier.value = latest?.settings?.tier ?? "reference";
+  if (cpopView === "root") renderCpopRoot();
+  else renderCpopList(cpopView);
 }
 
 /** 模型名与精度档跟着设置走。 */

@@ -130,12 +130,11 @@
           <span class="spacer"></span>
           <button class="model-chip" id="composer-model" type="button" title="模型与精度档"></button>
           <div class="cpop" id="cpop" hidden>
-            <label class="cpop-row"><span>模型</span><select id="cpop-model"></select></label>
-            <label class="cpop-row"><span>精度档</span><select id="cpop-tier">
-              <option value="turbo">turbo</option>
-              <option value="high">high</option>
-              <option value="reference">reference</option>
-            </select></label>
+            <div class="cpop-head">
+              <button class="cpop-back" id="cpop-back" type="button" title="返回" hidden>‹</button>
+              <span class="cpop-title" id="cpop-title"></span>
+            </div>
+            <div class="cpop-body" id="cpop-body"></div>
           </div>
           <button class="send" id="composer-send" type="button" title="生成"></button>
         </div>
