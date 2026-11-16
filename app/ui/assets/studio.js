@@ -1473,8 +1473,7 @@ function closePanel(which) {
 }
 
 function closeAllPanels() {
-  closePanel("model");
-  closePanel("params");
+  for (const which of Object.keys(panels)) closePanel(which);
 }
 
 function openPanel(which) {
@@ -1639,7 +1638,7 @@ function renderPanelRoot(which) {
 function renderPanelList(which, kind) {
   const panel = panels[which];
   if (!panel?.body) return;
-  const titles = { model: "模型", tier: "精度档", steps: "步数", cfg: "CFG" };
+  const titles = { model: "模型", tier: "精度档", steps: "步数", cfg: "CFG", sampler: "采样器", scheduler: "调度器" };
   if (panel.head) panel.head.hidden = false;
   if (panel.back) panel.back.hidden = false;
   if (panel.title) {
