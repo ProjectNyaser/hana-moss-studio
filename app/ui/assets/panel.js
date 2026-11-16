@@ -1723,13 +1723,11 @@ function renderModels(data) {
   nodes.te.value = teFile?.target ?? "";
 
   // 输入框旁那格是精度档，跟参数区里的 tier 同一份设置。
-  const tierNow = data?.settings?.tier ?? "reference";
   nodes.tierMini.value = tierNow;
-  const ditNow = ditFile?.tier ?? null;
-  // 只有能跑当前档位的权重在手时才让切档，否则切了也只会弹回来。
+  // 手上这份 DiT 只能跑一个档时，标题里直说，别让人选了又弹回。
   nodes.tierMini.disabled = false;
-  nodes.tierMini.title = ditNow
-    ? `当前 DiT 只能跑 ${ditNow} 档`
+  nodes.tierMini.title = ditFile?.tier
+    ? `当前 DiT 只能跑 ${ditFile.tier} 档`
     : "精度档：turbo 最快、high 居中、reference 最准";
 }
 
