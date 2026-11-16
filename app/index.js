@@ -1925,8 +1925,11 @@ function state() {
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", description: "start / stop / release" },
+        action: { type: "string", description: "start / stop / release / preload" },
         keepHostCopy: { type: "boolean", description: "release 时是否把 DiT 权重留在内存里（缺省 true，下次加载更快）" },
+        width: { type: "integer", description: "preload 要预热的尺寸（缺省用设置里的宽）" },
+        height: { type: "integer", description: "preload 要预热的高度（缺省用设置里的高）" },
+        steps: { type: "integer", description: "preload 的步数（只影响内存规划，缺省用设置值）" },
       },
       required: ["action"],
     },
@@ -1936,7 +1939,8 @@ function state() {
         if (action === "start") await engine.start();
         else if (action === "stop") engine.stop();
         else if (action === "release") await engine.release({ keepHostCopy: args?.keepHostCopy !== false });
-        else return { content: [{ type: "text", text: `未知动作 ${action}，可选 start / stop / release` }], isError: true };
+        else if (action === "preload") await engine.preload({ width: args?.width, height: args?.height, steps: args?.steps });
+        else return { content: [{ type: "text", text: `未知动作 ${action}，可选 start / stop / release / preload` }], isError: true };
       } catch (error) {
         return { content: [{ type: "text", text: `${action} 失败：${message(error)}` }], isError: true };
       }

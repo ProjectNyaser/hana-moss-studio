@@ -191,6 +191,14 @@
     .pn-lora .drop:hover { color: var(--danger); }
     .pn-lora.bad .name { color: var(--danger); }
 
+    /* 编辑参考图：一排缩略图，第一张是源图 */
+    .pn-refs { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pn-refs .item { position: relative; width: 64px; height: 64px; border: 1px solid var(--ui-line); border-radius: 6px; overflow: hidden; background: var(--ui-overlay); }
+    .pn-refs .item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .pn-refs .item .ix { position: absolute; left: 0; top: 0; padding: 0 3px; background: var(--ui-accent); color: #fff; font-size: 9px; line-height: 14px; border-bottom-right-radius: 4px; }
+    .pn-refs .item .x { position: absolute; right: 1px; top: 1px; width: 16px; height: 16px; border: 0; border-radius: 50%; background: var(--ui-overlay-strong); color: var(--ui-text); font: inherit; font-size: 11px; line-height: 1; cursor: pointer; padding: 0; }
+    .pn-refs .item .x:hover { color: var(--danger); }
+
     /* 参考图缩略 */
     .pn-ref { position: relative; border: 1px solid var(--ui-line); border-radius: 8px; overflow: hidden; background: var(--ui-overlay); }
     /* 拖放提示：整页拖进图片时铺一层，松手就当底图 */
@@ -499,15 +507,13 @@
         <span class="pn-head-title"><svg class="ic"><use href="#i-prompt"/></svg>参考图</span>
         <span class="hint" id="pn-editref-note">未选择</span>
       </div>
-      <div class="pn-ref" id="pn-editref-thumb" hidden>
-        <img id="pn-editref-img" alt="参考图">
-        <button class="pn-ref-x" id="pn-editref-clear" type="button" title="移除参考图">×</button>
-      </div>
+      <div class="pn-refs" id="pn-editref-list" hidden></div>
       <div class="pn-install-actions">
         <button class="btn ghost small" id="pn-editref-pick" type="button">选参考图</button>
+        <button class="btn ghost small" id="pn-editref-clear" type="button">清空</button>
       </div>
-      <p class="hint">编辑适配器（Moss-Image-Edit 那类）的源图：它读这张按提示词重画。要 LoRA 列表里有编辑适配器才生效；图可以直接拖到这一块。</p>
-      <input type="file" id="pn-editref-file" accept="image/*" hidden>
+      <p class="hint">编辑适配器（Moss-Image-Edit 那类）的源图：它读这几张按提示词重画。第一张是源图，最多 4 张。要 LoRA 列表里有编辑适配器才生效；图可以直接拖到这一块。</p>
+      <input type="file" id="pn-editref-file" accept="image/*" multiple hidden>
     </div>
 
     <details class="pn-fold" id="pn-control-fold">

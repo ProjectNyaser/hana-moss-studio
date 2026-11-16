@@ -146,8 +146,7 @@ const nodes = {
   maskZoomIn: el("pn-mask-zoom-in"),
   maskZoomOut: el("pn-mask-zoom-out"),
   maskZoomLabel: el("pn-mask-zoom-label"),
-  editRefThumb: el("pn-editref-thumb"),
-  editRefImg: el("pn-editref-img"),
+  editRefList: el("pn-editref-list"),
   editRefNote: el("pn-editref-note"),
   editRefPick: el("pn-editref-pick"),
   editRefFile: el("pn-editref-file"),
@@ -653,8 +652,10 @@ let maskBlob = null;
 /** 蒙版覆盖的百分比，只用于说明文字。 */
 let maskShare = 0;
 /** 编辑适配器的源图与已准备好的参考图。 */
-let editSource = null;
-let editRef = null;
+/** 编辑参考图：最多 4 张，第一张当源图。 */
+let editSources = [];
+/** 按目标尺寸 fit 好并上传过的那一批：{width, height, key, items}。 */
+let editPrepared = null;
 /** 控制适配器与它的控制图。 */
 let controlAdapter = null;
 let controlSource = null;
@@ -890,13 +891,21 @@ async function prepareRef(width, height) {
 }
 
 /** 编辑适配器的参考图：不走蒙版，直接从画廊或文件带进来。 */
-async function prepareEditReference(width, height) {
-  if (!editSource) return null;
-  if (editRef && editRef.width === width && editRef.height === height) return editRef;
-  const blob = await canvasBlob(drawFitted(editSource, width, height, "fit"));
-  const result = await uploadBinary("/inputs/upload?kind=ref", blob);
-  editRef = { path: result.path, url: inputUrl(result.name), width, height };
-  return editRef;
+/** 编辑适配器的参考图：按目标尺寸 fit 好再上传，最多 4 张，第一张是源图。 */
+async function prepareEditReferences(width, height) {
+  if (!editSources.length) return [];
+  const key = editSources.map((item) => item.url).join("|");
+  if (editPrepared && editPrepared.width === width && editPrepared.height === height && editPrepared.key === key) {
+    return editPrepared.items;
+  }
+  const items = [];
+  for (const source of editSources) {
+    const blob = await canvasBlob(drawFitted(source.image, width, height, "fit"));
+    const result = await uploadBinary("/inputs/upload?kind=ref", blob);
+    items.push({ path: result.path, url: inputUrl(result.name) });
+  }
+  editPrepared = { width, height, key, items };
+  return items;
 }
 
 function updateRefNote() {
@@ -1013,7 +1022,45 @@ function applySharedSettings(settings) {
 }
 
 /** 编辑参考图：只记源图，到出手那一刻再按当时尺寸准备。 */
-async function setEditReference(source, name = "画廊图") {
+function renderEditRefs() {
+  const list = nodes.editRefList;
+  list.hidden = !editSources.length;
+  list.replaceChildren(
+    ...editSources.map((item, index) => {
+      const cell = document.createElement("div");
+      cell.className = "item";
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = item.name;
+      img.title = item.name;
+      const tag = document.createElement("span");
+      tag.className = "ix";
+      tag.textContent = index === 0 ? "源" : String(index + 1);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "x";
+      remove.textContent = "×";
+      remove.title = "移除这张";
+      remove.addEventListener("click", () => removeEditReference(index));
+      cell.append(img, tag, remove);
+      return cell;
+    }),
+  );
+  nodes.editRefNote.textContent = editSources.length ? `${editSources.length} 张` : "未选择";
+}
+
+function removeEditReference(index) {
+  const [removed] = editSources.splice(index, 1);
+  if (removed && String(removed.url).startsWith("blob:")) URL.revokeObjectURL(removed.url);
+  editPrepared = null;
+  renderEditRefs();
+}
+
+async function addEditReference(source, name = "画廊图") {
+  if (editSources.length >= 4) {
+    say("参考图最多 4 张。", "bad");
+    return;
+  }
   let url = null;
   try {
     url = typeof source === "string" ? source : URL.createObjectURL(source);
@@ -1023,17 +1070,14 @@ async function setEditReference(source, name = "画廊图") {
       image.onerror = () => reject(new Error("这张图读不出来"));
       image.src = url;
     });
-    editSource = image;
-    editRef = null;
-    nodes.editRefThumb.hidden = false;
-    nodes.editRefImg.src = url;
-    nodes.editRefNote.textContent = `${name} · ${image.naturalWidth}×${image.naturalHeight}`;
-    nodes.editRefThumb.title = "需要 LoRA 列表里有编辑适配器（如 Moss-Image-Edit），它按这张图重画";
+    editSources.push({ image, name, url });
+    editPrepared = null;
+    renderEditRefs();
     const blocked = !loras.some((item) => item.enabled !== false && /edit/i.test(String(item.path ?? "")));
     say(
       blocked
-        ? `参考图已就绪（${image.naturalWidth}×${image.naturalHeight}），但 LoRA 里没有编辑适配器，它还不会生效。`
-        : `参考图已就绪（${image.naturalWidth}×${image.naturalHeight}），配合提示词一起跑。`,
+        ? `参考图 ${editSources.length} 张就绪，但 LoRA 里没有编辑适配器，它不会生效。`
+        : `参考图 ${editSources.length} 张就绪（第一张是源图），配合提示词一起跑。`,
       blocked ? "bad" : "ok",
     );
   } catch (error) {
@@ -1043,11 +1087,12 @@ async function setEditReference(source, name = "画廊图") {
 }
 
 function clearEditReference() {
-  editSource = null;
-  editRef = null;
-  nodes.editRefThumb.hidden = true;
-  nodes.editRefImg.removeAttribute("src");
-  nodes.editRefNote.textContent = "未选择";
+  for (const item of editSources) {
+    if (String(item.url).startsWith("blob:")) URL.revokeObjectURL(item.url);
+  }
+  editSources = [];
+  editPrepared = null;
+  renderEditRefs();
 }
 
 // ── 控制适配器 ───────────────────────────────────────────────────────
@@ -1770,10 +1815,10 @@ async function onGenerate() {
         }
       }
     }
-    if (editSource) {
-      const prepared = await prepareEditReference(Number(nodes.width.value), Number(nodes.height.value));
-      if (prepared) {
-        payload.referenceImages = [prepared.path];
+    if (editSources.length) {
+      const prepared = await prepareEditReferences(Number(nodes.width.value), Number(nodes.height.value));
+      if (prepared.length) {
+        payload.referenceImages = prepared.map((item) => item.path);
         payload.referenceMaxEdge = 512;
       }
     }
@@ -2201,8 +2246,13 @@ window.addEventListener("drop", async (event) => {
     say("拖进来的不是图片（要 png / jpg / webp）。", "bad");
     return;
   }
-  if (overRef) await setEditReference(file, file.name);
-  else await setReference(file);
+  if (overRef) {
+    for (const item of files.filter((entry) => (entry.type ? entry.type.startsWith("image/") : /\.(png|jpe?g|webp|bmp|avif)$/i.test(entry.name ?? "")))) {
+      await addEditReference(item, item.name);
+    }
+    return;
+  }
+  await setReference(file);
 });
 nodes.refFile.addEventListener("change", async () => {
   const file = nodes.refFile.files?.[0];
@@ -2213,9 +2263,9 @@ nodes.refClear.addEventListener("click", () => clearReference());
 nodes.editRefClear.addEventListener("click", () => clearEditReference());
 nodes.editRefPick.addEventListener("click", () => nodes.editRefFile.click());
 nodes.editRefFile.addEventListener("change", async () => {
-  const file = nodes.editRefFile.files?.[0];
+  const files = Array.from(nodes.editRefFile.files ?? []);
   nodes.editRefFile.value = "";
-  if (file) await setEditReference(file, file.name);
+  for (const file of files) await addEditReference(file, file.name);
 });
 nodes.refResize.addEventListener("change", async () => {
   if (!refImage) return;
@@ -2379,7 +2429,7 @@ reuseChannel?.addEventListener("message", (event) => {
   }
   // 编辑适配器：这张图当 instructions 的源图。
   if (data?.type === "edit-reference" && typeof data.name === "string") {
-    void setEditReference(outputUrl(data.name), data.name);
+    void addEditReference(outputUrl(data.name), data.name);
   }
   // 画布上画好的蒙版：上传交给这里，提交时用的还是同一个 maskPath。
   if (data?.type === "canvas-mask" && data.blob) {

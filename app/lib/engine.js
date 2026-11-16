@@ -559,6 +559,35 @@ export class Engine {
     return settled;
   }
 
+  /** `preload`：按一份请求形状把模型提前驻到显存里。之后同样形状的生成不付加载代价。 */
+  async preload(job = {}) {
+    if (!this.child) await this.start();
+    if (this.active) throw new Error("引擎正忙");
+    const settings = this.getSettings();
+    const defaults = settings.defaults ?? {};
+    const probe = {
+      prompt: job.prompt ?? "",
+      negativePrompt: job.negativePrompt ?? "",
+      width: job.width ?? defaults.width ?? 768,
+      height: job.height ?? defaults.height ?? 768,
+      steps: job.steps ?? defaults.steps ?? 8,
+      cfg: job.cfg ?? defaults.cfg ?? 3,
+      seed: job.seed ?? 1,
+      sampler: job.sampler ?? defaults.sampler,
+      scheduler: job.scheduler ?? defaults.scheduler,
+      shift: job.shift ?? defaults.shift,
+      stepCache: job.stepCache ?? defaults.stepCache,
+      loras: job.loras ?? defaults.loras,
+    };
+    await this.ensureLoaded(job);
+    const params = buildGenerateParams(probe);
+    // 协议明确拒绝这几个字段：preload 不写图、不存元数据。
+    for (const key of ["output", "preview_output", "preview_every", "save_metadata", "include_prompts"]) {
+      delete params[key];
+    }
+    return this.call("preload", params, 900_000);
+  }
+
   async cancel(jobId) {
     if (!this.active || this.active.jobId !== jobId) return false;
     // 模型加载期间引擎还没拿到 generate，此时发 cancel 它不认。先记下来，
