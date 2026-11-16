@@ -46,7 +46,7 @@ function toBuffer(floatView, bytes) {
   return Buffer.from(floatView.buffer, floatView.byteOffset, bytes);
 }
 
-function writePng(path, pixels, width, height) {
+export function writePng(path, pixels, width, height) {
   const rgba = new Uint8Array(width * height * 4);
   let j = 0;
   for (let i = 0; i < pixels.length; i += 3) {

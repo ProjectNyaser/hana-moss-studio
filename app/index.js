@@ -10,7 +10,8 @@ import { MOSSIMAGE, MODEL_BYTES } from "./lib/mossimage.js";
 import { createInstaller, probeGpu, probeGpuDetailed } from "./lib/installer.js";
 import { shrinkToWebp } from "./lib/image.js";
 import { createSession } from "./lib/session.js";
-import { checkpointPaths, readCheckpoint, runLatentGenerate } from "./lib/latent.js";
+import { checkpointPaths, readCheckpoint, runLatentGenerate, writePng } from "./lib/latent.js";
+import { decode as decodePng } from "fast-png";
 
 export const name = "hana-moss-studio";
 
@@ -1941,7 +1942,7 @@ function state() {
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", description: "run（新开一次）/ resume（从断点接着跑）/ list（列已有断点）" },
+        action: { type: "string", description: "run（新开一次）/ resume（从断点接着跑）/ list（列已有断点）/ encode（PNG → latent）/ decode（latent → PNG）" },
         prompt: { type: "string", description: "正向提示词（run 用）" },
         negativePrompt: { type: "string", description: "反向提示词" },
         width: { type: "integer", description: "宽度，缺省用设置值；必须是 16 的倍数" },
@@ -1951,6 +1952,8 @@ function state() {
         shift: { type: "number", description: "噪声偏移，缺省 5；resume 时必须与断点一致" },
         seed: { type: "integer", description: "种子，缺省随机" },
         checkpointId: { type: "string", description: "resume 用：断点 id（任务 id）或 meta 文件的绝对路径" },
+        imagePath: { type: "string", description: "encode 用：PNG 路径（尺寸要是 16 的倍数）" },
+        latentPath: { type: "string", description: "decode 用：latent 文件路径" },
       },
       required: ["action"],
     },
@@ -1975,6 +1978,48 @@ function state() {
           return {
             content: [{ type: "text", text: rows.length ? [`断点 ${rows.length} 份：`, ...rows].join("\n") : "还没有断点。" }],
           };
+        }
+
+        if (action === "encode" || action === "decode") {
+          const file = String(action === "encode" ? args?.imagePath ?? "" : args?.latentPath ?? "").trim();
+          if (!file || !existsSync(file)) throw new Error(`找不到文件：${file}`);
+          await engine.ensureLoaded({});
+          await session.open({ maxRows: 1 });
+          try {
+            if (action === "encode") {
+              const png = decodePng(readFileSync(file));
+              const width = Number(png.width);
+              const height = Number(png.height);
+              if (width % 16 || height % 16) throw new Error(`尺寸要是 16 的倍数（现在是 ${width}×${height}）`);
+              const source = png.data;
+              const channels = Number(png.channels ?? 4);
+              const rgb = new Uint8Array(width * height * 3);
+              let j = 0;
+              for (let i = 0; i < source.length; i += channels) {
+                rgb[j] = source[i];
+                rgb[j + 1] = source[i + 1];
+                rgb[j + 2] = source[i + 2];
+                j += 3;
+              }
+              const encoded = await session.vaeEncode({ imageBuffer: Buffer.from(rgb), width, height });
+              const outPath = join(checkpointsDir, `${basename(file).replace(/\.[^.]+$/, "")}.latent`);
+              writeFileSync(outPath, encoded.latents);
+              return {
+                content: [{ type: "text", text: `已编码成 latent：${outPath}（${width}×${height}，${encoded.latents.length} 字节）` }],
+              };
+            }
+            const width = Number(args?.width) || 0;
+            const height = Number(args?.height) || 0;
+            if (!width || !height) throw new Error("decode 要给 width 与 height：latent 文件本身不含形状");
+            const latents = readFileSync(file);
+            const decoded = await session.vaeDecode({ latents, width, height });
+            const outPath = join(outputsDir, `${basename(file).replace(/\.[^.]+$/, "")}.png`);
+            writePng(outPath, decoded.pixels, width, height);
+            void ensureThumb(outPath);
+            return { content: [{ type: "text", text: `已解码成图片：${outPath}（${width}×${height}）` }] };
+          } finally {
+            await session.close();
+          }
         }
 
         let input;
