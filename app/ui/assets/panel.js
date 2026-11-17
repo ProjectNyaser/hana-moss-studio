@@ -2123,6 +2123,8 @@ function paintSessions() {
         const blank = document.createElement("button");
         blank.type = "button";
         blank.className = "pn-conv-row empty";
+        const slot = document.createElement("span");
+        slot.className = "pn-hist-thumb blank";
         const box = document.createElement("span");
         box.className = "pn-hist-text";
         const title = document.createElement("span");
@@ -2132,7 +2134,7 @@ function paintSessions() {
         note.className = "pn-hist-meta";
         note.textContent = "还没有消息";
         box.append(title, note);
-        blank.append(box);
+        blank.append(slot, box);
         blank.addEventListener("click", () => {
           activeConv = null;
           editChannel?.postMessage({ type: "new-conversation" });
