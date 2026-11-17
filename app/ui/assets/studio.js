@@ -240,23 +240,8 @@ let convStartMs = 0;
 // 从侧栏点开那一段的完整记录：主界面只拉了第一页，靠前的老图不在里面。
 let convScopeJobs = null;
 
-/** 会话页顶部那条范围提示：从哪段点进来的，怎么回全量。 */
-function paintScope(title, count = 0) {
-  const bar = document.getElementById("chat-scope");
-  const text = document.getElementById("chat-scope-text");
-  if (!bar || !text) return;
-  if (!title) {
-    bar.hidden = true;
-    text.textContent = "";
-    return;
-  }
-  bar.hidden = false;
-  text.textContent = count ? `正在看：${title} · ${count} 张` : `正在看：${title}`;
-}
-
 // 往远处看是页签的事：会话页只管当前这一段。
 
-/** 会话流水：用户写的靠右，出的图靠左，旧在上新在下。 */
 /** 参数一行。老图没存下参数的，直说没记录，不摆一串 undefined。 */
 function paramLine(job) {
   const bits = [];
@@ -2323,7 +2308,6 @@ layChannel?.addEventListener("message", (event) => {
     if (composer.input) composer.input.value = "";
     if (composer.negative) composer.negative.value = "";
     if (composer.seed) composer.seed.value = "";
-    paintScope(null);
     showView("chat");
     renderChat();
     return;
@@ -2333,7 +2317,6 @@ layChannel?.addEventListener("message", (event) => {
     chatFilter = null;
     convScopeJobs = null;
     convStartMs = 0;
-    paintScope(null);
     renderChat();
     return;
   }
@@ -2342,7 +2325,6 @@ layChannel?.addEventListener("message", (event) => {
     convStartMs = 0;
     chatFilter = ids.length ? new Set(ids) : null;
     convScopeJobs = Array.isArray(msg.jobs) ? msg.jobs : null;
-    paintScope(msg.title ?? null, ids.length, msg.total ?? null);
     showView("chat");
     renderChat();
     return;

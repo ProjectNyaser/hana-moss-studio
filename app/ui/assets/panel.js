@@ -2182,6 +2182,8 @@ function paintSessions() {
       return btn;
     }),
   );
+  // 选中的那段留在视野里：从会话页点回来时不用找。
+  list.querySelector(".pn-conv-row.on")?.scrollIntoView({ block: "nearest" });
 }
 
 function render(data) {

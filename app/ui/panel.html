@@ -419,7 +419,11 @@
       cursor: pointer;
     }
     .pn-conv-row:hover { background: var(--ui-overlay); }
-    .pn-conv-row.on { background: var(--ui-tint); }
+    .pn-conv-row.on {
+      background: var(--ui-tint);
+      outline: 1px solid var(--ui-accent);
+      outline-offset: -1px;
+    }
     /* 拖拽中与可放下：虚线框一步到位。 */
     .pn-conv-row.dragging { opacity: 0.45; }
     .pn-conv-row.drop-target {
