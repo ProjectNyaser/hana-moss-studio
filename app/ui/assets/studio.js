@@ -548,7 +548,6 @@ function buildUserBubble(job) {
     const more = document.createElement("button");
     more.type = "button";
     more.className = "chat-more";
-    more.textContent = "›";
     more.title = "展开这次的全部参数";
     extra = document.createElement("div");
     extra.className = "chat-extra";
@@ -566,7 +565,7 @@ function buildUserBubble(job) {
       const open = extra.hidden;
       extra.hidden = !open;
       more.classList.toggle("on", open);
-      more.textContent = open ? "⌄" : "›";
+      more.title = open ? "收起参数" : "展开这次的全部参数";
     });
     head.append(text, more);
   } else {

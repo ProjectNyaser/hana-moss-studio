@@ -1588,22 +1588,33 @@ body.dock-full .chat-dock {
 .chat-head .chat-text { flex: 1; min-width: 0; }
 .chat-more {
   position: absolute;
-  top: 7px;
-  right: 8px;
-  width: 20px;
-  height: 20px;
+  top: 8px;
+  right: 9px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
   background: transparent;
   color: var(--ui-text-3);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
   cursor: pointer;
 }
-.chat-more:hover { background: var(--ui-overlay); color: var(--ui-text); }
+/* 用两条边画箭头：不依赖字体里的符号，也不带方块底。 */
+.chat-more::before {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: 2px auto;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 140ms var(--ui-ease);
+}
+.chat-more:hover { color: var(--ui-text); }
 .chat-more.on { color: var(--ui-accent); }
+.chat-more.on::before { transform: rotate(45deg); }
+/* 展开时气泡取固定宽度，避免从窄到宽跳一下。 */
+.chat-bubble:has(.chat-extra:not([hidden])) { width: min(540px, 100%); }
 .chat-extra {
   display: grid;
   grid-template-columns: auto 1fr;
