@@ -651,6 +651,19 @@ function updateChatPreview() {
   img.parentElement?.classList.add("loaded");
 }
 
+/** 占位下面那行进度：步进事件只推小帧，得单独刷这一行。 */
+function updatePendingLabel() {
+  const el = document.querySelector(".chat-pending-label");
+  if (!el) return;
+  const active = latest?.engine?.active;
+  if (!active) {
+    el.textContent = "排队中";
+    return;
+  }
+  const progress = active.progress ?? {};
+  el.textContent = `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step ?? 0}/${progress.total}` : "…"}`;
+}
+
 function renderStage(data) {
   const { engine } = data;
   let dotClass = "dot";
@@ -4020,6 +4033,7 @@ function render(data) {
   renderVersions(data);
   renderChat();
   updateChatPreview();
+  updatePendingLabel();
   renderComposerModel();
   renderDownload(data);
   const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;
@@ -4366,6 +4380,8 @@ async function boot() {
         }
         renderStage(latest);
         renderQueue(latest);
+        updatePendingLabel();
+        updateChatPreview();
         updateGalleryPreview(latest);
         broadcastState(latest);
         return;
