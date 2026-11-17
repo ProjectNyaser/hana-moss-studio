@@ -1582,7 +1582,11 @@ body.dock-full .chat-dock {
 /* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
 /* 折叠的输入摘要：跟思考块一个形态，默认收起。 */
 /* 气泡：提示词一行，右上角一个展开箭头，其余按行列出。 */
-/* summary：提示词一行，分辨率一行，箭头跟在尺寸后面。 */
+/* 段落默认带上下外边距，气泡里只要行与行之间的那点距离。 */
+.chat-text,
+.chat-sub { margin: 0; }
+
+/* summary：提示词一行，分辨率一行，箭头在行首。 */
 .chat-summary { list-style: none; cursor: pointer; }
 .chat-summary::-webkit-details-marker { display: none; }
 .chat-summary::-moz-marker { content: none; }
@@ -1592,7 +1596,13 @@ body.dock-full .chat-dock {
   gap: 6px;
   margin-top: 3px;
 }
-.chat-arrow { flex: none; display: inline-flex; color: var(--ui-text-3); }
+.chat-arrow {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  color: var(--ui-text-3);
+}
 .chat-arrow svg { display: block; transition: transform 140ms var(--ui-ease); }
 .chat-bubble-more[open] .chat-arrow svg { transform: rotate(90deg); }
 .chat-bubble-more[open] .chat-arrow { color: var(--ui-accent); }
