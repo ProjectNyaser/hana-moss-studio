@@ -1,7 +1,7 @@
 // 苔室侧栏：生成设置与运行状态都在这条侧栏里，工作区那边只留画布与画廊。
 // 数据：GET /hana-moss-studio/state（轮询 1.5s）；写操作走同前缀的 POST 路由。
 import { hana } from "./sdk.js";
-import { startLive, inputUrl, outputUrl, thumbUrl } from "./live.js";
+import { inputUrl, outputUrl, thumbUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
 // 面板脚本一旦抛错，侧栏会整块空白：把第一条错误直接写到列表里。
@@ -3305,49 +3305,13 @@ async function boot() {
   }
   // 主界面会把它收到的整帧状态广播过来。侧栏主动去开连接是白费：
   // 主界面本来就在拉，拉完一推就完事。所以这里先等广播，等不到再自己接管。
-  const startOwnLive = () =>
-    startLive({
-      hana,
-      onState: (state) => render(state),
-      fetchState: () => api("/state"),
-      onError: (error) => {
-        if (latest) return;
-        nodes.state.textContent = error instanceof Error ? error.message : String(error);
-        nodes.dot.className = "dot err";
-      },
-    });
-  let ownLive = null;
-  const stopOwnLive = () => {
-    ownLive?.();
-    ownLive = null;
-  };
-  let lastBroadcast = 0;
-  const takeOver = async () => {
-    if (ownLive) return;
-    await refresh().catch(() => {});
-    ownLive = startOwnLive();
-  };
-
+  // 状态只有一条来源：主界面把收到的整帧广播过来，侧栏照它渲染。
   reuseChannel?.addEventListener("message", (event) => {
     if (event.data?.type !== "state" || !event.data.state) return;
-    lastBroadcast = Date.now();
-    stopOwnLive();
     render(event.data.state);
   });
-
-  // 两秒内没等到广播（主界面还没起来、或者跨 origin 发不过来）就自己接管。
-  setTimeout(() => {
-    if (!lastBroadcast) void takeOver();
-  }, 2000);
   // 主界面可能比侧栏晚起来：它到时候会发 edit-hello，这里先把底图报一次。
   broadcastEditState(true);
-  // 主界面关闭后广播会断，超过十五秒没收到就自己重新接上。
-  setInterval(() => {
-    if (ownLive) return;
-    if (!lastBroadcast) return;
-    if (Date.now() - lastBroadcast < 15000) return;
-    void takeOver();
-  }, 5000);
 }
 
 void boot();
