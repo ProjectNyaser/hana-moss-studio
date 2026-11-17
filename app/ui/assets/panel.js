@@ -2336,6 +2336,15 @@ function paintSessions() {
       btn.addEventListener("click", () => {
         // 去点历史了：那个空的新对话占位就不再举着。
         blankConversation = false;
+        // 点开就是接续这一段：之后的生成归到这里，不会另起一段。
+        try {
+          if (session.conv) {
+            localStorage.setItem(CONV_ID_KEY, session.conv);
+            localStorage.setItem("hana-moss-studio.conv-pinned", "1");
+          }
+        } catch {
+          /* 存不了就只这一次 */
+        }
         // 重复点同一段也要能把人带回会话页；只是不改筛选范围。
         activeConv = ids.slice();
         editChannel?.postMessage({
