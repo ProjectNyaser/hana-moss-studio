@@ -1496,6 +1496,8 @@ body.dock-full .chat-dock {
 /* 会话视图自己滚：滚动条从顶部贯到底部，不因输入框或画布改变位置。 */
 #view-chat {
   overflow-y: auto;
+  /* 不让浏览器自己挑锚点：内容尺寸一变就整屏跳。 */
+  overflow-anchor: none;
   overflow-x: hidden;
   /* 底部让出悬浮输入框的高度；画布在流里，自己占位。 */
   padding-bottom: calc(var(--composer-h, 104px) + 24px);
@@ -1528,8 +1530,22 @@ body.dock-full .chat-dock {
 .chat-meta { margin: 6px 0 0; font-size: 11px; color: var(--ui-text-3); }
 .chat-shot { max-width: min(540px, 64%); display: flex; flex-direction: column; gap: 6px; }
 /* 图没到位时盖一层骨架，尺寸跟图片属性一致，不跳。 */
-.chat-shot-frame { position: relative; display: flex; align-self: flex-start; }
-.chat-shot-frame img { opacity: 0; transition: opacity 160ms var(--ui-ease); }
+.chat-shot-frame {
+  position: relative;
+  display: block;
+  flex: none;
+  align-self: flex-start;
+  max-width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.chat-shot-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 160ms var(--ui-ease);
+}
 .chat-shot-frame.loaded img { opacity: 1; }
 .chat-skeleton {
   position: absolute;

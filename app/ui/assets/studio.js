@@ -422,6 +422,12 @@ function renderChat() {
     // 图没到之前先立一块骨架，占住同样的位置并转一个加载圈。
     const frame = document.createElement("div");
     frame.className = "chat-shot-frame";
+    // 高度一次算定：加载前后同尺寸，往回翻历史时不会因为补图而抖。
+    if (job.width && job.height) {
+      const scale = Math.min(540 / job.width, 340 / job.height, 1);
+      frame.style.width = `${Math.round(job.width * scale)}px`;
+      frame.style.height = `${Math.round(job.height * scale)}px`;
+    }
     const skeleton = document.createElement("div");
     skeleton.className = "chat-skeleton";
     frame.append(skeleton, img);
