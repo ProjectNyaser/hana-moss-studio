@@ -717,6 +717,12 @@ function baseCard(job) {
   card.type = "button";
   card.className = "chat-base-card";
   card.title = String(base);
+  // 比例跟结果图一致：底图会被缩到这次请求的尺寸，卡片照那个尺寸摆。
+  if (job.width && job.height) {
+    const scale = Math.min(540 / job.width, 340 / job.height, 1);
+    card.style.width = `${Math.round(job.width * scale)}px`;
+    card.style.height = `${Math.round(job.height * scale)}px`;
+  }
   const img = document.createElement("img");
   img.alt = "底图";
   img.src = inputUrl(String(base));
