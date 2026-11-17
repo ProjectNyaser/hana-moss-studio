@@ -290,6 +290,8 @@ function showView(view) {
     const section = el(`view-${name}`);
     if (section) section.hidden = name !== view;
   }
+  // 输入框只在会话页出现。
+  if (composerHost) composerHost.hidden = view !== "chat";
   if (view === "versions") void loadReleases();
   if (view === "chat" && !galleryJobs.length) void loadGallery(true);
   if (view === "chat") renderChat();
@@ -1635,6 +1637,39 @@ if (composerHost) {
   window.addEventListener("resize", syncComposerHeight);
 }
 
+const DRAFTS_KEY = "hana-moss-studio.drafts";
+
+function drafts() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 草稿跟着会话走：换一段就把这段的存起来，把那段取出来。 */
+function swapDraft(nextConv) {
+  try {
+    const map = drafts();
+    if (currentConv && composer.input) {
+      const text = composer.input.value;
+      if (text.trim()) map[currentConv] = text;
+      else delete map[currentConv];
+    }
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(map));
+    const text = nextConv ? (map[nextConv] ?? "") : "";
+    if (composer.input) {
+      composer.input.value = text;
+      composer.input.style.height = "";
+      composer.input.style.height = `${Math.min(composer.input.scrollHeight, 132)}px`;
+    }
+    pushComposerPrompt();
+  } catch {
+    /* 存不了就只这一次 */
+  }
+}
+
 const composer = {
   input: document.getElementById("composer-input"),
   negative: document.getElementById("composer-negative"),
@@ -1746,9 +1781,6 @@ async function submitGenerate() {
       payload.height = preset.height;
     }
     if (preset.steps) payload.steps = preset.steps;
-    if (preset.cfg) payload.cfg = preset.cfg;
-    if (preset.sampler) payload.sampler = preset.sampler;
-    if (preset.scheduler) payload.scheduler = preset.scheduler;
     // 会话 id 跟着走：出图后才知道该归到哪一段。
     try {
       const conv = currentConv ?? localStorage.getItem("hana-moss-studio.conv-id");
@@ -1797,6 +1829,13 @@ async function submitGenerate() {
     if (composer.input) {
       composer.input.value = "";
       composer.input.style.height = "";
+    }
+    try {
+      const map = drafts();
+      if (currentConv) delete map[currentConv];
+      localStorage.setItem(DRAFTS_KEY, JSON.stringify(map));
+    } catch {
+      /* 存不了就算了 */
     }
     pushComposerPrompt();
   } catch (error) {
@@ -2761,7 +2800,11 @@ const layChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel
 layChannel?.addEventListener("message", (event) => {
   const msg = event.data ?? {};
   if (msg.type === "conv") {
-    currentConv = typeof msg.conv === "string" && msg.conv ? msg.conv : null;
+    const next = typeof msg.conv === "string" && msg.conv ? msg.conv : null;
+    if (next !== currentConv) {
+      swapDraft(next);
+      currentConv = next;
+    }
     return;
   }
   if (msg.type === "edit-state") {
@@ -2785,6 +2828,8 @@ layChannel?.addEventListener("message", (event) => {
     return;
   }
   if (msg.type === "new-conversation") {
+    // 新会话有自己的空草稿，上一段的那句留在它自己名下。
+    swapDraft(null);
     // 新会话从空白开始：这一页只显示之后生成的图。
     convStartMs = Date.now();
     chatFilter = null;
