@@ -1527,6 +1527,24 @@ body.dock-full .chat-dock {
 .chat-text { margin: 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
 .chat-meta { margin: 6px 0 0; font-size: 11px; color: var(--ui-text-3); }
 .chat-shot { max-width: min(540px, 64%); display: flex; flex-direction: column; gap: 6px; }
+/* 图没到位时盖一层骨架，尺寸跟图片属性一致，不跳。 */
+.chat-shot-frame { position: relative; display: flex; align-self: flex-start; }
+.chat-shot-frame img { opacity: 0; transition: opacity 160ms var(--ui-ease); }
+.chat-shot-frame.loaded img { opacity: 1; }
+.chat-skeleton {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: linear-gradient(100deg, var(--ui-overlay) 0%, var(--ui-tint) 40%, var(--ui-overlay) 80%);
+  background-size: 220% 100%;
+  animation: chat-skeleton-sweep 1.4s linear infinite;
+}
+.chat-shot-frame.loaded .chat-skeleton { display: none; }
+@keyframes chat-skeleton-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -40% 0; }
+}
+
 /* 消息里放的是缩略图：宽高两头都限住，点开才看原图。 */
 .chat-shot img {
   display: block;

@@ -419,7 +419,15 @@ function renderChat() {
     split.title = "把这一张拆成独立的会话";
     split.addEventListener("click", () => layChannel?.postMessage({ type: "split-job", id: job.id }));
     acts.append(again, edit, split);
-    shot.append(img, acts);
+    // 图没到之前先立一块骨架，占住同样的位置并转一个加载圈。
+    const frame = document.createElement("div");
+    frame.className = "chat-shot-frame";
+    const skeleton = document.createElement("div");
+    skeleton.className = "chat-skeleton";
+    frame.append(skeleton, img);
+    img.addEventListener("load", () => frame.classList.add("loaded"));
+    img.addEventListener("error", () => frame.classList.add("loaded"));
+    shot.append(frame, acts);
     botRow.append(shot);
     rows.push(userRow, botRow);
   }
