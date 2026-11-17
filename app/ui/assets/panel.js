@@ -2277,19 +2277,29 @@ function paintSessions() {
         event.preventDefault();
         startRename(session, text);
       });
-      // 只有缩略图能拖：点行是查看、双击是改名，别和拖拽抢同一个手势。
+      // 缩略图是手柄：只从它起手，但拖的是整行，不是那张图。
       btn.draggable = false;
-      thumb.draggable = true;
-      thumb.title = "拖到另一段上并进去";
-      thumb.addEventListener("dragstart", (event) => {
+      thumb.draggable = false;
+      thumb.title = "按住缩略图拖到另一段上并进去";
+      thumb.addEventListener("pointerdown", () => {
+        btn.draggable = true;
+      });
+      const releaseHandle = () => {
+        btn.draggable = false;
+      };
+      thumb.addEventListener("pointerup", releaseHandle);
+      thumb.addEventListener("pointercancel", releaseHandle);
+      btn.addEventListener("dragstart", (event) => {
         dragSession = session;
         btn.classList.add("dragging");
         event.dataTransfer.effectAllowed = "move";
-        // 有些环境要带一点数据才发 drag 事件。
+        // 拖影用整行，才看得出搬的是一段会话。
+        event.dataTransfer.setDragImage(btn, 24, 24);
         event.dataTransfer.setData("text/plain", session.key);
       });
-      thumb.addEventListener("dragend", () => {
+      btn.addEventListener("dragend", () => {
         dragSession = null;
+        btn.draggable = false;
         btn.classList.remove("dragging");
         clearDropMarks();
       });
