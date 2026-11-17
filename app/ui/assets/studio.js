@@ -1432,6 +1432,15 @@ function applyEditState(state) {
 // 输入框要跨页签常驻：把它从画布视图里提到 main 末尾。
 const composerHost = document.getElementById("composer");
 if (composerHost) document.querySelector("main")?.append(composerHost);
+// 输入框是浮层：把它真实高度写进变量，内容按这个值让位。
+if (composerHost) {
+  const syncComposerHeight = () => {
+    document.documentElement.style.setProperty("--composer-h", `${Math.round(composerHost.getBoundingClientRect().height)}px`);
+  };
+  syncComposerHeight();
+  if (typeof ResizeObserver === "function") new ResizeObserver(syncComposerHeight).observe(composerHost);
+  window.addEventListener("resize", syncComposerHeight);
+}
 
 const composer = {
   input: document.getElementById("composer-input"),

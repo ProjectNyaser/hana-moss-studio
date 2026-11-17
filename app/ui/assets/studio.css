@@ -13,6 +13,7 @@ body {
 
 .studio-column {
   display: flex;
+  position: relative;
   flex-direction: column;
   height: 100%;
   min-width: 0;
@@ -91,6 +92,7 @@ body {
 .chat-dock {
   flex: none;
   position: relative;
+  margin-bottom: calc(var(--composer-h, 104px) + 12px);
   display: flex;
   flex-direction: column;
   width: min(1040px, calc(100% - 40px));
@@ -1458,7 +1460,8 @@ body.dock-full .chat-dock {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding: 22px max(20px, calc((100% - 860px) / 2)) 26px;
+  /* 底部留出输入框的高度，最后一条不会被压住。 */
+  padding: 22px max(20px, calc((100% - 860px) / 2)) calc(var(--composer-h, 104px) + 28px);
 }
 .chat-row { display: flex; }
 .chat-row.user { justify-content: flex-end; }
@@ -1515,14 +1518,19 @@ body.dock-full .chat-dock {
 /* ── 底部输入区 ───────────────────────────────────────────────── */
 /* 提示词、附件、模型与发送都在主界面：侧栏留给参数，两边不必抢同一块宽度。 */
 .composer {
-  position: relative;
-  flex: none;
+  /* 浮在内容之上：滚动时内容从卡片下面穿过。 */
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
   width: min(1040px, calc(100% - 40px));
-  margin: 0 auto 16px;
+  margin: 0;
   padding: 12px 12px 8px;
   border: 1px solid var(--ui-line);
   border-radius: 18px;
   background: var(--ui-surface);
+  box-shadow: 0 10px 28px -18px rgba(0, 0, 0, 0.35);
+  z-index: 6;
   transition: border-color 120ms var(--ui-ease), background 120ms var(--ui-ease);
 }
 
