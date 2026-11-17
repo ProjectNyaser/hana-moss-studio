@@ -394,8 +394,9 @@ function renderChat() {
     } else {
       bubble.append(text);
     }
-    // 输入摘要是自己这条消息的一部分，跟着它靠右。
-    bubble.append(thinkBlock(job));
+    // 摘要只补气泡上没有的部分；没得补就不占位。
+    const think = thinkBlock(job);
+    if (think) bubble.append(think);
     userRow.append(bubble);
 
     const botRow = document.createElement("div");
@@ -469,7 +470,8 @@ function pendingRows(job) {
   } else {
     bubble.append(text);
   }
-  bubble.append(thinkBlock(job));
+  const think = thinkBlock(job);
+  if (think) bubble.append(think);
   userRow.append(bubble);
 
   const botRow = document.createElement("div");
@@ -520,35 +522,29 @@ function placeDockUnused() {
   if (host && dock.parentElement !== host) host.append(dock);
 }
 
-/** 这次的输入摘要：折叠一块，默认不看，想看时展开。 */
+/** 气泡里已经有提示词和参数，这块只补气泡上没写的那些。 */
 function thinkBlock(job) {
-  const prompt = String(job.prompt ?? "");
-  const negative = String(job.negativePrompt ?? job.negative ?? "");
-  const lines = [
-    `正向  ${prompt || "（空）"}`,
-    `反向  ${negative || "（空）"}`,
-  ];
-  const size = job.width && job.height ? `${job.width}×${job.height}` : "";
-  const bits = [
-    size,
-    job.steps ? `${job.steps} 步` : "",
-    job.cfg ? `CFG ${job.cfg}` : "",
-    job.sampler,
+  const negative = String(job.negativePrompt ?? job.negative ?? "").trim();
+  const lines = [];
+  if (negative) lines.push(`反向  ${negative}`);
+  // 尺寸、步数、CFG、采样器在气泡上已经有了，这里只列剩下的。
+  const extra = [
     job.scheduler,
     job.seed != null ? `种子 ${job.seed}` : "",
     job.engineTier ? `档位 ${job.engineTier}` : "",
     job.elapsedMs ? `耗时 ${(job.elapsedMs / 1000).toFixed(1)} 秒` : "",
   ].filter(Boolean);
-  if (bits.length) lines.push(`参数  ${bits.join(" · ")}`);
+  if (extra.length) lines.push(`其他  ${extra.join(" · ")}`);
   const origin = job.origin ?? {};
   if (origin.base) lines.push(`底图  ${origin.base}`);
   if (Array.isArray(origin.refs) && origin.refs.length) lines.push(`参考  ${origin.refs.join("、")}`);
+  // 没有气泡之外的信息就不摆这一行。
+  if (!lines.length) return null;
 
   const box = document.createElement("details");
   box.className = "chat-think";
   const head = document.createElement("summary");
-  // 只报真拿到的东西：喂进去的内容和引擎回报的参数。
-  head.textContent = `这次的输入 · ${prompt.length} 字`;
+  head.textContent = `更多输入 · ${lines.length} 项`;
   const body = document.createElement("pre");
   body.textContent = lines.join("\n");
   box.append(head, body);
