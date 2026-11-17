@@ -325,12 +325,10 @@ function currentConvJobs() {
   } catch {
     conv = null;
   }
-  const hit = conv ? galleryJobs.filter((job) => job.origin?.conv === conv) : [];
-  if (hit.length) return hit;
-  // 刚开新对话、或者换了机器：先给最近一段，不让人对着空白以为东西丢了。
-  const latest = galleryJobs.find((job) => job.origin?.conv);
-  if (!latest) return galleryJobs.slice(0, 1);
-  return galleryJobs.filter((job) => job.origin?.conv === latest.origin.conv);
+  // 有会话 id 就只认这一段的图：新会话是空的就是空的，
+  // 不能顺手拿最近一段来填，否则侧栏说空、这边却有内容。
+  if (conv) return galleryJobs.filter((job) => job.origin?.conv === conv);
+  return galleryJobs.slice(0, 1);
 }
 
 function renderChat() {
