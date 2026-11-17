@@ -438,6 +438,7 @@ function renderChat() {
   // 从侧栏点开的是历史段，别把当前会话正在跑的占位塞进去。
   if (live && !convScopeJobs) rows.push(...pendingRows(live));
   log.replaceChildren(...rows);
+  placeDock();
   if (stick) scroller.scrollTop = scroller.scrollHeight;
   chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
   chatBootstrapped = true;
@@ -471,6 +472,10 @@ function pendingRows(job) {
 
   const botRow = document.createElement("div");
   botRow.className = "chat-row bot";
+  // 正在生成的这一条里放画布：预览、进度都在它身上。
+  const slot = document.createElement("div");
+  slot.className = "chat-canvas-slot";
+  slot.dataset.live = "1";
   const box = document.createElement("div");
   box.className = "chat-pending";
   const previewAt = job.status === "running" ? latest?.engine?.active?.previewAt : null;
@@ -489,8 +494,24 @@ function pendingRows(job) {
       ? `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step ?? 0}/${progress.total}` : "…"}`
       : "排队中";
   box.textContent = label;
-  botRow.append(box);
+  slot.append(box);
+  botRow.append(slot);
   return [userRow, botRow];
+}
+
+/** 画布跟着正在生成的那条走：有它在消息里，没了就回到视图末尾。 */
+function placeDock() {
+  const dock = document.getElementById("chat-dock");
+  if (!dock || dock.hidden) return;
+  const slot = document.querySelector('.chat-canvas-slot[data-live]');
+  if (slot) {
+    const box = slot.querySelector(".chat-pending");
+    if (box) box.remove();
+    if (dock.parentElement !== slot) slot.append(dock);
+    return;
+  }
+  const host = document.getElementById("view-chat");
+  if (host && dock.parentElement !== host) host.append(dock);
 }
 
 function renderStage(data) {

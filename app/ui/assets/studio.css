@@ -1528,6 +1528,18 @@ body.dock-full .chat-dock {
 }
 .chat-acts { display: flex; gap: 6px; }
 /* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
+/* 正在生成的那条消息里放画布：宽度跟消息一致，外边距交给这条消息。 */
+.chat-canvas-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(540px, 64%);
+}
+.chat-canvas-slot .chat-dock {
+  width: 100%;
+  margin: 0;
+}
+
 /* 有采样预览时，占位就是那张图本身，进度写在下面。 */
 .chat-pending.has-preview {
   flex-direction: column;
