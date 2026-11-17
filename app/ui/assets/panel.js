@@ -2030,12 +2030,17 @@ function startRename(session, anchor) {
   if (!text) return;
   const input = document.createElement("input");
   input.className = "pn-conv-rename";
-  input.value = convNameMap()[session.key] ?? session.jobs[0]?.prompt ?? "";
+  // 框里是这段自己的名字，不是把原提示词整段搬进来；没有名字就留空，
+  // 空着保存等于去掉名字、退回原标题。
+  input.value = convNameMap()[session.key] ?? "";
+  input.placeholder = session.jobs[0]?.prompt ?? "无提示词";
+  input.title = input.placeholder;
   let done = false;
   const finish = (commit) => {
     if (done) return;
     done = true;
     if (commit) setConvName(session.key, input.value.trim());
+    paintSessions.lastSig = "";
     paintSessions();
   };
   input.addEventListener("keydown", (event) => {
@@ -2048,7 +2053,10 @@ function startRename(session, anchor) {
     }
   });
   input.addEventListener("blur", () => finish(true));
-  text.replaceWith(input);
+  // 只换标题那一行，张数与时间还在原位。
+  const line = text.querySelector(".pn-hist-prompt");
+  if (line) line.replaceWith(input);
+  else text.replaceChildren(input);
   input.focus();
   input.select();
 }
