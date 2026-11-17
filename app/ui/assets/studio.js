@@ -509,7 +509,12 @@ function pendingRows(job) {
   // 占位框按目标尺寸定比例：图从这一步开始在同一个位置长出来。
   const frame = document.createElement("div");
   frame.className = "chat-pending-frame";
-  if (width && height) frame.style.aspectRatio = `${width} / ${height}`;
+  // 与成图用同一套上限：占位多大，图出来就多大。
+  if (width && height) {
+    const scale = Math.min(540 / width, 340 / height, 1);
+    frame.style.width = `${Math.round(width * scale)}px`;
+    frame.style.height = `${Math.round(height * scale)}px`;
+  }
 
   const skeleton = document.createElement("div");
   skeleton.className = "chat-skeleton";
@@ -630,6 +635,18 @@ function buildUserBubble(job) {
   });
   box.append(summary, extra);
   return box;
+}
+
+/** 采样预览直接刷进占位图：列表不重建也能看到画面在长。 */
+function updateChatPreview() {
+  const img = document.querySelector(".chat-pending-img");
+  const active = latest?.engine?.active;
+  if (!img || !active?.previewAt) return;
+  const at = String(active.previewAt);
+  if (img.dataset.at === at) return;
+  img.dataset.at = at;
+  img.src = previewUrl(at);
+  img.parentElement?.classList.add("loaded");
 }
 
 function renderStage(data) {
@@ -3996,6 +4013,7 @@ function render(data) {
   renderQueue(data);
   renderVersions(data);
   renderChat();
+  updateChatPreview();
   renderComposerModel();
   renderDownload(data);
   const newest = data.jobs.find((job) => job.status === "done" && job.output)?.id ?? null;
