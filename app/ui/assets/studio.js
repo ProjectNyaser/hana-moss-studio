@@ -442,7 +442,7 @@ function renderChat() {
     img.addEventListener("error", () => frame.classList.add("loaded"));
     shot.append(frame, acts);
     const under = baseCard(job);
-    if (under) botRow.append(under);
+    if (under) userRow.append(under);
     botRow.append(shot);
     // 一轮是一个整体：块之间倒排，块内仍是「我说话 → 它回图」。
     const turn = document.createElement("div");
@@ -545,7 +545,7 @@ function pendingRows(job) {
 
   box.append(frame, label);
   const under = baseCard(job);
-  if (under) botRow.append(under);
+  if (under) userRow.append(under);
   botRow.append(box);
 
   const turn = document.createElement("div");
@@ -708,7 +708,13 @@ function baseCard(job) {
   const img = document.createElement("img");
   img.alt = "底图";
   img.src = inputUrl(String(base));
-  img.addEventListener("error", () => card.classList.add("missing"));
+  img.addEventListener("error", () => {
+    card.classList.add("missing");
+    const note = document.createElement("span");
+    note.className = "chat-base-note";
+    note.textContent = "底图已不在这台机器上";
+    card.append(note);
+  });
   card.append(img);
   if (job.origin?.mask) {
     const tag = document.createElement("span");
