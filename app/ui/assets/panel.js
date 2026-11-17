@@ -2166,9 +2166,7 @@ function paintSessions() {
         void mergeInto(source, session);
       });
       btn.addEventListener("click", () => {
-        const same = activeConv && activeConv.length === ids.length && ids.every((id) => activeConv.includes(id));
-        // 重复点不切换，但「看全部」在主界面那条上。
-        if (same) return;
+        // 重复点同一段也要能把人带回会话页；只是不改筛选范围。
         activeConv = ids.slice();
         editChannel?.postMessage({
           type: "open-conversation",
