@@ -391,9 +391,12 @@ function renderChat() {
     const img = document.createElement("img");
     img.loading = "lazy";
     img.alt = (job.prompt ?? "").slice(0, 40);
-    // 只给一个比例做布局占位，尺寸仍以记录里的宽高为准，不再多存一份。
-    if (job.width && job.height) img.style.aspectRatio = job.width + " / " + job.height;
-    const url = loadThumb(job.output, 900);
+    // 宽高交给属性：浏览器按比例预留空间，不用等图加载也不顶位。
+    if (job.width && job.height) {
+      img.width = job.width;
+      img.height = job.height;
+    }
+    const url = loadThumb(job.output, 420);
     if (url) img.src = url;
     img.addEventListener("click", () => openViewer(job.id));
     const acts = document.createElement("div");
