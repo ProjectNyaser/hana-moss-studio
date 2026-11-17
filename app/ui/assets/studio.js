@@ -215,18 +215,25 @@ const tail = (p) => (p ? String(p).split(/[\\/]/).filter(Boolean).pop() : "");
 
 // ── 视图切换 ───────────────────────────────────────────────────────────
 // 输入框上方那块画布：同一份 DOM，不复制第二套。
+const DOCK_KEY = "hana-moss-studio.dock";
 let dockOpen = false;
 
 function setDock(open) {
   const canvasEl = document.getElementById("canvas");
   const dockEl = document.getElementById("chat-dock");
+  const dockBody = document.getElementById("chat-dock-body");
   const canvasHost = document.getElementById("view-canvas");
-  if (!canvasEl || !dockEl || !canvasHost) return;
+  if (!canvasEl || !dockEl || !dockBody || !canvasHost) return;
   dockOpen = Boolean(open);
+  try {
+    localStorage.setItem(DOCK_KEY, dockOpen ? "1" : "0");
+  } catch {
+    /* 存不了就每次默认展开 */
+  }
   if (dockOpen) {
     if (currentView !== "chat") showView("chat");
     canvasHost.hidden = true;
-    dockEl.append(canvasEl);
+    dockBody.append(canvasEl);
     dockEl.hidden = false;
   } else {
     dockEl.hidden = true;
@@ -238,6 +245,12 @@ function setDock(open) {
 }
 
 document.getElementById("composer-dock")?.addEventListener("click", () => setDock(!dockOpen));
+document.getElementById("chat-dock-close")?.addEventListener("click", () => setDock(false));
+
+// 默认就把画布摆在输入框上方；手动收起过就不扰人。
+requestAnimationFrame(() => {
+  if (localStorage.getItem(DOCK_KEY) !== "0") setDock(true);
+});
 
 function showView(view) {
   if (!views.includes(view)) return;
