@@ -1587,9 +1587,11 @@ body.dock-full .chat-dock {
   list-style: none;
   cursor: pointer;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
+/* 箭头与首行文字对齐，不落到两行之间。 */
+.chat-summary > .chat-arrow { margin-top: 2px; }
 .chat-summary-body { flex: 1; min-width: 0; }
 .chat-summary::-webkit-details-marker { display: none; }
 .chat-summary::-moz-marker { content: none; }
