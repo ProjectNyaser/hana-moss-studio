@@ -563,8 +563,10 @@ function buildUserBubble(job) {
   const negative = String(job.negativePrompt ?? job.negative ?? "").trim();
   if (negative) rows.push(["反向", negative]);
   const origin = job.origin ?? {};
-  if (origin.base) rows.push(["底图", String(origin.base)]);
-  if (Array.isArray(origin.refs) && origin.refs.length) rows.push(["参考", origin.refs.join("、")]);
+  // 路径只在磁盘上有意义，界面上给文件名就够，省一半宽度。
+  const baseName = (value) => String(value).split(/[\\/]/).pop();
+  if (origin.base) rows.push(["底图", baseName(origin.base)]);
+  if (Array.isArray(origin.refs) && origin.refs.length) rows.push(["参考", origin.refs.map(baseName).join("、")]);
 
   const size = job.width && job.height ? `${job.width}×${job.height}` : "";
   const text = document.createElement("p");
