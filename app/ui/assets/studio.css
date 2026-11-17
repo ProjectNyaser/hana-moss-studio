@@ -948,6 +948,8 @@ body.dock-full .chat-dock { height: auto; flex: 1; }
 .lay-grip.se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 .lay-draft { position: absolute; border: 1px dashed var(--ui-accent); background: color-mix(in srgb, var(--ui-accent) 10%, transparent); pointer-events: none; }
 
+/* 类型下拉与输入框同高同边。 */
+.lay-field-label select, .lay-field-label input { width: 100%; }
 .lay-form { flex: none; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 8px 12px 10px; border-top: 1px solid var(--ui-line); background: var(--panel-card-bg); }
 .lay-form[hidden] { display: none; }
 .lay-field { min-width: 0; }

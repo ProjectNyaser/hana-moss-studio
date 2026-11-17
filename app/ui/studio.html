@@ -72,19 +72,18 @@
             </div>
           </div>
           <div class="lay-form" id="lay-form" hidden>
-            <label class="field lay-field lay-field-label"><span class="label">类型</span><input id="lay-label" type="text" list="lay-label-list" placeholder="object" spellcheck="false"></label>
+            <label class="field lay-field lay-field-label"><span class="label">类型</span><select id="lay-label">
+              <option value="object">物体 / 场景</option>
+              <option value="text">文字</option>
+              <option value="person">人物</option>
+              <option value="icon">图标</option>
+              <option value="scene">场景</option>
+            </select></label>
             <label class="field lay-field lay-field-caption"><span class="label">这块的提示词</span><textarea id="lay-caption" rows="2" placeholder="顶部居中的大标题，白色粗体，压在蓝山上"></textarea></label>
             <label class="field lay-field lay-field-text"><span class="label">要渲染的字</span><input id="lay-text" type="text" placeholder="类型选 text 时填" spellcheck="false"></label>
             <span class="lay-size" id="lay-size"></span>
             <button class="btn small" id="lay-remove" type="button">删除</button>
           </div>
-          <datalist id="lay-label-list">
-            <option value="object"></option>
-            <option value="text"></option>
-            <option value="icon"></option>
-            <option value="scene"></option>
-            <option value="person"></option>
-          </datalist>
         </div>
         <div class="base" id="base" hidden>
           <div class="base-bar">

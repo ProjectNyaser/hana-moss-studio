@@ -695,7 +695,7 @@ function renderLayForm() {
   }
   if (lay.formId !== item.id) {
     lay.formId = item.id;
-    nodes.layLabel.value = item.label;
+    setLayLabel(item.label);
     nodes.layCaption.value = item.caption;
     nodes.layText.value = item.text;
   }
@@ -2333,12 +2333,25 @@ nodes.layClear.addEventListener("click", () => {
 nodes.layClose.addEventListener("click", closeLayout);
 nodes.layRemove.addEventListener("click", () => removeLayBox(lay.selected));
 
-nodes.layLabel.addEventListener("input", () => {
+nodes.layLabel.addEventListener("change", () => {
   const item = lay.boxes.find((entry) => entry.id === lay.selected);
   if (!item) return;
   item.label = nodes.layLabel.value;
   renderLayBoxes();
 });
+/** 下拉里没有的值（自定义标签）临时补一项，不把用户填的内容抹掉。 */
+function setLayLabel(value) {
+  const next = String(value ?? "object") || "object";
+  const options = Array.from(nodes.layLabel.options).map((option) => option.value);
+  if (!options.includes(next)) {
+    const option = document.createElement("option");
+    option.value = next;
+    option.textContent = next;
+    nodes.layLabel.append(option);
+  }
+  nodes.layLabel.value = next;
+}
+
 nodes.layCaption.addEventListener("input", () => {
   const item = lay.boxes.find((entry) => entry.id === lay.selected);
   if (!item) return;
