@@ -1653,7 +1653,7 @@ function state() {
         // 只认 PNG：界面自己画的就是 PNG，别的格式不猜。
         if (data.readUInt32BE(0) !== 0x89504e47) return c.json({ error: "只接受 PNG" }, 415);
         // 按内容命名：同一张图反复用只留一份。
-        const hash = createHash("sha256").update(data).digest("hex").slice(0, 16);
+        const hash = createHash("sha256").update(data).digest("hex");
         const name = `${kind}-${hash}.png`;
         const target = join(inputsDir, name);
         if (!existsSync(target)) writeFileSync(target, data);
