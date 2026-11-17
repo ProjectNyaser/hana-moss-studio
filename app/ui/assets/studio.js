@@ -1440,13 +1440,84 @@ function pushComposerPrompt() {
   }, 120);
 }
 
-function sendCompose() {
-  if (!composer.send || composer.send.disabled) return;
-  composer.send.disabled = true;
-  layChannel?.postMessage({ type: "compose-send", text: composerText(), base: edit.remotePath ?? null });
-  setTimeout(() => {
+/** 上传一张图到 inputs/，返回 { path, name }。 */
+async function uploadInput(blob, kind) {
+  const response = await hana.api.fetch(API + "/inputs/upload?kind=" + kind, { method: "POST", body: blob });
+  if (!response.ok) throw new Error("上传失败 " + response.status);
+  return response.json();
+}
+
+let submitting = false;
+
+/** 主界面自己提交：参数来自这里，不再让侧栏按隐藏控件拼。 */
+async function submitGenerate() {
+  if (submitting) return;
+  const prompt = composerText().trim();
+  if (!prompt) {
+    composer.input?.focus();
+    return;
+  }
+  // 布局框那条路还在侧栏，交给它。
+  if (lay.boxes.length) {
+    layChannel?.postMessage({ type: "compose-send", text: prompt, base: edit.remotePath ?? null });
+    return;
+  }
+  submitting = true;
+  if (composer.send) composer.send.disabled = true;
+  try {
+    const payload = { prompt, negativePrompt: composer.negative?.value ?? "" };
+    // 会话 id 跟着走：出图后才知道该归到哪一段。
+    try {
+      const conv = localStorage.getItem("hana-moss-studio.conv-id");
+      if (conv) payload.conv = conv;
+    } catch {
+      /* 没有也罢 */
+    }
+    const seedText = (composer.seed?.value ?? "").trim();
+    if (seedText) payload.seed = Number(seedText);
+    if (edit.remotePath) {
+      payload.initImage = edit.remotePath;
+      payload.strength = 0.6;
+      payload.resize = "stretch";
+    }
+    if (edit.maskBlob) {
+      const mask = await uploadInput(edit.maskBlob, "mask");
+      if (mask && mask.path) {
+        payload.mask = mask.path;
+        payload.maskEncoding = "u8";
+      }
+    }
+    if (refFiles.length) {
+      const paths = [];
+      for (const item of refFiles) {
+        try {
+          const blob = await window.fetch(item.url).then((response) => response.blob());
+          const ref = await uploadInput(blob, "ref");
+          if (ref && ref.path) paths.push(ref.path);
+        } catch {
+          /* 单张传不上去不拦整条 */
+        }
+      }
+      if (paths.length) {
+        payload.referenceImages = paths;
+        payload.referenceMaxEdge = 512;
+      }
+    }
+    await api("/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    }, 60000);
+    toast("已提交，出图会排在会话里");
+  } catch (error) {
+    toast("提交失败：" + (error instanceof Error ? error.message : String(error)), "error");
+  } finally {
+    submitting = false;
     if (composer.send) composer.send.disabled = false;
-  }, 1400);
+  }
+}
+function sendCompose() {
+  void submitGenerate();
 }
 
 composer.input?.addEventListener("input", () => {
