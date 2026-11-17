@@ -137,6 +137,12 @@ body {
 .chat-dock-icon:hover { background: var(--ui-overlay); color: var(--ui-text); }
 .chat-dock-body { flex: 1; min-height: 0; }
 /* 全屏：会话让位，画布占满。 */
+/* 空画布没有可全屏的内容，也不必占三分之一高度。 */
+.chat-dock:has(.base[hidden]) {
+  height: 152px;
+  min-height: 152px;
+}
+
 body.dock-full .chat-log { display: none; }
 body.dock-full .chat-dock {
   height: auto;
