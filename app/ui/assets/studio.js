@@ -516,17 +516,8 @@ function pendingRows(job) {
   return [turn];
 }
 
-/** 一条用户消息：提示词一行，分辨率一行，展开按钮放在分辨率那一行的左边。 */
+/** 一条用户消息：summary 是提示词与分辨率，展开另开一层放参数。 */
 function buildUserBubble(job) {
-  const bubble = document.createElement("div");
-  bubble.className = "chat-bubble";
-
-  const text = document.createElement("p");
-  text.className = "chat-text";
-  text.textContent = job.prompt || "（无提示词）";
-  bubble.append(text);
-
-  const size = job.width && job.height ? `${job.width}×${job.height}` : "";
   const rows = [];
   if (job.steps) rows.push(["步数", String(job.steps)]);
   if (job.cfg) rows.push(["CFG", String(job.cfg)]);
@@ -541,69 +532,78 @@ function buildUserBubble(job) {
   if (origin.base) rows.push(["底图", String(origin.base)]);
   if (Array.isArray(origin.refs) && origin.refs.length) rows.push(["参考", origin.refs.join("、")]);
 
-  const extra = document.createElement("div");
-  extra.className = "chat-extra";
-  extra.hidden = true;
-  if (size) {
-    const sub = document.createElement("p");
-    sub.className = "chat-sub";
-    if (rows.length) {
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "chat-more";
-      more.title = "展开这次的全部参数";
-      // 图标用 SVG：形状本身居中，旋转 90° 才是就地转。
-      const chev = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      chev.setAttribute("viewBox", "0 0 16 16");
-      chev.setAttribute("width", "12");
-      chev.setAttribute("height", "12");
-      chev.setAttribute("fill", "none");
-      chev.setAttribute("stroke", "currentColor");
-      chev.setAttribute("stroke-width", "1.8");
-      chev.setAttribute("stroke-linecap", "round");
-      chev.setAttribute("stroke-linejoin", "round");
-      chev.setAttribute("aria-hidden", "true");
-      const tip = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      tip.setAttribute("d", "M6.2 3.8 10.4 8l-4.2 4.2");
-      chev.append(tip);
-      more.append(chev);
+  const size = job.width && job.height ? `${job.width}×${job.height}` : "";
+  const text = document.createElement("p");
+  text.className = "chat-text";
+  text.textContent = job.prompt || "（无提示词）";
 
-      for (const [key, value] of rows) {
-        const k = document.createElement("span");
-        k.className = "k";
-        k.textContent = key;
-        const v = document.createElement("span");
-        v.className = "v";
-        v.textContent = value;
-        extra.append(k, v);
-      }
-      more.addEventListener("click", () => {
-        const scroller = document.getElementById("view-chat");
-        const before = bubble.getBoundingClientRect().top;
-        const open = extra.hidden;
-        extra.hidden = !open;
-        more.classList.toggle("on", open);
-        more.title = open ? "收起参数" : "展开这次的全部参数";
-        // 底部锚定的列表里，展开会把整条往上顶：把这部分补回去，视线不跳。
-        if (scroller && open) {
-          requestAnimationFrame(() => {
-            scroller.scrollTop -= bubble.getBoundingClientRect().top - before;
-          });
-        }
-      });
-      sub.append(more);
-    }
+  const sub = document.createElement("p");
+  sub.className = "chat-sub";
+  if (size) {
     const meta = document.createElement("span");
     meta.className = "chat-meta";
     meta.textContent = size;
     sub.append(meta);
-    // 箭头放在尺寸右侧：左边不留空白，两行文字才对得齐。
-    const moreBtn = sub.querySelector(".chat-more");
-    if (moreBtn) sub.append(moreBtn);
-    bubble.append(sub);
-    if (rows.length) bubble.append(extra);
   }
-  return bubble;
+
+  // 没有额外信息就只是一块普通气泡。
+  if (!rows.length) {
+    const bubble = document.createElement("div");
+    bubble.className = "chat-bubble";
+    bubble.append(text);
+    if (size) bubble.append(sub);
+    return bubble;
+  }
+
+  const arrow = document.createElement("span");
+  arrow.className = "chat-arrow";
+  arrow.setAttribute("aria-hidden", "true");
+  const chev = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  chev.setAttribute("viewBox", "0 0 16 16");
+  chev.setAttribute("width", "12");
+  chev.setAttribute("height", "12");
+  chev.setAttribute("fill", "none");
+  chev.setAttribute("stroke", "currentColor");
+  chev.setAttribute("stroke-width", "1.8");
+  chev.setAttribute("stroke-linecap", "round");
+  chev.setAttribute("stroke-linejoin", "round");
+  const tip = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  tip.setAttribute("d", "M6.2 3.8 10.4 8l-4.2 4.2");
+  chev.append(tip);
+  arrow.append(chev);
+  sub.append(arrow);
+
+  const summary = document.createElement("summary");
+  summary.className = "chat-summary";
+  summary.title = "展开这次的全部参数";
+  summary.append(text);
+  if (size) summary.append(sub);
+
+  const extra = document.createElement("div");
+  extra.className = "chat-extra";
+  for (const [key, value] of rows) {
+    const k = document.createElement("span");
+    k.className = "k";
+    k.textContent = key;
+    const v = document.createElement("span");
+    v.className = "v";
+    v.textContent = value;
+    extra.append(k, v);
+  }
+
+  const box = document.createElement("details");
+  box.className = "chat-bubble chat-bubble-more";
+  // 展开时底部锚定的列表会往上顶：把这部分高度补回滚动位置。
+  box.addEventListener("toggle", () => {
+    const scroller = document.getElementById("view-chat");
+    if (!scroller || !box.open) return;
+    const before = box.getBoundingClientRect().top;
+    requestAnimationFrame(() => {
+      scroller.scrollTop -= box.getBoundingClientRect().top - before;
+    });
+  });
+  box.append(summary, extra);
+  return box;
 }
 
 function renderStage(data) {
