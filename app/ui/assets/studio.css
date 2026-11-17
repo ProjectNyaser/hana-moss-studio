@@ -1468,7 +1468,7 @@ body.dock-full .chat-dock {
 }
 .chat-text { margin: 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
 .chat-meta { margin: 6px 0 0; font-size: 11px; color: var(--ui-text-3); }
-.chat-shot { max-width: 280px; display: flex; flex-direction: column; gap: 6px; }
+.chat-shot { max-width: min(540px, 64%); display: flex; flex-direction: column; gap: 6px; }
 .chat-shot img {
   width: 100%;
   height: auto;
@@ -1484,8 +1484,8 @@ body.dock-full .chat-dock {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 280px;
-  min-height: 150px;
+  width: min(540px, 64%);
+  min-height: 220px;
   border: 1px dashed var(--ui-line);
   border-radius: 12px;
   background: var(--ui-overlay);
