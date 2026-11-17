@@ -906,7 +906,14 @@ export default defineApp(async (sdk) => {
       sampler: job.sampler ?? p.sampler ?? null,
       scheduler: job.scheduler ?? p.scheduler ?? null,
       shift: job.shift ?? p.shift ?? null,
-      origin: job.origin ?? null,
+      origin: job.origin ?? (job.conv ? {
+        // 队列里的记录把会话 id 放在顶层，跟盘上读出来的 origin.conv 是同一件事。
+        conv: String(job.conv),
+        base: job.initImage ?? null,
+        mask: job.mask ?? null,
+        refs: Array.isArray(job.references) ? job.references : [],
+        parent: job.parent ?? null,
+      } : null),
       stepCache: job.stepCache ?? "off",
       loras: Array.isArray(job.loras) ? job.loras : [],
       control: job.control ? { kind: job.control.kind ?? null, images: job.control.images?.length ?? 0 } : null,

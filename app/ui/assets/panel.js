@@ -2006,7 +2006,7 @@ async function assignConv(names, conv) {
 
 /** 一段的显示名：改过的名字优先，否则取首条提示词。 */
 function sessionTitle(session) {
-  const raw = convNameMap()[session.key] ?? session.jobs[0]?.prompt ?? "无提示词";
+  const raw = convNameMap()[session.key] ?? session.jobs.find((job) => job.prompt)?.prompt ?? "无提示词";
   const text = String(raw).trim() || "无提示词";
   return text.length > 10 ? `${text.slice(0, 10)}…` : text;
 }
@@ -2088,9 +2088,10 @@ function paintSessions() {
       if (head.output) thumb.src = thumbUrl(head.output, 96);
       const text = document.createElement("span");
       text.className = "pn-hist-text";
+      const firstPrompt = session.jobs.find((job) => job.prompt)?.prompt ?? "";
       const line = document.createElement("span");
       line.className = "pn-hist-prompt";
-      line.textContent = convNameMap()[session.key] ?? head.prompt ?? "（无提示词）";
+      line.textContent = convNameMap()[session.key] ?? firstPrompt ?? "（无提示词）";
       if (!line.textContent) line.textContent = "（无提示词）";
       // 标出“接下来出图会进哪一段”，不然看不出哪个是活的。
       if (session.conv && session.conv === localStorage.getItem(CONV_ID_KEY)) {
@@ -2104,7 +2105,16 @@ function paintSessions() {
       const when = head.createdAt
         ? new Date(head.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
         : "";
-      meta.textContent = `${session.jobs.length} 张${when ? ` · ${when}` : ""}`;
+      // 正在跑或排队的那条也算活跃：这一段的时长就是最后一条消息的时刻。
+      const shotCount = session.jobs.filter((job) => job.status === "done").length;
+      const live = session.jobs.some((job) => job.status === "running")
+        ? "生成中"
+        : session.jobs.some((job) => job.status === "queued")
+          ? "排队中"
+          : "";
+      meta.textContent = [shotCount ? `${shotCount} 张` : live || "还没有图", live, when]
+        .filter(Boolean)
+        .join(" · ");
       text.append(line, meta);
       const more = document.createElement("span");
       more.className = "pn-hist-more";
