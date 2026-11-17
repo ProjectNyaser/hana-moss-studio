@@ -424,7 +424,6 @@ function renderChat() {
   // 从侧栏点开的是历史段，别把当前会话正在跑的占位塞进去。
   if (live && !convScopeJobs) rows.push(...pendingRows(live));
   log.replaceChildren(...rows);
-  placeDock();
   if (stick) scroller.scrollTop = scroller.scrollHeight;
   chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
   chatBootstrapped = true;
@@ -444,10 +443,6 @@ function pendingRows(job) {
 
   const botRow = document.createElement("div");
   botRow.className = "chat-row bot";
-  // 正在生成的这一条里放画布：预览、进度都在它身上。
-  const slot = document.createElement("div");
-  slot.className = "chat-canvas-slot";
-  slot.dataset.live = "1";
   const box = document.createElement("div");
   box.className = "chat-pending";
   const previewAt = job.status === "running" ? latest?.engine?.active?.previewAt : null;
@@ -466,24 +461,8 @@ function pendingRows(job) {
       ? `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step ?? 0}/${progress.total}` : "…"}`
       : "排队中";
   box.textContent = label;
-  slot.append(box);
-  botRow.append(slot);
+  botRow.append(box);
   return [userRow, botRow];
-}
-
-/** 生成中把画布搬进那条回复，结束后回到悬浮位置。 */
-function placeDock() {
-  const dock = document.getElementById("chat-dock");
-  if (!dock || dock.hidden) return;
-  const slot = document.querySelector('.chat-canvas-slot[data-live]');
-  if (slot) {
-    const box = slot.querySelector(".chat-pending");
-    if (box) box.remove();
-    if (dock.parentElement !== slot) slot.append(dock);
-    return;
-  }
-  const host = document.getElementById("view-chat");
-  if (host && dock.parentElement !== host) host.append(dock);
 }
 
 /** 一条用户消息：提示词 + 分辨率常显，其余收在右上角的展开里。 */
@@ -496,10 +475,9 @@ function buildUserBubble(job) {
   const text = document.createElement("p");
   text.className = "chat-text";
   text.textContent = job.prompt || "（无提示词）";
-  head.append(text);
 
-  const rows = [];
   const size = job.width && job.height ? `${job.width}×${job.height}` : "";
+  const rows = [];
   if (job.steps) rows.push(["步数", String(job.steps)]);
   if (job.cfg) rows.push(["CFG", String(job.cfg)]);
   if (job.sampler) rows.push(["采样器", String(job.sampler)]);
@@ -513,6 +491,7 @@ function buildUserBubble(job) {
   if (origin.base) rows.push(["底图", String(origin.base)]);
   if (Array.isArray(origin.refs) && origin.refs.length) rows.push(["参考", origin.refs.join("、")]);
 
+  let extra = null;
   // 展开按钮只在真有额外信息时出现，固定在右上角。
   if (rows.length) {
     const more = document.createElement("button");
@@ -520,7 +499,7 @@ function buildUserBubble(job) {
     more.className = "chat-more";
     more.textContent = "›";
     more.title = "展开这次的全部参数";
-    const extra = document.createElement("div");
+    extra = document.createElement("div");
     extra.className = "chat-extra";
     extra.hidden = true;
     for (const [key, value] of rows) {
@@ -538,25 +517,19 @@ function buildUserBubble(job) {
       more.classList.toggle("on", open);
       more.textContent = open ? "⌄" : "›";
     });
-    head.append(more);
-    bubble.append(head);
-    if (size) {
-      const meta = document.createElement("p");
-      meta.className = "chat-meta";
-      meta.textContent = size;
-      bubble.append(meta);
-    }
-    bubble.append(extra);
-    return bubble;
+    head.append(text, more);
+  } else {
+    head.append(text);
   }
-
   bubble.append(head);
+
   if (size) {
     const meta = document.createElement("p");
     meta.className = "chat-meta";
     meta.textContent = size;
     bubble.append(meta);
   }
+  if (extra) bubble.append(extra);
   return bubble;
 }
 
@@ -1613,12 +1586,12 @@ async function submitGenerate() {
     status: "queued",
     createdAt: new Date().toISOString(),
   };
-  // 只退出全屏：画布本身跟着这条消息进流里，不是被收起来。
+  // 只退出全屏：画布是工具层，跟着这次提交收起，不占用消息。
   if (document.body.classList.contains("dock-full")) {
     document.body.classList.remove("dock-full");
     document.getElementById("chat-dock-full")?.classList.remove("on");
   }
-  if (!dockOpen) setDock(true);
+  if (dockOpen) setDock(false);
   chatAtBottom = true;
   renderChat.lastSig = "";
   renderChat();

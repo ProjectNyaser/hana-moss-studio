@@ -1620,25 +1620,6 @@ body.dock-full .chat-dock {
   color: var(--ui-text-2);
 }
 
-/* 正在生成的那条消息里放画布：宽度跟消息一致，外边距交给这条消息。 */
-.chat-canvas-slot {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(540px, 64%);
-}
-/* 画布挪走后留下的空槽不占位。 */
-.chat-canvas-slot:empty { display: none; }
-/* 搬进消息里时按流内排版，不再悬浮。 */
-.chat-canvas-slot .chat-dock {
-  position: static;
-  left: auto;
-  bottom: auto;
-  transform: none;
-  z-index: auto;
-  width: 100%;
-  margin: 0;
-}
 
 /* 有采样预览时，占位就是那张图本身，进度写在下面。 */
 .chat-pending.has-preview {
