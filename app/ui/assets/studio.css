@@ -90,6 +90,7 @@ body {
 /* 输入框上方那块画布：会话在它上面继续滚。 */
 .chat-dock {
   flex: none;
+  position: relative;
   display: flex;
   flex-direction: column;
   width: min(1040px, calc(100% - 40px));
@@ -103,13 +104,16 @@ body {
   overflow: hidden;
 }
 .chat-dock[hidden] { display: none; }
+/* 画布只有一行抬头：两个图标浮在工具条的右上角。 */
 .chat-dock-head {
-  flex: none;
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  z-index: 3;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--ui-line);
+  gap: 4px;
+  padding: 0;
   font-size: 11.5px;
   color: var(--ui-text-3);
 }

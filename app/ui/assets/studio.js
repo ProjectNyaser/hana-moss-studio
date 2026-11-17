@@ -1267,7 +1267,7 @@ function resetBaseMaskCanvas() {
 function renderBaseBar() {
   const size = baseCanvasSize();
   const bits = [`${edit.width}×${edit.height}`, `目标 ${size.width}×${size.height}`];
-  bits.push(edit.share ? `蒙版重画 ${edit.share}%` : edit.maskBlob ? "蒙版已保存" : "抹出要重画的地方，保存后回侧栏点生成");
+  bits.push(edit.share ? `蒙版重画 ${edit.share}%` : edit.maskBlob ? "蒙版已保存" : "抹出要重画的地方，保存后在下面输入框发送");
   nodes.baseInfo.textContent = bits.join(" · ");
   const painting = edit.mode !== null;
   nodes.basePaint.classList.toggle("on", painting);
