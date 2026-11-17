@@ -549,6 +549,21 @@ function buildUserBubble(job) {
     more.type = "button";
     more.className = "chat-more";
     more.title = "展开这次的全部参数";
+    // 图标用 SVG：形状本身居中，旋转 90° 才是就地转。
+    const chev = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    chev.setAttribute("viewBox", "0 0 16 16");
+    chev.setAttribute("width", "14");
+    chev.setAttribute("height", "14");
+    chev.setAttribute("fill", "none");
+    chev.setAttribute("stroke", "currentColor");
+    chev.setAttribute("stroke-width", "1.7");
+    chev.setAttribute("stroke-linecap", "round");
+    chev.setAttribute("stroke-linejoin", "round");
+    chev.setAttribute("aria-hidden", "true");
+    const tip = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    tip.setAttribute("d", "M6.2 3.8 10.4 8l-4.2 4.2");
+    chev.append(tip);
+    more.append(chev);
     extra = document.createElement("div");
     extra.className = "chat-extra";
     extra.hidden = true;
