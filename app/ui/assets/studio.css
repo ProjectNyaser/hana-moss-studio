@@ -1585,6 +1585,8 @@ body.dock-full .chat-dock {
 /* 段落默认带上下外边距，气泡里只要行与行之间的那点距离。 */
 .chat-text,
 .chat-sub { margin: 0; }
+/* 尺寸在气泡里与箭头同一行，不再带自己的上外边距。 */
+.chat-sub .chat-meta { margin: 0; }
 
 /* summary：提示词一行，分辨率一行，箭头在行首。 */
 .chat-summary { list-style: none; cursor: pointer; }
