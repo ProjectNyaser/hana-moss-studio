@@ -420,6 +420,13 @@
     }
     .pn-conv-row:hover { background: var(--ui-overlay); }
     .pn-conv-row.on { background: var(--ui-tint); }
+    /* 拖拽中与可放下：虚线框一步到位。 */
+    .pn-conv-row.dragging { opacity: 0.45; }
+    .pn-conv-row.drop-target {
+      background: var(--ui-tint);
+      outline: 1px dashed var(--ui-accent);
+      outline-offset: -1px;
+    }
     /* 「当前」小标：接下来出图会进这一段。 */
     .pn-hist-now {
       display: inline-block;

@@ -713,6 +713,8 @@ export default defineApp(async (sdk) => {
           const meta = {
             ...(had ?? {}),
             prompt: job.prompt ?? had?.prompt ?? "",
+            // 写入磁盘那一刻的时间：会话排序以它为准，文件 mtime 会变。
+            created_at: had?.created_at ?? job.createdAt ?? new Date().toISOString(),
             negative_prompt: job.negativePrompt ?? had?.negative_prompt ?? "",
             width: job.width ?? had?.width ?? null,
             height: job.height ?? had?.height ?? null,
@@ -765,6 +767,7 @@ export default defineApp(async (sdk) => {
             const seedFor = (Number.isFinite(job.seed) ? job.seed : 42) + index + 1;
             const extraMeta = {
               prompt: job.prompt ?? "",
+              created_at: job.createdAt ?? new Date().toISOString(),
               negative_prompt: job.negativePrompt ?? "",
               width: job.width ?? null,
               height: job.height ?? null,

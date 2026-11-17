@@ -11,7 +11,7 @@
  * 而且固定读前 N KB 会在文本块跨越边界时把它截断。
  */
 
-import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { join } from "node:path";
 
@@ -196,7 +196,15 @@ export function writePngMeta(file, keyword, value) {
     }
     if (!inserted) return false;
     if (offset < data.length) parts.push(data.subarray(offset));
+    // 改元数据不该让这张图看起来是刚生成的：mtime 原样还回去，
+    // 否则会话列表会按“刚刚”重新排序。
+    const before = statSync(file);
     writeFileSync(file, Buffer.concat(parts));
+    try {
+      utimesSync(file, before.atime, before.mtime);
+    } catch {
+      /* 改不动时间不影响图本身 */
+    }
     cache.delete(file);
     return true;
   } catch {
@@ -229,11 +237,13 @@ export function scanOutputs(dir) {
     const file = join(dir, name);
     const text = readPngText(file);
     const meta = text?.generation ?? null;
-    let createdAt = null;
-    try {
-      createdAt = statSync(file).mtime.toISOString();
-    } catch {
-      continue;
+    let createdAt = meta?.created_at ?? null;
+    if (!createdAt) {
+      try {
+        createdAt = statSync(file).mtime.toISOString();
+      } catch {
+        continue;
+      }
     }
     const id = name.replace(/\.png$/i, "");
     // 布局提示的 prompt 是一段 JSON；画廊要的是 caption，不是一整块坐标。

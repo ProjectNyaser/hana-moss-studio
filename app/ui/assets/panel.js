@@ -1867,8 +1867,8 @@ function groupSessions(jobs) {
     }
     groups.set(conv, { key: conv, conv, t, jobs: [job] });
   }
-  // 位置按这段最早的图算：拆开或合并后一段不会突然跳到顶上。
-  const stamp = (item) => (item.jobs.length ? Math.min(...item.jobs.map((job) => Date.parse(job.createdAt ?? "") || 0)) : 0);
+  // 严格按最后活跃时间倒序：这个会话里最新一张出图的时间，就是它坐的位置。
+  const stamp = (item) => (item.jobs.length ? Math.max(...item.jobs.map((job) => Date.parse(job.createdAt ?? "") || 0)) : 0);
   return [...groups.values(), ...singles]
     .map((item) => ({ ...item, t: stamp(item) }))
     .sort((a, b) => b.t - a.t);
@@ -2034,6 +2034,15 @@ async function splitSession(session) {
   paintSessions();
 }
 
+// 会话行的拖放合并：dragSession 是正在被拖的那一段。
+let dragSession = null;
+
+function clearDropMarks() {
+  document.querySelectorAll(".pn-conv-row.drop-target, .pn-conv-row.dragging").forEach((el) => {
+    el.classList.remove("drop-target", "dragging");
+  });
+}
+
 function paintSessions() {
   const list = nodes.history;
   if (!list) return;
@@ -2089,6 +2098,38 @@ function paintSessions() {
         openConvMenu(session, more);
       });
       btn.append(thumb, text, more);
+      // 拖一段到另一段上就是合并：比在菜单里选「上一段」直觉得多。
+      btn.draggable = true;
+      thumb.draggable = false;
+      btn.addEventListener("dragstart", (event) => {
+        dragSession = session;
+        btn.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        // 有些环境要带一点数据才发 drag 事件。
+        event.dataTransfer.setData("text/plain", session.key);
+      });
+      btn.addEventListener("dragend", () => {
+        dragSession = null;
+        btn.classList.remove("dragging");
+        clearDropMarks();
+      });
+      btn.addEventListener("dragover", (event) => {
+        if (!dragSession || dragSession === session) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        btn.classList.add("drop-target");
+      });
+      btn.addEventListener("dragleave", () => btn.classList.remove("drop-target"));
+      btn.addEventListener("drop", (event) => {
+        if (!dragSession) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const source = dragSession;
+        dragSession = null;
+        clearDropMarks();
+        if (source === session) return;
+        void mergeInto(source, session);
+      });
       btn.addEventListener("click", () => {
         const same = activeConv && activeConv.length === ids.length && ids.every((id) => activeConv.includes(id));
         // 重复点不切换，但「看全部」在主界面那条上。
