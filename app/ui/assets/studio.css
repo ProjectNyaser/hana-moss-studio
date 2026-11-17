@@ -1601,18 +1601,20 @@ body.dock-full .chat-dock {
 /* 用两条边画箭头：不依赖字体里的符号，也不带方块底。 */
 .chat-more::before {
   content: "";
-  display: block;
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 6px;
   height: 6px;
-  margin: 2px auto;
   border-right: 1.6px solid currentColor;
   border-bottom: 1.6px solid currentColor;
-  transform: rotate(-45deg);
+  /* 绕自身中心转：位置不动，只有角度变。 */
+  transform: translate(-50%, -50%) rotate(-45deg);
   transition: transform 140ms var(--ui-ease);
 }
 .chat-more:hover { color: var(--ui-text); }
 .chat-more.on { color: var(--ui-accent); }
-.chat-more.on::before { transform: rotate(45deg); }
+.chat-more.on::before { transform: translate(-50%, -50%) rotate(45deg); }
 /* 气泡宽度不随展开变化：箭头就钉在原地转。 */
 .chat-extra { max-width: min(420px, 100%); }
 .chat-extra {
