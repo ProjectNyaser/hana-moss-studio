@@ -348,15 +348,18 @@ function renderChat() {
     : source;
   const jobs = scoped.filter((job) => job.status === "done" && job.output).slice().reverse();
   // 状态没变就不重建：轮询每三秒来一次，整体重绘会让图片重新加载、滚动跳动。
+  const liveJob = liveChatJob();
   const sig = JSON.stringify({
     ids: jobs.map((job) => job.id),
+    // 刚提交的那条还没有结果，只有它进了签名，占位才会立刻出现。
+    live: liveJob ? `${liveJob.id}:${liveJob.status}` : null,
     filter: chatFilter ? [...chatFilter] : null,
     scope: convScopeJobs ? convScopeJobs.length : null,
     start: convStartMs,
   });
   if (sig === renderChat.lastSig) return;
   renderChat.lastSig = sig;
-  if (!jobs.length) {
+  if (!jobs.length && !liveJob) {
     const empty = document.createElement("p");
     empty.className = "chat-empty";
     empty.textContent = "这一段还没有图。在下面写一句，出图会排在这里。";
@@ -430,7 +433,8 @@ function renderChat() {
   }
   // 正在跑的那一条也挂在末尾：人在会话页等图，不该什么也看不到。
   const live = liveChatJob();
-  if (live && !chatFilter) rows.push(...pendingRows(live));
+  // 从侧栏点开的是历史段，别把当前会话正在跑的占位塞进去。
+  if (live && !convScopeJobs) rows.push(...pendingRows(live));
   log.replaceChildren(...rows);
   if (stick) scroller.scrollTop = scroller.scrollHeight;
   chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
@@ -1567,6 +1571,8 @@ async function submitGenerate() {
       body: JSON.stringify(payload),
     }, 60000);
     toast("已提交，出图会排在会话里");
+    // 立刻拉一次状态：占位要在提交当刻就出现在会话末尾。
+    void api("/state").then((data) => render(data)).catch(() => {});
   } catch (error) {
     toast("提交失败：" + (error instanceof Error ? error.message : String(error)), "error");
   } finally {
