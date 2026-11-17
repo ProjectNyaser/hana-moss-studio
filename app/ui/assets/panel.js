@@ -2097,7 +2097,13 @@ function paintSessions() {
       thumb.className = "pn-hist-thumb";
       thumb.loading = "lazy";
       thumb.alt = "";
-      if (head.output) thumb.src = thumbUrl(head.output, 96);
+      if (head.output) {
+        thumb.src = thumbUrl(head.output, 96);
+        // 缩略图取不到就给个可见的占位，不要留一块空白让人以为图丢了。
+        thumb.addEventListener("error", () => thumb.classList.add("blank"));
+      } else {
+        thumb.classList.add("blank");
+      }
       const text = document.createElement("span");
       text.className = "pn-hist-text";
       const firstPrompt = session.jobs.find((job) => job.prompt)?.prompt ?? "";
