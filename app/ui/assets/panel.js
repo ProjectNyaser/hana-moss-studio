@@ -2194,7 +2194,9 @@ function paintSessions() {
           return null;
         }
       })();
-      btn.className = isBlank ? "pn-conv-row empty on" : "pn-conv-row";
+      btn.className = "pn-conv-row";
+      // 空会话就是当前这一段，与选中同一个标记。
+      if (isBlank) btn.classList.add("on");
       const ids = session.jobs.map((job) => job.id);
       if (activeConv && activeConv.length === ids.length && ids.every((id) => activeConv.includes(id))) {
         btn.classList.add("on");
