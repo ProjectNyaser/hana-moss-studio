@@ -1834,11 +1834,13 @@ let activeConv = null;
 const CONV_KEY = "hana-moss-studio.conv-start";
 const CONV_ID_KEY = "hana-moss-studio.conv-id";
 // 隔一阵再打开就是新对话：短时间内刷新沿用当前这段。
-// 打开就开一段新会话：旧的那些留在列表里。
+// 打开就开一段新会话；除非上一次主动选了「继续这一段」。
 try {
-  const now = Date.now();
-  localStorage.setItem(CONV_ID_KEY, `conv-${now.toString(36)}`);
-  localStorage.setItem("hana-moss-studio.fresh-at", String(now));
+  if (localStorage.getItem("hana-moss-studio.conv-pinned") !== "1") {
+    const now = Date.now();
+    localStorage.setItem(CONV_ID_KEY, `conv-${now.toString(36)}`);
+    localStorage.setItem("hana-moss-studio.fresh-at", String(now));
+  }
 } catch {
   /* 存不了就沿用旧的 */
 }
@@ -1945,6 +1947,49 @@ function closeConvMenu() {
   convMenuAnchor = null;
 }
 
+/** 之后出图都归到这一段；刷新也留在这里，直到再开新对话。 */
+function continueSession(session) {
+  try {
+    if (session.conv) localStorage.setItem(CONV_ID_KEY, session.conv);
+    localStorage.setItem("hana-moss-studio.conv-pinned", "1");
+  } catch {
+    /* 存不了就只在这次生效 */
+  }
+  blankConversation = false;
+  activeConv = session.jobs.map((job) => job.id);
+  editChannel?.postMessage({ type: "open-conversation", jobs: session.jobs });
+  paintSessions();
+  say(`后续出图归到「${sessionTitle(session)}」`);
+}
+
+/** 解除归属：图还在画廊，只是不再算某一段。 */
+async function dissolveSession(session) {
+  const names = session.jobs
+    .map((job) => job.output)
+    .filter(Boolean)
+    .map((output) => String(output).split(/[\\/]/).pop());
+  if (!names.length) return;
+  try {
+    const response = await fetch(`${base}/outputs/conv`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ names, conv: "" }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    say("已解散这一段，图仍在画廊");
+    if (session.conv) {
+      try {
+        if (localStorage.getItem(CONV_ID_KEY) === session.conv) blankConversation = true;
+      } catch {
+        /* 读不到就算了 */
+      }
+    }
+    await loadSessions();
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error), "bad");
+  }
+}
+
 function openConvMenu(session, anchor) {
   closeConvMenu();
   const menu = document.createElement("div");
@@ -1960,19 +2005,9 @@ function openConvMenu(session, anchor) {
     });
     menu.append(item);
   };
+  add("继续这一段", () => continueSession(session));
   add("重命名", () => startRename(session, anchor));
-  // 合并目标写进菜单文字：只说「上一段」，没人知道是哪一段。
-  const at = sessionsCache.indexOf(session);
-  const older = at >= 0 ? sessionsCache[at + 1] : null;
-  const newer = at > 0 ? sessionsCache[at - 1] : null;
-  const target = older ?? newer;
-  if (target) {
-    add(`并入「${sessionTitle(target)}」`, () => mergeInto(session, target));
-  }
-  // 只有一张的段拆不出东西，这个选项就不出现。
-  if (session.jobs.length > 1) {
-    add("把最新一张拆成新会话", () => splitSession(session));
-  }
+  add("解散这一段", () => dissolveSession(session));
   document.body.append(menu);
   convMenuAnchor = anchor;
   const rect = anchor.getBoundingClientRect();
@@ -2089,7 +2124,13 @@ function clearDropMarks() {
 }
 
 // 当前这一段还是空的：显式记着，不靠比较推断。
-let blankConversation = true;
+let blankConversation = (() => {
+  try {
+    return localStorage.getItem("hana-moss-studio.conv-pinned") !== "1";
+  } catch {
+    return true;
+  }
+})();
 
 /** 空会话在列表顶部留一行占位；有图或去点历史就收起。 */
 function withPlaceholder(sessions) {
@@ -2109,6 +2150,23 @@ function paintSessions() {
   const list = nodes.history;
   if (!list) return;
   const rows = withPlaceholder(sessionsCache);
+  // 数据没变就不动 DOM：轮询每三秒来一次，整体重建会让缩略图闪、菜单被收、
+  // 正在改的名字被抹掉。
+  const sig = JSON.stringify({
+    rows: rows.map((item) => [
+      item.key,
+      item.conv ?? "",
+      item.placeholder ?? false,
+      item.jobs.length,
+      item.jobs[item.jobs.length - 1]?.status ?? "",
+      item.jobs.find((job) => job.prompt)?.prompt ?? "",
+    ]),
+    active: activeConv,
+    blank: blankConversation,
+    names: convNameMap(),
+  });
+  if (sig === paintSessions.lastSig) return;
+  paintSessions.lastSig = sig;
   if (!rows.length) {
     const empty = document.createElement("p");
     empty.className = "pn-hist-empty";
@@ -3155,6 +3213,7 @@ nodes.newConv?.addEventListener("click", () => {
     localStorage.setItem(CONV_KEY, String(now));
     localStorage.setItem(CONV_ID_KEY, `conv-${now.toString(36)}`);
     localStorage.setItem("hana-moss-studio.fresh-at", String(now));
+    localStorage.removeItem("hana-moss-studio.conv-pinned");
     blankConversation = true;
   } catch {
     /* 存不了就只刷新列表 */

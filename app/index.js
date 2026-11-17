@@ -1911,13 +1911,17 @@ function state() {
         ? body.names.filter((name) => typeof name === "string" && name.trim())
         : [];
       const conv = String(body?.conv ?? "").trim();
-      if (!names.length || !conv) return c.json({ ok: false, error: "缺少 names 或 conv" }, 400);
+      if (!names.length) return c.json({ ok: false, error: "缺少 names" }, 400);
       let changed = 0;
       for (const name of names) {
         const target = join(outputsDir, name);
         if (!existsSync(target)) continue;
         const current = readStudioMeta(target) ?? {};
-        if (writePngMeta(target, "moss-studio", JSON.stringify({ ...current, conv }))) changed += 1;
+        const next = { ...current };
+        // conv 为空就是解除归属：图还在画廊里，只是不再算某一段。
+        if (conv) next.conv = conv;
+        else delete next.conv;
+        if (writePngMeta(target, "moss-studio", JSON.stringify(next))) changed += 1;
       }
       if (changed) {
         store.invalidate?.();

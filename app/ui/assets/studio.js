@@ -343,6 +343,15 @@ function renderChat() {
     ? source.filter((job) => (Date.parse(job.createdAt ?? "") || 0) >= convStartMs)
     : source;
   const jobs = scoped.filter((job) => job.status === "done" && job.output).slice().reverse();
+  // 状态没变就不重建：轮询每三秒来一次，整体重绘会让图片重新加载、滚动跳动。
+  const sig = JSON.stringify({
+    ids: jobs.map((job) => job.id),
+    filter: chatFilter ? [...chatFilter] : null,
+    scope: convScopeJobs ? convScopeJobs.length : null,
+    start: convStartMs,
+  });
+  if (sig === renderChat.lastSig) return;
+  renderChat.lastSig = sig;
   if (!jobs.length) {
     const empty = document.createElement("p");
     empty.className = "chat-empty";
