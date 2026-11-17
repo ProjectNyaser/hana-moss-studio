@@ -1434,6 +1434,17 @@ function applyEditState(state) {
 // 输入框要跨页签常驻：把它从画布视图里提到 main 末尾。
 const composerHost = document.getElementById("composer");
 if (composerHost) document.querySelector("main")?.append(composerHost);
+// 画布也是浮层：可见时把高度写进变量，会话区据此让位。
+const dockHost = document.getElementById("chat-dock");
+if (dockHost) {
+  const syncDockHeight = () => {
+    document.documentElement.style.setProperty("--dock-h", dockHost.hidden ? "0px" : `${Math.round(dockHost.getBoundingClientRect().height)}px`);
+  };
+  syncDockHeight();
+  if (typeof ResizeObserver === "function") new ResizeObserver(syncDockHeight).observe(dockHost);
+  new MutationObserver(syncDockHeight).observe(dockHost, { attributes: true, attributeFilter: ["hidden"] });
+}
+
 // 输入框是浮层：把它真实高度写进变量，内容按这个值让位。
 if (composerHost) {
   const syncComposerHeight = () => {
