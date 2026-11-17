@@ -1597,6 +1597,8 @@ body {
   padding: 0 6px 4px;
 }
 .composer-extra[hidden] { display: none; }
+/* 两行各自一排，不挤在一起。 */
+.composer-extra + .composer-extra { padding-top: 0; }
 .composer-more {
   margin: 0 0 2px 6px;
   padding: 2px 0;

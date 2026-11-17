@@ -1419,19 +1419,22 @@ function pushExtras() {
 composer.negative?.addEventListener("input", pushExtras);
 composer.seed?.addEventListener("input", pushExtras);
 
-document.getElementById("composer-extra-close")?.addEventListener("click", () => {
-  const box = document.getElementById("composer-extra");
-  if (box) box.hidden = true;
-  markHiddenExtra();
-});
+// 两行各自收起：反向提示词与种子互不影响。
+for (const id of ["composer-negative-close", "composer-seed-close"]) {
+  document.getElementById(id)?.addEventListener("click", (event) => {
+    const row = event.currentTarget.closest(".composer-extra");
+    if (row) row.hidden = true;
+    markHiddenExtra();
+  });
+}
 
 /** 收起后如果有值，给加号一个圆点，不让参数无声无息藏着。 */
 function markHiddenExtra() {
-  const box = document.getElementById("composer-extra");
-  const hidden = Boolean(box?.hidden);
-  const has =
-    (composer.negative?.value ?? "").trim() !== "" || (composer.seed?.value ?? "").trim() !== "";
-  composer.plus?.classList.toggle("has-extra", hidden && has);
+  const negRow = document.getElementById("composer-extra-negative");
+  const seedRow = document.getElementById("composer-extra-seed");
+  const hiddenNeg = Boolean(negRow?.hidden) && (composer.negative?.value ?? "").trim() !== "";
+  const hiddenSeed = Boolean(seedRow?.hidden) && (composer.seed?.value ?? "").trim() !== "";
+  composer.plus?.classList.toggle("has-extra", hiddenNeg || hiddenSeed);
 }
 
 composer.send?.addEventListener("click", sendCompose);
@@ -1463,17 +1466,20 @@ composer.menu?.addEventListener("click", (event) => {
   } else if (act === "reference") {
     document.getElementById("composer-ref-file")?.click();
   } else if (act === "negative" || act === "seed") {
-    // 两者不是必填，平时不占位。再点同一项就收起来。
-    const box = document.getElementById("composer-extra");
+    // 两者各自一行、各自收起，不连坐。
+    const box =
+      act === "negative"
+        ? document.getElementById("composer-extra-negative")
+        : document.getElementById("composer-extra-seed");
     if (!box) return;
     const field = act === "negative" ? composer.negative : composer.seed;
     const filled = (field?.value ?? "").trim() !== "";
     if (!box.hidden && !filled) {
       box.hidden = true;
-      return;
+    } else {
+      box.hidden = false;
+      field?.focus();
     }
-    box.hidden = false;
-    field?.focus();
     markHiddenExtra();
   }
 });
@@ -1973,10 +1979,11 @@ function renderComposerModel() {
   if (composer.seed && document.activeElement !== composer.seed) {
     composer.seed.value = defaults.seed != null && defaults.seed !== "" ? String(defaults.seed) : "";
   }
-  // 已经有值时把这一行展开，不能让内容藏着看不见。
-  const box = document.getElementById("composer-extra");
-  const used = Boolean(String(defaults.negativePrompt ?? "").trim()) || (defaults.seed != null && defaults.seed !== "");
-  if (box && used) box.hidden = false;
+  // 已经有值的那一行自己展开：两个参数不绑在一起。
+  const negBox = document.getElementById("composer-extra-negative");
+  if (negBox) negBox.hidden = !String(defaults.negativePrompt ?? "").trim();
+  const seedBox = document.getElementById("composer-extra-seed");
+  if (seedBox) seedBox.hidden = !(defaults.seed != null && defaults.seed !== "");
   renderCpop();
 }
 

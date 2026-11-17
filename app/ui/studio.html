@@ -106,10 +106,13 @@
 
       <div class="composer" id="composer">
         <div class="composer-chips" id="composer-chips" hidden></div>
-        <div class="composer-extra" id="composer-extra" hidden>
+        <div class="composer-extra" id="composer-extra-negative" hidden>
           <input id="composer-negative" type="text" placeholder="反向提示词（可选）">
+          <button class="composer-extra-close" id="composer-negative-close" type="button" title="收起">×</button>
+        </div>
+        <div class="composer-extra" id="composer-extra-seed" hidden>
           <input id="composer-seed" type="number" min="0" placeholder="种子">
-          <button class="composer-extra-close" id="composer-extra-close" type="button" title="收起">×</button>
+          <button class="composer-extra-close" id="composer-seed-close" type="button" title="收起">×</button>
         </div>
         <textarea id="composer-input" rows="1" placeholder="描述画面，或者把图拖进来改"></textarea>
         <div class="composer-tools">
