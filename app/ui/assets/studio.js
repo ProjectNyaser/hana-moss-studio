@@ -1273,7 +1273,8 @@ function renderBaseBar() {
   nodes.baseInfo.textContent = bits.join(" · ");
   const painting = edit.mode !== null;
   nodes.basePaint.classList.toggle("on", painting);
-  nodes.basePaint.textContent = painting ? "退出蒙版" : "画蒙版";
+  nodes.basePaint.textContent = painting ? "完成" : "蒙版";
+  nodes.basePaint.title = painting ? "结束涂抹，保留已画的部分" : "在底图上抹出要重画的地方";
   nodes.baseErase.hidden = !painting;
   nodes.baseErase.classList.toggle("on", edit.mode === "erase");
   nodes.baseBrushField.hidden = !painting;
