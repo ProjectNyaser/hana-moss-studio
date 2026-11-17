@@ -1742,6 +1742,22 @@ async function submitGenerate() {
     layChannel?.postMessage({ type: "compose-send", text: prompt, base: edit.remotePath ?? null });
     return;
   }
+  // 请求体先立好：占位框和气泡都要用这里的尺寸与参数。
+  const preset = latest?.settings ?? {};
+  const payload = { prompt, negativePrompt: composer.negative?.value ?? "" };
+  if (preset.width && preset.height) {
+    payload.width = preset.width;
+    payload.height = preset.height;
+  }
+  if (preset.steps) payload.steps = preset.steps;
+  try {
+    const conv = currentConv ?? localStorage.getItem("hana-moss-studio.conv-id");
+    if (conv) payload.conv = conv;
+  } catch {
+    /* 没有也罢 */
+  }
+  const seedText = (composer.seed?.value ?? "").trim();
+  if (seedText) payload.seed = Number(seedText);
   // 发出新的一句就是回到当前会话：不再停在从侧栏点开的历史段。
   convScopeJobs = null;
   chatFilter = null;
@@ -1773,23 +1789,7 @@ async function submitGenerate() {
   submitting = true;
   if (composer.send) composer.send.disabled = true;
   try {
-    const payload = { prompt, negativePrompt: composer.negative?.value ?? "" };
-    // 这次要生成多大，提交时就定下来：占位按它立框，成图也按它出来。
-    const preset = latest?.settings ?? {};
-    if (preset.width && preset.height) {
-      payload.width = preset.width;
-      payload.height = preset.height;
-    }
-    if (preset.steps) payload.steps = preset.steps;
-    // 会话 id 跟着走：出图后才知道该归到哪一段。
-    try {
-      const conv = currentConv ?? localStorage.getItem("hana-moss-studio.conv-id");
-      if (conv) payload.conv = conv;
-    } catch {
-      /* 没有也罢 */
-    }
-    const seedText = (composer.seed?.value ?? "").trim();
-    if (seedText) payload.seed = Number(seedText);
+    // 需要 await 的附件在这里补进 payload。
     if (edit.remotePath) {
       payload.initImage = edit.remotePath;
       payload.strength = 0.6;

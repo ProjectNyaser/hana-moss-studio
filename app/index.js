@@ -1652,8 +1652,11 @@ function state() {
         if (data.length > 64 * 1024 * 1024) return c.json({ error: "文件太大（上限 64 MB）" }, 413);
         // 只认 PNG：界面自己画的就是 PNG，别的格式不猜。
         if (data.readUInt32BE(0) !== 0x89504e47) return c.json({ error: "只接受 PNG" }, 415);
-        const name = `${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.png`;
-        writeFileSync(join(inputsDir, name), data);
+        // 按内容命名：同一张图反复用只留一份。
+        const hash = createHash("sha256").update(data).digest("hex").slice(0, 16);
+        const name = `${kind}-${hash}.png`;
+        const target = join(inputsDir, name);
+        if (!existsSync(target)) writeFileSync(target, data);
         return c.json({ ok: true, kind, name, path: join(inputsDir, name), url: `/${APP_ID}/inputs/${name}` });
       } catch (error) {
         return c.json({ error: message(error) }, 400);
