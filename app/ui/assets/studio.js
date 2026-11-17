@@ -3592,10 +3592,24 @@ function loadJob(job) {
 }
 
 /** 以这张为参考：侧栏把文件读成位图，按当前目标尺寸裁好后当 init_image。 */
+/** 把一张已出的图当底图：侧栏管提交参数，画布这边同时把图摆上。 */
 function useAsReference(job) {
   if (!job?.output) return;
   channel?.postMessage({ type: "reference", name: job.output });
   setDock(true);
+  void openEditFromJob(job);
+}
+
+/** 从输出文件取回像素，走和拖图进去同一条改图台路径。 */
+async function openEditFromJob(job) {
+  try {
+    const response = await fetch(outputUrl(job.output));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    await openEditSheet(new window.File([blob], job.output, { type: blob.type || "image/png" }));
+  } catch (error) {
+    toast(`这张图打不开：${error instanceof Error ? error.message : String(error)}`, "error");
+  }
 }
 
 /** 编辑参考：交给侧栏当 references 的第一张（需要编辑适配器在 LoRA 里）。 */
