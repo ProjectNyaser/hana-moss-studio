@@ -1833,11 +1833,14 @@ let sessionsAt = 0;
 let activeConv = null;
 const CONV_KEY = "hana-moss-studio.conv-start";
 const CONV_ID_KEY = "hana-moss-studio.conv-id";
-// 页面真正打开一次就换一个会话 id：上次那些留在列表里，这次从空白开始。
+// 隔一阵再打开就是新对话：短时间内刷新沿用当前这段。
 try {
-  if (!sessionStorage.getItem("hana-moss-studio.conv-fresh")) {
-    sessionStorage.setItem("hana-moss-studio.conv-fresh", "1");
-    localStorage.setItem(CONV_ID_KEY, `conv-${Date.now().toString(36)}`);
+  const seenKey = "hana-moss-studio.seen-panel";
+  const last = Number(localStorage.getItem(seenKey) ?? 0);
+  const now = Date.now();
+  localStorage.setItem(seenKey, String(now));
+  if (!last || now - last > 5 * 60 * 1000) {
+    localStorage.setItem(CONV_ID_KEY, `conv-${now.toString(36)}`);
   }
 } catch {
   /* 存不了就沿用旧的 */

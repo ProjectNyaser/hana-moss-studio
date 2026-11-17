@@ -249,12 +249,13 @@ function setDock(open) {
   requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
 }
 
-// 打开就停在一段空白的新对话上；同一页面内刷新不重来。
+// 隔一阵再打开就停在一段空白的新对话上；短时间内刷新沿用当前这段。
 try {
-  if (!sessionStorage.getItem("hana-moss-studio.studio-fresh")) {
-    sessionStorage.setItem("hana-moss-studio.studio-fresh", "1");
-    convStartMs = Date.now();
-  }
+  const seenKey = "hana-moss-studio.seen-studio";
+  const last = Number(localStorage.getItem(seenKey) ?? 0);
+  const now = Date.now();
+  localStorage.setItem(seenKey, String(now));
+  if (!last || now - last > 5 * 60 * 1000) convStartMs = now;
 } catch {
   /* 存不了就按旧的来 */
 }
