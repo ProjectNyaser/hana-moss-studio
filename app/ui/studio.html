@@ -27,8 +27,16 @@
       <div class="chat-dock" id="chat-dock" hidden>
         <div class="chat-dock-head">
           <span class="chat-dock-title">画布</span>
-          <button class="chat-dock-close" id="chat-dock-full" type="button" title="全屏画布">全屏</button>
-          <button class="chat-dock-close" id="chat-dock-close" type="button" title="收起画布">收起</button>
+          <button class="chat-dock-icon" id="chat-dock-full" type="button" title="全屏画布">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 2.8H2.8V6M10 2.8h3.2V6M6 13.2H2.8V10M10 13.2h3.2V10"/>
+            </svg>
+          </button>
+          <button class="chat-dock-icon" id="chat-dock-close" type="button" title="收起画布">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4.4 6.4L8 10l3.6-3.6"/>
+            </svg>
+          </button>
         </div>
         <div class="chat-dock-body" id="chat-dock-body"></div>
       </div>
