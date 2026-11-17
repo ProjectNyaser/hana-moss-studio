@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,7 +31,15 @@ cpSync(source, out, { recursive: true });
 
 // 页面靠这个文件判定「装的是不是新构建」：变了就自己刷一次，
 // 不用用户手动找刷新按钮——iframe 里的旧 DOM 不会自己长出新代码。
-writeFileSync(join(out, "ui", "build.json"), JSON.stringify({ stamp: Date.now() }, null, 0));
+const stamp = Date.now();
+// 静态资源带上构建号：不改 URL 的话，浏览器会一直用缓存里的旧脚本。
+for (const name of readdirSync(join(out, "ui"))) {
+  if (!name.endsWith(".html")) continue;
+  const file = join(out, "ui", name);
+  const html = readFileSync(file, "utf8").replace(/\?v=\d+/g, `?v=${stamp}`);
+  writeFileSync(file, html);
+}
+writeFileSync(join(out, "ui", "build.json"), JSON.stringify({ stamp }, null, 0));
 
 console.log(`打包完成：${out}`);
 console.log(`${manifest.name}（${manifest.id}）v${manifest.version}`);

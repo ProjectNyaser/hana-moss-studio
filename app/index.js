@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join, basename, dirname } from "node:path";
+import { join, basename, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineApp } from "./sdk/app-contract/server-client.js";
 import { Engine, buildGenerateParams } from "./lib/engine.js";
@@ -12,6 +12,7 @@ import { shrinkToWebp } from "./lib/image.js";
 import { createSession } from "./lib/session.js";
 import { checkpointPaths, readCheckpoint, runLatentGenerate, runLatentInpaint, writePng } from "./lib/latent.js";
 import { decode as decodePng } from "fast-png";
+import { readPngText, readStudioMeta, writePngMeta } from "./lib/outputs.js";
 
 export const name = "hana-moss-studio";
 
@@ -573,6 +574,8 @@ export default defineApp(async (sdk) => {
       maskEncoding: gen.maskEncoding,
       strength: clampFloat(input?.strength, 0.05, 1, 0.6),
       resize: VALUES.resize.includes(input?.resize) ? input.resize : "crop",
+      // 会话 id：出图后要写进 PNG，否则重启就不知道这张图属于哪一段。
+      conv: typeof input?.conv === "string" && input.conv ? input.conv : null,
       ...(notices.length ? { notices } : {}),
     };
     // 引擎的高清修正要的是具体目标尺寸，不是倍数，这里先算好。
@@ -593,8 +596,15 @@ export default defineApp(async (sdk) => {
   }
 
   function submit(input) {
+    // 早一步对齐档位与权重：错配的组合引擎要到采样才回 invalid_argument，
+    // 那时用户看到的是一句英文，而这里能把它直接改成能跑的组合。
+    const tierFix = installer.reconcileTier();
     const settings = store.getSettings();
     const record = buildRecord(input, settings);
+    if (tierFix) {
+      const note = `精度档 ${tierFix.from} 需要 bf16 权重，已按手里的权重改成 ${tierFix.to}`;
+      record.notices = [...(record.notices ?? []), note];
+    }
     const id = `mj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const fileName = `${id}.png`;
     Object.assign(record, { id, status: "queued", createdAt: new Date().toISOString(), output: fileName });
@@ -690,7 +700,51 @@ export default defineApp(async (sdk) => {
         const report = pickReport(result.report);
         store.upsertJob({ id: job.id, status: "done", finishedAt: new Date().toISOString(), elapsedMs, report });
         // 出图之后就把缩略图做出来，打开画廊時不必现等。
-        void ensureThumb(join(outputsDir, job.output));
+        // 队列里的 output 是绝对路径（相对的是记录里的文件名），先认清楚再用。
+        const pngPath = isAbsolute(job.output) ? job.output : join(outputsDir, job.output);
+        void ensureThumb(pngPath);
+        // 引擎这一版不再写 generation 块：参数与来源由这里补上，
+        // 不然重启之后记录就只剩一张图，提示词与底图全丢。
+        {
+          const png = pngPath;
+          const report = result.report ?? {};
+          const had = readPngText(png)?.generation ?? null;
+          // 每次都写：引擎自己写的那份字段不全，两边合起来以请求参数为准。
+          const meta = {
+            ...(had ?? {}),
+            prompt: job.prompt ?? had?.prompt ?? "",
+            negative_prompt: job.negativePrompt ?? had?.negative_prompt ?? "",
+            width: job.width ?? had?.width ?? null,
+            height: job.height ?? had?.height ?? null,
+            steps: job.steps ?? had?.steps ?? null,
+            cfg: job.cfg ?? had?.cfg ?? null,
+            seed: report.seedUsed ?? job.seed ?? had?.seed ?? null,
+            sampler: job.sampler ?? had?.sampler ?? null,
+            scheduler: job.scheduler ?? had?.scheduler ?? null,
+            shift: job.shift ?? had?.shift ?? null,
+            engine: { ...(had?.engine ?? {}), tier: report.tier ?? had?.engine?.tier ?? null },
+          };
+          try {
+            writePngMeta(png, "generation", JSON.stringify(meta));
+          } catch {
+            /* 写不进去不影响图本身 */
+          }
+          const conv = job.conv ?? job.input?.conv ?? null;
+          if (conv) {
+            const origin = {
+              conv: String(conv),
+              base: job.initImage ?? null,
+              mask: job.mask ?? null,
+              refs: Array.isArray(job.references) ? job.references : [],
+              parent: job.parent ?? null,
+            };
+            try {
+              writePngMeta(png, "moss-studio", JSON.stringify(origin));
+            } catch {
+              /* 同上 */
+            }
+          }
+        }
         // 多张（component session 的 batch）：其余几张也各记一条，画廊里能单独点开。
         const extras = Array.isArray(result.outputs) ? result.outputs.slice(1) : [];
         if (extras.length) {
@@ -707,6 +761,27 @@ export default defineApp(async (sdk) => {
               elapsedMs,
             });
             void ensureThumb(path);
+            // 额外几张也是图，重启后不能只剩一张皮。
+            const seedFor = (Number.isFinite(job.seed) ? job.seed : 42) + index + 1;
+            const extraMeta = {
+              prompt: job.prompt ?? "",
+              negative_prompt: job.negativePrompt ?? "",
+              width: job.width ?? null,
+              height: job.height ?? null,
+              steps: job.steps ?? null,
+              cfg: job.cfg ?? null,
+              seed: seedFor,
+              sampler: job.sampler ?? null,
+              scheduler: job.scheduler ?? null,
+              shift: job.shift ?? null,
+              engine: { tier: result.report?.tier ?? null },
+            };
+            try {
+              writePngMeta(path, "generation", JSON.stringify(extraMeta));
+              if (job.conv) writePngMeta(path, "moss-studio", JSON.stringify({ conv: String(job.conv) }));
+            } catch {
+              /* 写不进去不影响图本身 */
+            }
           }
         }
         if (entry) {
@@ -810,6 +885,8 @@ export default defineApp(async (sdk) => {
 
   function slimJob(job) {
     if (!job || typeof job !== "object") return job;
+    // 图已经不在了就别再列：文件才是记录的真相源。
+    if (job.output && !existsSync(join(outputsDir, job.output))) return null;
     // 记录有两种存法：早期是扁平字段，后来是 params 里一层，两边都要认。
     const p = job.params ?? {};
     return {
@@ -826,6 +903,7 @@ export default defineApp(async (sdk) => {
       sampler: job.sampler ?? p.sampler ?? null,
       scheduler: job.scheduler ?? p.scheduler ?? null,
       shift: job.shift ?? p.shift ?? null,
+      origin: job.origin ?? null,
       stepCache: job.stepCache ?? "off",
       loras: Array.isArray(job.loras) ? job.loras : [],
       control: job.control ? { kind: job.control.kind ?? null, images: job.control.images?.length ?? 0 } : null,
@@ -925,7 +1003,7 @@ function state() {
     jobs: (() => {
       const pending = allJobs.filter((job) => job.status !== "done" && job.status !== "cancelled");
       const done = allJobs.filter((job) => job.status === "done").slice(0, 2);
-      return [...pending, ...done].map(slimJob);
+      return [...pending, ...done].map(slimJob).filter(Boolean);
     })(),
     // 全量记录数：state 只带前面那些，界面上的总数不能跟着它算。
     jobTotal: allJobs.length,
@@ -1167,7 +1245,7 @@ function state() {
       return c.json({
         total: all.length,
         offset,
-        jobs: all.slice(offset, offset + limit).map(slimJob),
+        jobs: all.slice(offset, offset + limit).map(slimJob).filter(Boolean),
       });
     });
 
@@ -1814,6 +1892,28 @@ function state() {
       store.removeJob(id);
       schedulePush(0);
       return c.json(state());
+    });
+
+    // 手动归类：把这几张图的会话 id 改成同一个，图片文件本身不动。
+    app.post(`/${APP_ID}/outputs/conv`, async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const names = Array.isArray(body?.names)
+        ? body.names.filter((name) => typeof name === "string" && name.trim())
+        : [];
+      const conv = String(body?.conv ?? "").trim();
+      if (!names.length || !conv) return c.json({ ok: false, error: "缺少 names 或 conv" }, 400);
+      let changed = 0;
+      for (const name of names) {
+        const target = join(outputsDir, name);
+        if (!existsSync(target)) continue;
+        const current = readStudioMeta(target) ?? {};
+        if (writePngMeta(target, "moss-studio", JSON.stringify({ ...current, conv }))) changed += 1;
+      }
+      if (changed) {
+        store.invalidate?.();
+        schedulePush(0);
+      }
+      return c.json({ ok: true, changed });
     });
   });
 

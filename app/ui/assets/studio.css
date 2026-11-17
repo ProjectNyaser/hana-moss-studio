@@ -1392,6 +1392,30 @@ body {
   gap: 18px;
   padding: 22px max(20px, calc((100% - 860px) / 2)) 18px;
 }
+/* 从侧栏点进来的那一小段范围说明：一条，不抢地方。 */
+.chat-scope {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px max(20px, calc((100% - 860px) / 2)) 0;
+  font-size: 12px;
+  color: var(--ui-text-3);
+}
+.chat-scope[hidden] { display: none; }
+.chat-scope-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-scope-all {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.chat-scope-all:hover { border-color: var(--ui-accent); color: var(--ui-text); }
 .chat-row { display: flex; }
 .chat-row.user { justify-content: flex-end; }
 .chat-row.bot { justify-content: flex-start; }
@@ -1413,6 +1437,19 @@ body {
   background: var(--ui-overlay);
 }
 .chat-acts { display: flex; gap: 6px; }
+/* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
+.chat-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 280px;
+  min-height: 150px;
+  border: 1px dashed var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-overlay);
+  color: var(--ui-text-3);
+  font-size: 12px;
+}
 .chat-act {
   padding: 3px 9px;
   border: 1px solid var(--ui-line);
@@ -1526,7 +1563,7 @@ body {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  min-height: 52px;
+  min-height: 34px;
   max-height: 132px;
   resize: none;
   margin: 0;

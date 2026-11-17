@@ -152,6 +152,7 @@ export const MOSSIMAGE = {
       repo: "Comfy-Org/MOSS-Image",
       path: "text_encoders/qwen3.5_9b_int8_convrot.safetensors",
       bytes: 9748121532,
+      tier: "high",
     },
     {
       id: "te-w4a8",
@@ -161,6 +162,7 @@ export const MOSSIMAGE = {
       repo: "Comfy-Org/MOSS-Image",
       path: "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
       bytes: 7343591088,
+      tier: "turbo",
     },
     {
       id: "te-bf16",

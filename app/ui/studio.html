@@ -6,7 +6,7 @@
   <title>苔室</title>
   <script src="./assets/theme-boot.js"></script>
   <link rel="stylesheet" href="./assets/hana-theme.css">
-  <link rel="stylesheet" href="./assets/studio.css">
+  <link rel="stylesheet" href="./assets/studio.css?v=2026111622">
 </head>
 <body>
   <main class="studio-column">
@@ -24,6 +24,9 @@
     <div class="top-progress" id="top-progress" hidden><i id="top-progress-bar"></i></div>
 
     <section class="studio-view" id="view-chat">
+      <div class="chat-scope" id="chat-scope" hidden>
+        <span class="chat-scope-text" id="chat-scope-text"></span>
+      </div>
       <div class="chat-log" id="chat-log"></div>
     </section>
 
@@ -146,8 +149,7 @@
           </button>
           <button class="cbtn" id="composer-sample" type="button" title="采样器与调度器">
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="8" cy="8" r="5.4"/>
-              <path d="M8 5.6v4.8M5.9 8h4.2"/>
+              <path d="M2.2 8.6h2.1l1.3-3.4 2.1 6.2 1.5-4 1.2 1.2h3.4"/>
             </svg>
           </button>
           <span class="spacer"></span>
@@ -300,6 +302,6 @@
   <div class="ctx-menu" id="ctx-menu" hidden role="menu"></div>
   <div class="toast" id="toast" hidden role="status"></div>
 
-  <script type="module" src="./assets/studio.js"></script>
+  <script type="module" src="./assets/studio.js?v=2026111622"></script>
 </body>
 </html>

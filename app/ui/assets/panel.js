@@ -1,7 +1,7 @@
 // 苔室侧栏：生成设置与运行状态都在这条侧栏里，工作区那边只留画布与画廊。
 // 数据：GET /hana-moss-studio/state（轮询 1.5s）；写操作走同前缀的 POST 路由。
 import { hana } from "./sdk.js";
-import { startLive, inputUrl, outputUrl } from "./live.js";
+import { startLive, inputUrl, outputUrl, thumbUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
 const API = "/hana-moss-studio";
@@ -1821,7 +1821,22 @@ async function refreshCheckpoint(force = false) {
 /** 侧栏是会话列表：当前会话从「新对话」那一刻算起，更早的按间隔归段。 */
 let sessionsCache = [];
 let sessionsAt = 0;
+let activeConv = null;
 const CONV_KEY = "hana-moss-studio.conv-start";
+const CONV_ID_KEY = "hana-moss-studio.conv-id";
+
+/** 当前会话的 id：开新对话时换一个，出图时随请求写进元数据。 */
+function convId() {
+  try {
+    const existing = localStorage.getItem(CONV_ID_KEY);
+    if (existing) return existing;
+    const fresh = `conv-${Date.now().toString(36)}`;
+    localStorage.setItem(CONV_ID_KEY, fresh);
+    return fresh;
+  } catch {
+    return `conv-${Date.now().toString(36)}`;
+  }
+}
 
 function convStart() {
   try {
@@ -1832,38 +1847,191 @@ function convStart() {
 }
 
 function groupSessions(jobs) {
-  const GAP = 30 * 60 * 1000;
-  const mark = convStart();
   const sorted = jobs
     .filter((job) => job.status === "done" && job.output)
     .sort((a, b) => (Date.parse(b.createdAt ?? "") || 0) - (Date.parse(a.createdAt ?? "") || 0));
-  const out = [];
+  // 依据是图片自己声明的会话 id：有的并到一段，没的各自独立。
+  const groups = new Map();
+  const singles = [];
   for (const job of sorted) {
     const t = Date.parse(job.createdAt ?? "") || 0;
-    const last = out[out.length - 1];
-    // 当前会话不受间隔限制：从开新对话起，全部归一段。
-    const sameConv = last && (last.current || (mark > 0 && t > mark) || last.t - t <= GAP);
-    if (!sameConv) {
-      out.push({ t, jobs: [job], current: mark > 0 && t > mark });
-    } else {
-      last.jobs.push(job);
-      last.t = t;
+    const conv = job.origin?.conv ?? null;
+    if (!conv) {
+      singles.push({ key: `solo:${job.id}`, t, jobs: [job] });
+      continue;
     }
+    const found = groups.get(conv);
+    if (found) {
+      found.jobs.push(job);
+      continue;
+    }
+    groups.set(conv, { key: conv, conv, t, jobs: [job] });
   }
-  return out;
+  // 位置按这段最早的图算：拆开或合并后一段不会突然跳到顶上。
+  const stamp = (item) => (item.jobs.length ? Math.min(...item.jobs.map((job) => Date.parse(job.createdAt ?? "") || 0)) : 0);
+  return [...groups.values(), ...singles]
+    .map((item) => ({ ...item, t: stamp(item) }))
+    .sort((a, b) => b.t - a.t);
 }
 
-async function loadSessions(force = false) {
-  if (!force && Date.now() - sessionsAt < 4000) return;
-  sessionsAt = Date.now();
+const CONV_NAMES_KEY = "hana-moss-studio.conv-names";
+
+function convNameMap() {
   try {
-    const response = await hana.api.fetch(`${API}/jobs?offset=0&limit=200`);
+    const raw = JSON.parse(localStorage.getItem(CONV_NAMES_KEY) ?? "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function setConvName(key, name) {
+  const map = convNameMap();
+  if (name) map[key] = name;
+  else delete map[key];
+  try {
+    localStorage.setItem(CONV_NAMES_KEY, JSON.stringify(map));
+  } catch {
+    /* 存不了就算了，只影响显示 */
+  }
+}
+
+async function loadSessions() {
+  // 一张图一段，全量从 /jobs 拿：state 只带最近两条，不够当记录看。
+  try {
+    const response = await hana.api.fetch(`${API}/jobs?offset=0&limit=100`);
+    if (!response.ok) throw new Error(`jobs ${response.status}`);
     const page = await response.json();
     sessionsCache = groupSessions(Array.isArray(page.jobs) ? page.jobs : []);
     paintSessions();
-  } catch {
-    /* 拉不到就保持现状 */
+  } catch (error) {
+    const box = nodes.history;
+    if (box) box.textContent = `记录拉取失败：${error?.message ?? error}`;
   }
+}
+
+let convMenu = null;
+
+function closeConvMenu() {
+  convMenu?.remove();
+  convMenu = null;
+}
+
+function openConvMenu(session, anchor) {
+  closeConvMenu();
+  const menu = document.createElement("div");
+  menu.className = "pn-conv-menu";
+  const add = (label, run) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "pn-conv-menu-item";
+    item.textContent = label;
+    item.addEventListener("click", () => {
+      closeConvMenu();
+      void run();
+    });
+    menu.append(item);
+  };
+  add("重命名", () => startRename(session, anchor));
+  // 合并目标写进菜单文字：只说「上一段」，没人知道是哪一段。
+  const at = sessionsCache.indexOf(session);
+  const older = at >= 0 ? sessionsCache[at + 1] : null;
+  const newer = at > 0 ? sessionsCache[at - 1] : null;
+  const target = older ?? newer;
+  if (target) {
+    add(`并入「${sessionTitle(target)}」`, () => mergeInto(session, target));
+  }
+  // 只有一张的段拆不出东西，这个选项就不出现。
+  if (session.jobs.length > 1) {
+    add("把最新一张拆成新会话", () => splitSession(session));
+  }
+  document.body.append(menu);
+  const rect = anchor.getBoundingClientRect();
+  const top = Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8);
+  const left = Math.max(8, Math.min(rect.left - 96, window.innerWidth - menu.offsetWidth - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${Math.max(8, top)}px`;
+  convMenu = menu;
+}
+
+document.addEventListener("click", () => closeConvMenu());
+
+function startRename(session, anchor) {
+  const row = anchor.closest(".pn-conv-row");
+  const text = row?.querySelector(".pn-hist-text");
+  if (!text) return;
+  const input = document.createElement("input");
+  input.className = "pn-conv-rename";
+  input.value = convNameMap()[session.key] ?? session.jobs[0]?.prompt ?? "";
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    if (commit) setConvName(session.key, input.value.trim());
+    paintSessions();
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener("blur", () => finish(true));
+  text.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+async function assignConv(names, conv) {
+  const list = names.filter(Boolean);
+  if (!list.length) return;
+  try {
+    await post("/outputs/conv", { names: list, conv });
+  } catch (error) {
+    say?.(`改归组失败：${error?.message ?? error}`, "bad");
+  }
+  await loadSessions();
+}
+
+/** 一段的显示名：改过的名字优先，否则取首条提示词。 */
+function sessionTitle(session) {
+  const raw = convNameMap()[session.key] ?? session.jobs[0]?.prompt ?? "无提示词";
+  const text = String(raw).trim() || "无提示词";
+  return text.length > 10 ? `${text.slice(0, 10)}…` : text;
+}
+
+/** 把这一段与目标段写成同一个会话 id：目标没有 id 就现编一个。 */
+async function mergeInto(session, target) {
+  if (!target || target === session) return;
+  const conv = target.conv ?? `conv-${Date.now().toString(36)}`;
+  const names = [...target.jobs, ...session.jobs].map((job) => job.output);
+  await assignConv(names, conv);
+  say(`已并入「${sessionTitle(target)}」`);
+  // 归属变了，旧的筛选集合不再对应任何一段。
+  activeConv = null;
+  paintSessions();
+}
+
+/** 把最新的一张拆出去独立成段，其余的留在原来的段里。 */
+async function splitSession(session) {
+  if (session.jobs.length < 2) return;
+  const [newest, ...rest] = session.jobs;
+  const fresh = `conv-${Date.now().toString(36)}`;
+  await assignConv([newest.output], fresh);
+  // 原段没有 id（历史图）时补一个，否则剩下的图会被拆成各自独立。
+  if (rest.length) {
+    const keep = session.conv ?? `conv-${Date.now().toString(36)}-k`;
+    await assignConv(
+      rest.map((job) => job.output),
+      keep,
+    );
+  }
+  say("已把最新一张拆成新会话");
+  activeConv = null;
+  paintSessions();
 }
 
 function paintSessions() {
@@ -1878,29 +2046,56 @@ function paintSessions() {
   }
   list.replaceChildren(
     ...sessionsCache.map((session) => {
+      // 一段一行；点开就是去主界面只看这一段。
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "pn-hist-item";
-      const head = session.jobs[session.jobs.length - 1];
+      btn.className = "pn-conv-row";
+      const ids = session.jobs.map((job) => job.id);
+      if (activeConv && activeConv.length === ids.length && ids.every((id) => activeConv.includes(id))) {
+        btn.classList.add("on");
+      }
+      const head = session.jobs[0];
+      const thumb = document.createElement("img");
+      thumb.className = "pn-hist-thumb";
+      thumb.loading = "lazy";
+      thumb.alt = "";
+      if (head.output) thumb.src = thumbUrl(head.output, 96);
       const text = document.createElement("span");
       text.className = "pn-hist-text";
       const line = document.createElement("span");
       line.className = "pn-hist-prompt";
-      line.textContent = head.prompt || "（无提示词）";
+      line.textContent = convNameMap()[session.key] ?? head.prompt ?? "（无提示词）";
+      if (!line.textContent) line.textContent = "（无提示词）";
+      // 标出“接下来出图会进哪一段”，不然看不出哪个是活的。
+      if (session.conv && session.conv === localStorage.getItem(CONV_ID_KEY)) {
+        const tag = document.createElement("span");
+        tag.className = "pn-hist-now";
+        tag.textContent = "当前";
+        line.append(" ", tag);
+      }
       const meta = document.createElement("span");
       meta.className = "pn-hist-meta";
       const when = head.createdAt
         ? new Date(head.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
         : "";
-      meta.textContent = `${session.jobs.length} 条${when ? ` · ${when}` : ""}`;
-      if (session.current) {
-        btn.classList.add("on");
-        meta.textContent = `当前 · ${meta.textContent}`;
-      }
+      meta.textContent = `${session.jobs.length} 张${when ? ` · ${when}` : ""}`;
       text.append(line, meta);
-      btn.append(text);
+      const more = document.createElement("span");
+      more.className = "pn-hist-more";
+      more.textContent = "⋯";
+      more.title = "整理这一段";
+      more.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openConvMenu(session, more);
+      });
+      btn.append(thumb, text, more);
       btn.addEventListener("click", () => {
-        editChannel?.postMessage({ type: "open-job", id: head.id });
+        const same = activeConv && activeConv.length === ids.length && ids.every((id) => activeConv.includes(id));
+        // 重复点不切换，但「看全部」在主界面那条上。
+        if (same) return;
+        activeConv = ids.slice();
+        editChannel?.postMessage({ type: "open-conversation", ids: activeConv, title: sessionTitle(session) });
+        paintSessions();
       });
       return btn;
     }),
@@ -2005,6 +2200,8 @@ async function onGenerate() {
   const steps = Math.min(80, Math.max(1, Math.round(Number(nodes.steps.value) || 1)));
   nodes.steps.value = steps;
   const payload = {
+    // 会话 id 跟着请求走，出图后落进 PNG 元数据，分组不靠猜。
+    conv: convId(),
     prompt: caption,
     negativePrompt: nodes.negative.value,
     width: Number(nodes.width.value),
@@ -2727,6 +2924,11 @@ reuseChannel?.addEventListener("message", (event) => {
     void onGenerate();
     return;
   }
+  if (msg.type === "clear-conversation") {
+    activeConv = null;
+    paintSessions();
+    return;
+  }
   if (msg.type === "compose-add-base") {
     nodes.refFile.click();
     return;
@@ -2762,15 +2964,29 @@ reuseChannel?.addEventListener("message", (event) => {
 
 // ── 片段：点一下接到主界面那段后面 ───────────────────────────
 const PROMPT_PRESETS = ["晨雾", "柔光", "浅景深", "低饱和", "胶片颗粒", "逆光", "湿润的空气", "极简构图"];
-// 开一段新对话：以此刻为界，之后的生成算在这一段里。
+// 事件流靠不住时用轮询兜底：三秒拉一次 state，数据一样就直接铺。
+setInterval(async () => {
+  try {
+    const response = await hana.api.fetch(`${API}/state`);
+    if (!response.ok) throw new Error(`state ${response.status}`);
+    render(await response.json());
+  } catch (error) {
+    // 拉不到或渲染抛错都要看得见，而不是一片空白。
+    const box = nodes.history;
+    if (box) box.textContent = `面板拉数据失败：${error?.message ?? error}`;
+  }
+}, 3000);
 nodes.newConv?.addEventListener("click", () => {
   try {
     localStorage.setItem(CONV_KEY, String(Date.now()));
+    localStorage.setItem(CONV_ID_KEY, `conv-${Date.now().toString(36)}`);
   } catch {
     /* 存不了就只刷新列表 */
   }
   editChannel?.postMessage({ type: "new-conversation" });
-  void loadSessions(true);
+  activeConv = null;
+  paintSessions();
+  void loadSessions();
 });
 
 nodes.presets?.replaceChildren(

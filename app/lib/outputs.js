@@ -11,7 +11,7 @@
  * 而且固定读前 N KB 会在文本块跨越边界时把它截断。
  */
 
-import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { join } from "node:path";
 
@@ -93,6 +93,13 @@ export function readPngText(file) {
             }
           } else if (chunk?.keyword === "parameters") {
             text.parameters = chunk.text;
+          } else if (chunk?.keyword === "moss-studio") {
+            // 苔室自己写的：底图、蒙版、参考图与父任务。
+            try {
+              text.studio = JSON.parse(chunk.text);
+            } catch {
+              /* 坏了就当没有 */
+            }
           }
         }
       }
@@ -108,6 +115,101 @@ export function readPngText(file) {
 
   cache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, text });
   return text;
+}
+
+/** 苔室自己写的元数据：只留认得的字段，坏了就当没有。 */
+function normalizeOrigin(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const conv = typeof raw.conv === "string" ? raw.conv : null;
+  const base = typeof raw.base === "string" ? raw.base : null;
+  const mask = typeof raw.mask === "string" ? raw.mask : null;
+  const parent = typeof raw.parent === "string" ? raw.parent : null;
+  const refs = Array.isArray(raw.refs) ? raw.refs.filter((item) => typeof item === "string") : [];
+  if (!conv && !base && !parent && !refs.length && !mask) return null;
+  return { conv, base, mask, parent, refs };
+}
+
+/** CRC32 查表，PNG 块尾巴要用。 */
+const CRC_TABLE = (() => {
+  const table = new Int32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let c = -1;
+  for (let i = 0; i < buffer.length; i += 1) c = CRC_TABLE[(c ^ buffer[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+/**
+ * 往生成的 PNG 里补一个 tEXt 块。
+ *
+ * 引擎只管它自己的 generation 块；底图、蒙版、参考图属于请求侧输入，得由这里记下来，
+ * 否则重启之后这些关系就只剩内存里的那点残留。写不进去不影响出图本身。
+ */
+export function writePngMeta(file, keyword, value) {
+  try {
+    const data = readFileSync(file);
+    if (data.subarray(0, 8).toString("hex") !== PNG_SIGNATURE) return false;
+    // 用 iTXt：中文提示词走 Latin-1 的 tEXt 会坏，UTF-8 才行。
+    const body = Buffer.concat([
+      Buffer.from(`${keyword}\u0000`, "latin1"),
+      Buffer.from([0, 0]),
+      Buffer.from("\u0000\u0000", "latin1"),
+      Buffer.from(value, "utf8"),
+    ]);
+    const chunk = Buffer.alloc(12 + body.length);
+    chunk.writeUInt32BE(body.length, 0);
+    chunk.write("iTXt", 4, "ascii");
+    body.copy(chunk, 8);
+    chunk.writeUInt32BE(crc32(chunk.subarray(4, 8 + body.length)), 8 + body.length);
+
+    // 同名块先拆掉再插，重复写不会让文件越长越大。
+    const parts = [data.subarray(0, 8)];
+    let offset = 8;
+    let inserted = false;
+    while (offset + 8 <= data.length) {
+      const size = data.readUInt32BE(offset);
+      const type = data.toString("ascii", offset + 4, offset + 8);
+      const end = offset + 12 + size;
+      if (end > data.length) break;
+      const slice = data.subarray(offset, end);
+      if (type === "IEND") {
+        parts.push(chunk, slice);
+        inserted = true;
+        offset = end;
+        break;
+      }
+      let drop = false;
+      if ((type === "tEXt" || type === "iTXt") && size > 0) {
+        const payload = data.subarray(offset + 8, offset + 8 + size);
+        const text = type === "iTXt" ? parseITxt(payload) : parseTxt(payload);
+        if (text?.keyword === keyword) drop = true;
+      }
+      if (!drop) parts.push(slice);
+      offset = end;
+    }
+    if (!inserted) return false;
+    if (offset < data.length) parts.push(data.subarray(offset));
+    writeFileSync(file, Buffer.concat(parts));
+    cache.delete(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 只把苔室自己那一块读出来，改会话归组时要先合再写。 */
+export function readStudioMeta(file) {
+  const text = readPngText(file);
+  if (!text) return null;
+  const raw = text.studio ?? null;
+  return raw && typeof raw === "object" ? raw : null;
 }
 
 /** 扫一遍目录，把每张图还原成一条记录。按生成时间倒序。
@@ -167,6 +269,7 @@ export function scanOutputs(dir) {
       output: name,
       createdAt,
       fromFile: true,
+      origin: normalizeOrigin(text?.studio),
     });
   }
   records.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));

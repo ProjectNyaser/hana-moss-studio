@@ -235,22 +235,72 @@ function showView(view) {
 }
 
 // ── 画布 ───────────────────────────────────────────────────────────────
+let chatFilter = null;
+let convStartMs = 0;
+
+/** 会话页顶部那条范围提示：从哪段点进来的，怎么回全量。 */
+function paintScope(title, count = 0) {
+  const bar = document.getElementById("chat-scope");
+  const text = document.getElementById("chat-scope-text");
+  if (!bar || !text) return;
+  if (!title) {
+    bar.hidden = true;
+    text.textContent = "";
+    return;
+  }
+  bar.hidden = false;
+  text.textContent = count ? `正在看：${title} · ${count} 张` : `正在看：${title}`;
+}
+
+// 往远处看是页签的事：会话页只管当前这一段。
+
 /** 会话流水：用户写的靠右，出的图靠左，旧在上新在下。 */
+/** 参数一行。老图没存下参数的，直说没记录，不摆一串 undefined。 */
+function paramLine(job) {
+  const bits = [];
+  if (job.width && job.height) bits.push(`${job.width}×${job.height}`);
+  if (job.steps) bits.push(`${job.steps} 步`);
+  if (job.cfg !== null && job.cfg !== undefined) bits.push(`CFG ${job.cfg}`);
+  if (job.sampler) bits.push(job.sampler);
+  return bits.length ? bits.join(" · ") : "参数未记录";
+}
+
+/** 会话页默认看的那一段：当前会话 id 名下的图；还没出图时退回最近一段。 */
+function currentConvJobs() {
+  let conv = null;
+  try {
+    conv = localStorage.getItem("hana-moss-studio.conv-id");
+  } catch {
+    conv = null;
+  }
+  const hit = conv ? galleryJobs.filter((job) => job.origin?.conv === conv) : [];
+  if (hit.length) return hit;
+  // 刚开新对话、或者换了机器：先给最近一段，不让人对着空白以为东西丢了。
+  const latest = galleryJobs.find((job) => job.origin?.conv);
+  if (!latest) return galleryJobs.slice(0, 1);
+  return galleryJobs.filter((job) => job.origin?.conv === latest.origin.conv);
+}
+
 function renderChat() {
   const log = document.getElementById("chat-log");
   if (!log) return;
-  const jobs = galleryJobs
-    .filter((job) => job.status === "done" && job.output)
-    .slice()
-    .reverse();
+  const source = chatFilter
+    ? galleryJobs.filter((job) => chatFilter.has(job.id))
+    : currentConvJobs();
+  const scoped = convStartMs
+    ? source.filter((job) => (Date.parse(job.createdAt ?? "") || 0) >= convStartMs)
+    : source;
+  const jobs = scoped.filter((job) => job.status === "done" && job.output).slice().reverse();
   if (!jobs.length) {
     const empty = document.createElement("p");
     empty.className = "chat-empty";
-    empty.textContent = "还没有消息。在下面写一句，出图会排在这里。";
+    empty.textContent = "这一段还没有图。在下面写一句，出图会排在这里。";
     log.replaceChildren(empty);
     return;
   }
   const rows = [];
+  // 用户本来在底部才跟着滚；否则留着位置，别把人正在看的地方抽走。
+  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 8 || !log.children.length;
   for (const job of jobs) {
     const userRow = document.createElement("div");
     userRow.className = "chat-row user";
@@ -261,7 +311,7 @@ function renderChat() {
     text.textContent = job.prompt || "（无提示词）";
     const meta = document.createElement("p");
     meta.className = "chat-meta";
-    meta.textContent = `${job.width}×${job.height} · ${job.steps} 步 · CFG ${job.cfg} · ${job.sampler ?? "euler"}`;
+    meta.textContent = paramLine(job);
     bubble.append(text, meta);
     userRow.append(bubble);
 
@@ -295,8 +345,46 @@ function renderChat() {
     botRow.append(shot);
     rows.push(userRow, botRow);
   }
+  // 正在跑的那一条也挂在末尾：人在会话页等图，不该什么也看不到。
+  const live = liveChatJob();
+  if (live && !chatFilter) rows.push(...pendingRows(live));
   log.replaceChildren(...rows);
-  log.scrollTop = log.scrollHeight;
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+
+/** 队列里正在跑或排第一的那一条。 */
+function liveChatJob() {
+  const jobs = latest?.jobs ?? [];
+  return jobs.find((job) => job.status === "running") ?? jobs.find((job) => job.status === "queued") ?? null;
+}
+
+/** 生成中的占位：上面是这次的提示词，下面是一块等图的空位。 */
+function pendingRows(job) {
+  const userRow = document.createElement("div");
+  userRow.className = "chat-row user";
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble";
+  const text = document.createElement("p");
+  text.className = "chat-text";
+  text.textContent = job.prompt || "（无提示词）";
+  const meta = document.createElement("p");
+  meta.className = "chat-meta";
+  meta.textContent = paramLine(job);
+  bubble.append(text, meta);
+  userRow.append(bubble);
+
+  const botRow = document.createElement("div");
+  botRow.className = "chat-row bot";
+  const box = document.createElement("div");
+  box.className = "chat-pending";
+  const progress = job.status === "running" ? (latest?.engine?.active?.progress ?? job.progress ?? {}) : {};
+  const label =
+    job.status === "running"
+      ? `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step ?? 0}/${progress.total}` : "…"}`
+      : "排队中";
+  box.textContent = label;
+  botRow.append(box);
+  return [userRow, botRow];
 }
 
 function renderStage(data) {
@@ -2221,11 +2309,24 @@ layChannel?.addEventListener("message", (event) => {
     return;
   }
   if (msg.type === "new-conversation") {
-    // 新对话从空输入框开始，不把上一段的提示词带过去。
+    // 新会话从空白开始：这一页只显示之后生成的图。
+    convStartMs = Date.now();
+    chatFilter = null;
     if (composer.input) composer.input.value = "";
     if (composer.negative) composer.negative.value = "";
     if (composer.seed) composer.seed.value = "";
+    paintScope(null);
     showView("chat");
+    renderChat();
+    return;
+  }
+  if (msg.type === "open-conversation") {
+    const ids = Array.isArray(msg.ids) ? msg.ids : [];
+    convStartMs = 0;
+    chatFilter = ids.length ? new Set(ids) : null;
+    paintScope(msg.title ?? null, ids.length, msg.total ?? null);
+    showView("chat");
+    renderChat();
     return;
   }
   if (msg.type === "open-job") {
@@ -3247,7 +3348,11 @@ function applyViewer() {
   if (!job) return;
   nodes.viewerImage.src = loadImage(job.output) ?? "";
   const seed = job.report?.seedUsed ?? job.seed;
-  const parts = [`${job.width}×${job.height}`, `${job.steps} 步`, `CFG ${job.cfg}`, `种子 ${seed}`];
+  const parts = [];
+  if (job.width && job.height) parts.push(`${job.width}×${job.height}`);
+  if (job.steps) parts.push(`${job.steps} 步`);
+  if (job.cfg !== null && job.cfg !== undefined) parts.push(`CFG ${job.cfg}`);
+  if (seed !== null && seed !== undefined) parts.push(`种子 ${seed}`);
   if (job.sampler) parts.push(job.scheduler ? `${job.sampler} + ${job.scheduler}` : job.sampler);
   if (job.shift != null && Number(job.shift) !== 5) parts.push(`shift ${job.shift}`);
   if (Array.isArray(job.loras) && job.loras.length) {
@@ -3732,6 +3837,8 @@ async function boot() {
   }
   showView("chat");
   void loadGallery(true);
+  // 事件流会断，轮询兜底：三秒对齐一次状态。
+  setInterval(() => void refresh(), 3000);
   // 侧栏那边存着底图与蒙版，起来之后问一遍当前状态。
   layChannel?.postMessage({ type: "edit-hello" });
   // 首屏靠事件流的首帧，不再单独拉一次 /state。万一流一时连不上，两秒后再补一次。

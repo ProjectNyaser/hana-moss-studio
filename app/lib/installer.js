@@ -1286,10 +1286,56 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
    */
   function reconcileTier() {
     const settings = getSettings();
-    const need = fileTier(settings.modelFiles?.dit ?? "");
-    if (!need || settings.tier === need) return null;
-    saveSettings({ tier: need });
-    return { from: settings.tier, to: need };
+    const order = ["turbo", "high", "reference"];
+    const rank = (name) => {
+      const at = order.indexOf(name);
+      return at < 0 ? order.length - 1 : at;
+    };
+    const entries = MOSSIMAGE.files ?? [];
+    // 空路径代表走 bundle 里的 bf16，只有 reference 档能这么跑。
+    const tierOf = (target) => {
+      if (!target) return "reference";
+      const entry = entries.find((item) => fileTarget(item) === target);
+      return entry?.tier ?? "reference";
+    };
+    const ditTier = tierOf(settings.modelFiles?.dit);
+    const teTier = tierOf(settings.modelFiles?.textEncoder);
+    // 一档能跑的前提是 DiT 与文本编码器同时满足：只盯 DiT 会放过
+    // 「DiT 是 bf16、文本编码器是量化版」这种组合，引擎要到出图才拒。
+    const wanted = rank(ditTier) >= rank(teTier) ? ditTier : teTier;
+    const files = listFiles();
+    const bundleReady =
+      Boolean(settings.modelPath) && existsSync(settings.modelPath) && hasDitWeights(settings.modelPath);
+    const pickFor = (role, tier) => {
+      const hit = files.find((item) => item.role === role && item.tier === tier && item.installed);
+      if (hit) return hit.target;
+      if (tier === "reference" && bundleReady) return null;
+      return undefined;
+    };
+    // 从最严的那档往下找：先用手里已经装好的权重，实在不行才降档。
+    for (let index = rank(wanted); index >= 0; index -= 1) {
+      const tier = order[index];
+      const dit = pickFor("dit", tier);
+      const te = pickFor("text_encoder", tier);
+      if (dit === undefined || te === undefined) continue;
+      const nextFiles = { ...(settings.modelFiles ?? {}) };
+      let filesChanged = false;
+      if ((nextFiles.dit ?? null) !== dit) {
+        nextFiles.dit = dit;
+        filesChanged = true;
+      }
+      if ((nextFiles.textEncoder ?? null) !== te) {
+        nextFiles.textEncoder = te;
+        filesChanged = true;
+      }
+      const patch = {};
+      if (settings.tier !== tier) patch.tier = tier;
+      if (filesChanged) patch.modelFiles = nextFiles;
+      if (!Object.keys(patch).length) return null;
+      saveSettings(patch);
+      return { from: settings.tier, to: tier };
+    }
+    return null;
   }
 
   /** 下一个单文件：aria2 多源、断点续传，完事对一下大小，然后写进设置。 */

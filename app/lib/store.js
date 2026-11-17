@@ -228,6 +228,11 @@ export function createStore(dataDir, outputsDir) {
       invalidateScan();
       return runtime;
     },
+
+    /** 外部改了图片文件（例如改会话归组）时，让扫描缓存重来。 */
+    invalidate() {
+      invalidateScan();
+    },
   };
 }
 
