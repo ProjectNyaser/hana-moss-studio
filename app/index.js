@@ -109,7 +109,8 @@ export default defineApp(async (sdk) => {
   /** 下载器的日志与控制文件。 */
   const downloadsDir = join(runtimeDir, "downloads");
   /** 参考图与蒙版：界面按目标尺寸画好再传上来，任务只引用这里的绝对路径。 */
-  const inputsDir = join(runtimeDir, "inputs");
+  // 底图与参考图是用户资产：放 app-data，不跟运行期临时目录一起清。
+  const inputsDir = join(dataDir, "inputs");
   /** 导入的 LoRA：放 app-data 里，路径稳定，换工作区也找得到。 */
   const lorasDir = join(dataDir, "loras");
   /** 控制适配器（depth / canny 那一类）：单独一堆，别跟 LoRA 混。 */
@@ -118,6 +119,25 @@ export default defineApp(async (sdk) => {
     mkdirSync(dir, { recursive: true });
   }
   migrateRuntimeDirs(dataDir, { engineCacheDir, previewDir, thumbsDir, runtimeDir });
+  // 上一版把上传的图放在临时目录里，重启会被清掉，这里搬到持久位置。
+  try {
+    const legacyInputs = join(runtimeDir, "inputs");
+    if (existsSync(legacyInputs)) {
+      for (const name of readdirSync(legacyInputs)) {
+        const from = join(legacyInputs, name);
+        const to = join(inputsDir, name);
+        if (!existsSync(to)) {
+          try {
+            renameSync(from, to);
+          } catch {
+            /* 搬不动就留着 */
+          }
+        }
+      }
+    }
+  } catch {
+    /* 老的临时目录不在就算了 */
+  }
 
   const store = createStore(dataDir, outputsDir);
   /** 设置改成一条事件推出去：侧栏不必自己轮询式比对。 */
