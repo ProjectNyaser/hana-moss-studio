@@ -249,6 +249,16 @@ function setDock(open) {
   requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
 }
 
+// 打开就停在一段空白的新对话上；同一页面内刷新不重来。
+try {
+  if (!sessionStorage.getItem("hana-moss-studio.studio-fresh")) {
+    sessionStorage.setItem("hana-moss-studio.studio-fresh", "1");
+    convStartMs = Date.now();
+  }
+} catch {
+  /* 存不了就按旧的来 */
+}
+
 document.getElementById("dock-toggle")?.addEventListener("click", () => setDock(!dockOpen));
 document.getElementById("chat-dock-full")?.addEventListener("click", () => {
   const on = !document.body.classList.contains("dock-full");

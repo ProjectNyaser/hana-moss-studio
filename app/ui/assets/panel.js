@@ -1833,6 +1833,15 @@ let sessionsAt = 0;
 let activeConv = null;
 const CONV_KEY = "hana-moss-studio.conv-start";
 const CONV_ID_KEY = "hana-moss-studio.conv-id";
+// 页面真正打开一次就换一个会话 id：上次那些留在列表里，这次从空白开始。
+try {
+  if (!sessionStorage.getItem("hana-moss-studio.conv-fresh")) {
+    sessionStorage.setItem("hana-moss-studio.conv-fresh", "1");
+    localStorage.setItem(CONV_ID_KEY, `conv-${Date.now().toString(36)}`);
+  }
+} catch {
+  /* 存不了就沿用旧的 */
+}
 
 /** 当前会话的 id：开新对话时换一个，出图时随请求写进元数据。 */
 function convId() {
@@ -2072,10 +2081,27 @@ function clearDropMarks() {
   });
 }
 
+let placeholderHidden = false;
+
+/** 当前会话还没有消息时，列表顶部留一行占位；去点别的段就收起。 */
+function withPlaceholder(sessions) {
+  if (placeholderHidden) return sessions;
+  let current = null;
+  try {
+    current = localStorage.getItem(CONV_ID_KEY);
+  } catch {
+    current = null;
+  }
+  if (!current) return sessions;
+  if (sessions.some((item) => item.conv === current)) return sessions;
+  return [{ key: current, conv: current, jobs: [], placeholder: true }, ...sessions];
+}
+
 function paintSessions() {
   const list = nodes.history;
   if (!list) return;
-  if (!sessionsCache.length) {
+  const rows = withPlaceholder(sessionsCache);
+  if (!rows.length) {
     const empty = document.createElement("p");
     empty.className = "pn-hist-empty";
     empty.textContent = "还没有出过图。";
@@ -2083,7 +2109,29 @@ function paintSessions() {
     return;
   }
   list.replaceChildren(
-    ...sessionsCache.map((session) => {
+    ...rows.map((session) => {
+      if (session.placeholder) {
+        // 空的新对话：占一行，点它回到空白会话；去点历史就收起。
+        const blank = document.createElement("button");
+        blank.type = "button";
+        blank.className = "pn-conv-row empty";
+        const box = document.createElement("span");
+        box.className = "pn-hist-text";
+        const title = document.createElement("span");
+        title.className = "pn-hist-prompt";
+        title.textContent = "新对话";
+        const note = document.createElement("span");
+        note.className = "pn-hist-meta";
+        note.textContent = "还没有消息";
+        box.append(title, note);
+        blank.append(box);
+        blank.addEventListener("click", () => {
+          activeConv = null;
+          editChannel?.postMessage({ type: "new-conversation" });
+          paintSessions();
+        });
+        return blank;
+      }
       // 一段一行；点开就是去主界面只看这一段。
       const btn = document.createElement("button");
       btn.type = "button";
@@ -2181,6 +2229,8 @@ function paintSessions() {
         void mergeInto(source, session);
       });
       btn.addEventListener("click", () => {
+        // 去点历史了：那个空的新对话占位就不再举着。
+        placeholderHidden = true;
         // 重复点同一段也要能把人带回会话页；只是不改筛选范围。
         activeConv = ids.slice();
         editChannel?.postMessage({
