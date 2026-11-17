@@ -106,16 +106,11 @@ body {
 
 /* 输入框上方那块画布：会话在它上面继续滚。 */
 .chat-dock {
-  /* 与输入框一起浮在底部：内容从这两块下面穿过去。 */
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--composer-h, 104px) + 24px);
-  transform: translateX(-50%);
-  z-index: 5;
+  /* 画布是流里的一条，接在会话末尾，不浮在内容之上。 */
   display: flex;
   flex-direction: column;
   width: min(1040px, calc(100% - 40px));
-  margin: 0;
+  margin: 0 auto 12px;
   height: min(34vh, 360px);
   min-height: 220px;
   border: 1px solid var(--ui-line);
@@ -1497,7 +1492,7 @@ body.dock-full .chat-dock {
 #view-chat {
   overflow-y: auto;
   overflow-x: hidden;
-  /* 只按输入框让位：画布浮在上层，不额外占空间。 */
+  /* 底部让出悬浮输入框的高度；画布在流里，自己占位。 */
   padding-bottom: calc(var(--composer-h, 104px) + 24px);
 }
 
