@@ -441,6 +441,8 @@ function renderChat() {
     img.addEventListener("load", () => frame.classList.add("loaded"));
     img.addEventListener("error", () => frame.classList.add("loaded"));
     shot.append(frame, acts);
+    const under = baseCard(job);
+    if (under) botRow.append(under);
     botRow.append(shot);
     // 一轮是一个整体：块之间倒排，块内仍是「我说话 → 它回图」。
     const turn = document.createElement("div");
@@ -542,6 +544,8 @@ function pendingRows(job) {
       : "排队中";
 
   box.append(frame, label);
+  const under = baseCard(job);
+  if (under) botRow.append(under);
   botRow.append(box);
 
   const turn = document.createElement("div");
@@ -565,7 +569,7 @@ function buildUserBubble(job) {
   const origin = job.origin ?? {};
   // 附带的图用缩略图表示，不占参数表。
   const attachments = [];
-  if (origin.base) attachments.push({ role: "底图", name: String(origin.base) });
+  // 参考图是随身的附件，留在气泡里；底图本身是这张结果的起点，单独成卡。
   for (const ref of Array.isArray(origin.refs) ? origin.refs : []) attachments.push({ role: "参考", name: String(ref) });
 
   const size = job.width && job.height ? `${job.width}×${job.height}` : "";
@@ -691,6 +695,29 @@ function attachRow(items) {
     row.append(cell);
   }
   return [row];
+}
+
+/** 底图单独一张卡：跟预览、结果同一个尺寸规矩，点开看原图。 */
+function baseCard(job) {
+  const base = job.origin?.base;
+  if (!base) return null;
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "chat-base-card";
+  card.title = String(base);
+  const img = document.createElement("img");
+  img.alt = "底图";
+  img.src = inputUrl(String(base));
+  img.addEventListener("error", () => card.classList.add("missing"));
+  card.append(img);
+  if (job.origin?.mask) {
+    const tag = document.createElement("span");
+    tag.className = "chat-base-tag";
+    tag.textContent = "含蒙版";
+    card.append(tag);
+  }
+  card.addEventListener("click", () => openRefBox(inputUrl(String(base)), String(base)));
+  return card;
 }
 
 function renderStage(data) {
