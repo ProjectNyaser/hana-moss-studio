@@ -3209,6 +3209,11 @@ nodes.newConv?.addEventListener("click", () => {
     /* 存不了就只刷新列表 */
   }
   editChannel?.postMessage({ type: "new-conversation" });
+  try {
+    reuseChannel?.postMessage({ type: "conv", conv: localStorage.getItem(CONV_ID_KEY) ?? "" });
+  } catch {
+    /* 存不了就算了 */
+  }
   activeConv = null;
   paintSessions();
   void loadSessions();
@@ -3312,6 +3317,18 @@ async function boot() {
   });
   // 主界面可能比侧栏晚起来：它到时候会发 edit-hello，这里先把底图报一次。
   broadcastEditState(true);
+  // 会话 id 只有这边算得准，开机就报一次，之后每次开新对话再报。
+  const pushConv = () => {
+    try {
+      reuseChannel?.postMessage({ type: "conv", conv: localStorage.getItem(CONV_ID_KEY) ?? "" });
+    } catch {
+      /* 存不了就算了 */
+    }
+  };
+  pushConv();
+  reuseChannel?.addEventListener("message", (event) => {
+    if (event.data?.type === "conv-ask") pushConv();
+  });
 }
 
 void boot();

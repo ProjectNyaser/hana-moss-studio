@@ -305,6 +305,8 @@ let chatFilter = null;
 let convStartMs = 0;
 // 刚提交、服务端还没回来的那一条：先在会话里立住，不让界面空等。
 let localPending = null;
+// 会话 id 以侧栏为准：两个 surface 的存储不保证互通。
+let currentConv = null;
 // 首次渲染一定贴底；之后跟着用户是否停在底部走。
 let chatAtBottom = true;
 let chatBootstrapped = false;
@@ -1717,7 +1719,7 @@ async function submitGenerate() {
     const payload = { prompt, negativePrompt: composer.negative?.value ?? "" };
     // 会话 id 跟着走：出图后才知道该归到哪一段。
     try {
-      const conv = localStorage.getItem("hana-moss-studio.conv-id");
+      const conv = currentConv ?? localStorage.getItem("hana-moss-studio.conv-id");
       if (conv) payload.conv = conv;
     } catch {
       /* 没有也罢 */
@@ -2726,6 +2728,10 @@ if (typeof ResizeObserver === "function") {
 const layChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("hana-moss-studio") : null;
 layChannel?.addEventListener("message", (event) => {
   const msg = event.data ?? {};
+  if (msg.type === "conv") {
+    currentConv = typeof msg.conv === "string" && msg.conv ? msg.conv : null;
+    return;
+  }
   if (msg.type === "edit-state") {
     applyEditState(msg.state);
     return;
@@ -4322,6 +4328,8 @@ async function boot() {
   void loadGallery(true);
   // 侧栏那边存着底图与蒙版，起来之后问一遍当前状态。
   layChannel?.postMessage({ type: "edit-hello" });
+  // 会话 id 由侧栏决定，起来先问一次。
+  layChannel?.postMessage({ type: "conv-ask" });
   // 首屏靠事件流的首帧，不再单独拉一次 /state。万一流一时连不上，两秒后再补一次。
   let gotFrame = false;
   setTimeout(() => {
