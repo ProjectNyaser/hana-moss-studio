@@ -1584,12 +1584,13 @@ body.dock-full .chat-dock {
 /* 气泡：提示词一行，右上角一个展开箭头，其余按行列出。 */
 /* 按钮钉在气泡右上角，展开多高都不动。 */
 .chat-bubble { position: relative; }
-.chat-head { display: flex; align-items: flex-start; gap: 8px; padding-right: 22px; }
+.chat-head { display: flex; align-items: flex-start; gap: 8px; }
 .chat-head .chat-text { flex: 1; min-width: 0; }
 .chat-more {
-  position: absolute;
-  top: 8px;
-  right: 9px;
+  /* 跟第一行文字的中心对齐：不用绝对定位去猜偏移。 */
+  align-self: flex-start;
+  margin-top: 2px;
+  flex: none;
   width: 16px;
   height: 16px;
   padding: 0;
