@@ -1493,6 +1493,7 @@ body.dock-full .chat-dock { height: auto; flex: 1; }
 /* ── 底部输入区 ───────────────────────────────────────────────── */
 /* 提示词、附件、模型与发送都在主界面：侧栏留给参数，两边不必抢同一块宽度。 */
 .composer {
+  position: relative;
   flex: none;
   width: min(1040px, calc(100% - 40px));
   margin: 0 auto 16px;
@@ -1504,6 +1505,25 @@ body.dock-full .chat-dock { height: auto; flex: 1; }
 }
 
 /* 图拖到输入框就是参考图，跟画布那块联动反馈。 */
+.dock-toggle {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.dock-toggle:hover { background: var(--ui-overlay); color: var(--ui-text); }
+.dock-toggle.on { background: var(--ui-tint); color: var(--ui-text); }
+
 .composer.dragging {
   border-color: var(--ui-accent);
   background: var(--ui-tint);
@@ -1585,6 +1605,7 @@ body.dock-full .chat-dock { height: auto; flex: 1; }
 
 #composer-input {
   display: block;
+  padding-right: 38px;
   width: 100%;
   box-sizing: border-box;
   min-height: 34px;
