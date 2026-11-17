@@ -1412,13 +1412,27 @@ function pushExtras() {
   extraTimer = setTimeout(() => {
     layChannel?.postMessage({ type: "compose-negative", text: composer.negative?.value ?? "" });
     layChannel?.postMessage({ type: "compose-seed", value: composer.seed?.value ?? "" });
+    markHiddenExtra();
   }, 120);
 }
 
 composer.negative?.addEventListener("input", pushExtras);
 composer.seed?.addEventListener("input", pushExtras);
 
-// 反向提示词与种子展开后就留着，自己看不见内容比多一行更糟。
+document.getElementById("composer-extra-close")?.addEventListener("click", () => {
+  const box = document.getElementById("composer-extra");
+  if (box) box.hidden = true;
+  markHiddenExtra();
+});
+
+/** 收起后如果有值，给加号一个圆点，不让参数无声无息藏着。 */
+function markHiddenExtra() {
+  const box = document.getElementById("composer-extra");
+  const hidden = Boolean(box?.hidden);
+  const has =
+    (composer.negative?.value ?? "").trim() !== "" || (composer.seed?.value ?? "").trim() !== "";
+  composer.plus?.classList.toggle("has-extra", hidden && has);
+}
 
 composer.send?.addEventListener("click", sendCompose);
 
@@ -1449,10 +1463,18 @@ composer.menu?.addEventListener("click", (event) => {
   } else if (act === "reference") {
     document.getElementById("composer-ref-file")?.click();
   } else if (act === "negative" || act === "seed") {
-    // 两者不是必填，平时不占位，从这里展开。
+    // 两者不是必填，平时不占位。再点同一项就收起来。
     const box = document.getElementById("composer-extra");
-    if (box) box.hidden = false;
-    (act === "negative" ? composer.negative : composer.seed)?.focus();
+    if (!box) return;
+    const field = act === "negative" ? composer.negative : composer.seed;
+    const filled = (field?.value ?? "").trim() !== "";
+    if (!box.hidden && !filled) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    field?.focus();
+    markHiddenExtra();
   }
 });
 
