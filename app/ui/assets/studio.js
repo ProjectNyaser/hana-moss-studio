@@ -215,7 +215,7 @@ const tail = (p) => (p ? String(p).split(/[\\/]/).filter(Boolean).pop() : "");
 
 // ── 视图切换 ───────────────────────────────────────────────────────────
 // 输入框上方那块画布：同一份 DOM，不复制第二套。
-const DOCK_KEY = "hana-moss-studio.dock";
+const DOCK_KEY = "moss-studio.canvas-dock";
 let dockOpen = false;
 
 function setDock(open) {
@@ -243,6 +243,8 @@ function setDock(open) {
     document.getElementById("chat-dock-full")?.classList.remove("on");
   }
   document.getElementById("composer-dock-btn")?.classList.toggle("on", dockOpen);
+  // 画布改了高度，会话区跟着变：重排一次，滚到底的仍在底部。
+  if (currentView === "chat") renderChat();
   // 画布按容器尺寸排布，换了父节点要让它重新量一次。
   requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
 }
