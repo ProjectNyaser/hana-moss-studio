@@ -1528,6 +1528,43 @@ body.dock-full .chat-dock {
 }
 .chat-acts { display: flex; gap: 6px; }
 /* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
+/* 折叠的输入摘要：跟思考块一个形态，默认收起。 */
+.chat-think {
+  width: min(540px, 64%);
+  margin: 0 0 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-overlay);
+  font-size: 11.5px;
+  color: var(--ui-text-2);
+}
+.chat-think > summary {
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-think > summary::-webkit-details-marker { display: none; }
+.chat-think > summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--ui-text-3);
+  transition: transform 120ms var(--ui-ease);
+}
+.chat-think[open] > summary::before { transform: rotate(90deg); }
+.chat-think pre {
+  margin: 8px 0 0;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ui-text-2);
+}
+
 /* 正在生成的那条消息里放画布：宽度跟消息一致，外边距交给这条消息。 */
 .chat-canvas-slot {
   display: flex;

@@ -430,7 +430,7 @@ function renderChat() {
     split.addEventListener("click", () => layChannel?.postMessage({ type: "split-job", id: job.id }));
     acts.append(again, edit, split);
     shot.append(img, acts);
-    botRow.append(shot);
+    botRow.append(thinkBlock(job), shot);
     rows.push(userRow, botRow);
   }
   // 正在跑的那一条也挂在末尾：人在会话页等图，不该什么也看不到。
@@ -494,7 +494,7 @@ function pendingRows(job) {
       ? `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step ?? 0}/${progress.total}` : "…"}`
       : "排队中";
   box.textContent = label;
-  slot.append(box);
+  slot.append(thinkBlock(job), box);
   botRow.append(slot);
   return [userRow, botRow];
 }
@@ -512,6 +512,31 @@ function placeDock() {
   }
   const host = document.getElementById("view-chat");
   if (host && dock.parentElement !== host) host.append(dock);
+}
+
+/** 这次的输入摘要：折叠一块，默认不看，想看时展开。 */
+function thinkBlock(job) {
+  const prompt = String(job.prompt ?? "");
+  const negative = String(job.negativePrompt ?? job.negative ?? "");
+  const lines = [
+    `正向  ${prompt || "（空）"}`,
+    `反向  ${negative || "（空）"}`,
+  ];
+  const size = job.width && job.height ? `${job.width}×${job.height}` : "";
+  const bits = [size, job.steps ? `${job.steps} 步` : "", job.cfg ? `CFG ${job.cfg}` : "", job.seed != null ? `种子 ${job.seed}` : ""].filter(Boolean);
+  if (bits.length) lines.push(`参数  ${bits.join(" · ")}`);
+  const origin = job.origin ?? {};
+  if (origin.base) lines.push(`底图  ${origin.base}`);
+  if (Array.isArray(origin.refs) && origin.refs.length) lines.push(`参考  ${origin.refs.join("、")}`);
+
+  const box = document.createElement("details");
+  box.className = "chat-think";
+  const head = document.createElement("summary");
+  head.textContent = `文本编码 · ${prompt.length} 字`;
+  const body = document.createElement("pre");
+  body.textContent = lines.join("\n");
+  box.append(head, body);
+  return box;
 }
 
 function renderStage(data) {
