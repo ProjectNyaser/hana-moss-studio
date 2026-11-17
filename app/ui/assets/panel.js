@@ -1911,10 +1911,13 @@ async function loadSessions() {
 }
 
 let convMenu = null;
+// 菜单属于哪个⋯按钮：再点同一个就收回去，不用去别处点。
+let convMenuAnchor = null;
 
 function closeConvMenu() {
   convMenu?.remove();
   convMenu = null;
+  convMenuAnchor = null;
 }
 
 function openConvMenu(session, anchor) {
@@ -1946,6 +1949,7 @@ function openConvMenu(session, anchor) {
     add("把最新一张拆成新会话", () => splitSession(session));
   }
   document.body.append(menu);
+  convMenuAnchor = anchor;
   const rect = anchor.getBoundingClientRect();
   const top = Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8);
   const left = Math.max(8, Math.min(rect.left - 96, window.innerWidth - menu.offsetWidth - 8));
@@ -1955,6 +1959,10 @@ function openConvMenu(session, anchor) {
 }
 
 document.addEventListener("click", () => closeConvMenu());
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeConvMenu();
+});
+nodes.history?.addEventListener("scroll", () => closeConvMenu());
 
 function startRename(session, anchor) {
   const row = anchor.closest(".pn-conv-row");
@@ -2011,6 +2019,15 @@ async function mergeInto(session, target) {
   await assignConv(names, conv);
   say(`已并入「${sessionTitle(target)}」`);
   // 归属变了，旧的筛选集合不再对应任何一段。
+  activeConv = null;
+  paintSessions();
+}
+
+/** 单张拆出：这一张成新会话，同段其它图不动。 */
+async function splitOne(job) {
+  const conv = `conv-${Date.now().toString(36)}`;
+  await assignConv([job.output], conv);
+  say("已拆成新会话");
   activeConv = null;
   paintSessions();
 }
@@ -2095,6 +2112,11 @@ function paintSessions() {
       more.title = "整理这一段";
       more.addEventListener("click", (event) => {
         event.stopPropagation();
+        // 已经开着就收起来。
+        if (convMenu && convMenuAnchor === more) {
+          closeConvMenu();
+          return;
+        }
         openConvMenu(session, more);
       });
       btn.append(thumb, text, more);
@@ -2958,6 +2980,13 @@ reuseChannel?.addEventListener("message", (event) => {
   if (msg.type === "compose-seed") {
     nodes.seed.value = String(msg.value ?? "");
     scheduleSave();
+    return;
+  }
+  if (msg.type === "split-job") {
+    // 从会话页对单张图点「拆出」：只把这一张写成新会话。
+    const id = String(msg.id ?? "");
+    const job = sessionsCache.flatMap((item) => item.jobs).find((item) => item.id === id) ?? null;
+    if (job) void splitOne(job);
     return;
   }
   if (msg.type === "compose-send") {
