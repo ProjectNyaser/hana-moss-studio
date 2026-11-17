@@ -2030,11 +2030,12 @@ function startRename(session, anchor) {
   if (!text) return;
   const input = document.createElement("input");
   input.className = "pn-conv-rename";
-  // 框里是这段自己的名字，不是把原提示词整段搬进来；没有名字就留空，
-  // 空着保存等于去掉名字、退回原标题。
-  input.value = convNameMap()[session.key] ?? "";
+  // 框里预填当前名字：改过名就是那个名字，没改过就是原标题。
+  // 全选着，直接打字就是替换；清空保存等于退回原标题。
+  const currentName = convNameMap()[session.key] ?? session.jobs[0]?.prompt ?? "";
+  input.value = currentName;
   input.placeholder = session.jobs[0]?.prompt ?? "无提示词";
-  input.title = input.placeholder;
+  input.title = input.value;
   let done = false;
   const finish = (commit) => {
     if (done) return;
