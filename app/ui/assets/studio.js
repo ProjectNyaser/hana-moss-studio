@@ -3819,6 +3819,15 @@ function render(data) {
     // 刚出一张：画布回到结果；正在抹蒙版时不抢画面。
     if (bootstrapped && edit.open && edit.mode === null) closeEditSheet();
     if (bootstrapped) selectedId = newest;
+    // 结果要看的是会话里那条，不是画布上旧的那格：没在涂抹或框选就收起画布。
+    if (bootstrapped && !edit.open && !lay.open && (dockOpen || document.body.classList.contains("dock-full"))) {
+      document.body.classList.remove("dock-full");
+      document.getElementById("chat-dock-full")?.classList.remove("on");
+      setDock(false);
+      if (currentView !== "chat") showView("chat");
+      chatAtBottom = true;
+      renderChat();
+    }
   }
   bootstrapped = true;
   syncBaseSheet();
