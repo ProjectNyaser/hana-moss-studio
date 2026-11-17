@@ -1484,7 +1484,8 @@ body.dock-full .chat-dock {
 }
 
 .chat-log {
-  flex: none;
+  /* 内容少时也占满剩余空间，画布就贴在输入框上方。 */
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 18px;
