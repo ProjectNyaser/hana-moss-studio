@@ -1654,7 +1654,7 @@ function state() {
         if (data.readUInt32BE(0) !== 0x89504e47) return c.json({ error: "只接受 PNG" }, 415);
         // 按内容命名：同一张图反复用只留一份。
         const hash = createHash("sha256").update(data).digest("hex");
-        const name = `${kind}-${hash}.png`;
+        const name = `${hash}.png`;
         const target = join(inputsDir, name);
         if (!existsSync(target)) writeFileSync(target, data);
         return c.json({ ok: true, kind, name, path: join(inputsDir, name), url: `/${APP_ID}/inputs/${name}` });
