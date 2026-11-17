@@ -372,7 +372,8 @@ function renderChat() {
   // 用户本来在底部才跟着滚；否则留着位置，别把人正在看的地方抽走。
   if (!log.dataset.stickBound) {
     log.dataset.stickBound = "1";
-    log.addEventListener("scroll", () => {
+    // 滚的是整个会话视图：监听也得挂在它身上，挂在列表上永远收不到事件。
+    scroller.addEventListener("scroll", () => {
       chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
     });
   }
@@ -424,7 +425,17 @@ function renderChat() {
   // 从侧栏点开的是历史段，别把当前会话正在跑的占位塞进去。
   if (live && !convScopeJobs) rows.push(...pendingRows(live));
   log.replaceChildren(...rows);
-  if (stick) scroller.scrollTop = scroller.scrollHeight;
+  if (stick) {
+    // 图还没加载完时高度会变：先贴底，等两帧和图片解码后再贴一次。
+    scroller.scrollTop = scroller.scrollHeight;
+    requestAnimationFrame(() => {
+      scroller.scrollTop = scroller.scrollHeight;
+    });
+    setTimeout(() => {
+      scroller.scrollTop = scroller.scrollHeight;
+      chatAtBottom = true;
+    }, 120);
+  }
   chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
   chatBootstrapped = true;
 }
@@ -2649,6 +2660,10 @@ layChannel?.addEventListener("message", (event) => {
     convStartMs = 0;
     chatFilter = ids.length ? new Set(ids) : null;
     convScopeJobs = Array.isArray(msg.jobs) ? msg.jobs : null;
+    // 换了一段就从最新的那条看起，不沿用上一段的滚动位置。
+    chatBootstrapped = false;
+    chatAtBottom = true;
+    renderChat.lastSig = "";
     showView("chat");
     renderChat();
     return;
