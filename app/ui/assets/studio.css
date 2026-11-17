@@ -1539,6 +1539,14 @@ body.dock-full .chat-dock {
 .chat-acts { display: flex; gap: 6px; }
 /* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
 /* 折叠的输入摘要：跟思考块一个形态，默认收起。 */
+/* 气泡里的摘要跟着气泡走，不再单独定宽。 */
+.chat-bubble .chat-think {
+  width: auto;
+  max-width: 100%;
+  margin: 8px 0 0;
+  background: var(--ui-surface);
+}
+
 .chat-think {
   /* 按内容宽，不拉满：一行摘要就是一行。 */
   width: fit-content;

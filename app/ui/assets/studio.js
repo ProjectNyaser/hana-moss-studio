@@ -394,6 +394,8 @@ function renderChat() {
     } else {
       bubble.append(text);
     }
+    // 输入摘要是自己这条消息的一部分，跟着它靠右。
+    bubble.append(thinkBlock(job));
     userRow.append(bubble);
 
     const botRow = document.createElement("div");
@@ -430,7 +432,7 @@ function renderChat() {
     split.addEventListener("click", () => layChannel?.postMessage({ type: "split-job", id: job.id }));
     acts.append(again, edit, split);
     shot.append(img, acts);
-    botRow.append(thinkBlock(job), shot);
+    botRow.append(shot);
     rows.push(userRow, botRow);
   }
   // 正在跑的那一条也挂在末尾：人在会话页等图，不该什么也看不到。
@@ -467,6 +469,7 @@ function pendingRows(job) {
   } else {
     bubble.append(text);
   }
+  bubble.append(thinkBlock(job));
   userRow.append(bubble);
 
   const botRow = document.createElement("div");
@@ -493,7 +496,7 @@ function pendingRows(job) {
       ? `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step ?? 0}/${progress.total}` : "…"}`
       : "排队中";
   box.textContent = label;
-  slot.append(thinkBlock(job), box);
+  slot.append(box);
   botRow.append(slot);
   return [userRow, botRow];
 }
