@@ -249,13 +249,15 @@ function setDock(open) {
   requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
 }
 
-// 会话 id 变了就是开了新的一段：侧栏换了 id，这边就从空白开始，
-// 两边不会一个空一个满。
+// 侧栏开新会话时会留一个 fresh-at 记号，这边只跟着它清空，
+// 不自己猜，避免侧栏还停在旧段、这边已经空了。
 try {
-  const conv = localStorage.getItem("hana-moss-studio.conv-id");
-  const seen = localStorage.getItem("hana-moss-studio.seen-conv");
-  if (conv && conv !== seen) convStartMs = Date.now();
-  if (conv) localStorage.setItem("hana-moss-studio.seen-conv", conv);
+  const freshAt = Number(localStorage.getItem("hana-moss-studio.fresh-at") ?? 0);
+  const seenAt = Number(localStorage.getItem("hana-moss-studio.seen-fresh-at") ?? 0);
+  if (freshAt && freshAt !== seenAt) {
+    convStartMs = freshAt;
+    localStorage.setItem("hana-moss-studio.seen-fresh-at", String(freshAt));
+  }
 } catch {
   /* 存不了就按旧的来 */
 }

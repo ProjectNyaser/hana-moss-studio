@@ -1841,6 +1841,8 @@ try {
   localStorage.setItem(seenKey, String(now));
   if (!last || now - last > 5 * 60 * 1000) {
     localStorage.setItem(CONV_ID_KEY, `conv-${now.toString(36)}`);
+    // 显式留个记号：主界面靠它判断“该从空白开始了”。
+    localStorage.setItem("hana-moss-studio.fresh-at", String(now));
   }
 } catch {
   /* 存不了就沿用旧的 */
