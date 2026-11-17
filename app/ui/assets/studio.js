@@ -336,6 +336,8 @@ function currentConvJobs() {
 function renderChat() {
   const log = document.getElementById("chat-log");
   if (!log) return;
+  // 滚的是整个会话视图，不是消息列表本身。
+  const scroller = document.getElementById("view-chat") ?? log;
   const source = chatFilter
     ? (convScopeJobs ?? galleryJobs.filter((job) => chatFilter.has(job.id)))
     : currentConvJobs();
@@ -364,7 +366,7 @@ function renderChat() {
   if (!log.dataset.stickBound) {
     log.dataset.stickBound = "1";
     log.addEventListener("scroll", () => {
-      chatAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+      chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
     });
   }
   const stick = !chatBootstrapped || chatAtBottom;
@@ -428,8 +430,8 @@ function renderChat() {
   const live = liveChatJob();
   if (live && !chatFilter) rows.push(...pendingRows(live));
   log.replaceChildren(...rows);
-  if (stick) log.scrollTop = log.scrollHeight;
-  chatAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+  if (stick) scroller.scrollTop = scroller.scrollHeight;
+  chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
   chatBootstrapped = true;
 }
 

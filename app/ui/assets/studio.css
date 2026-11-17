@@ -112,7 +112,7 @@ body {
   flex-direction: column;
   width: min(1040px, calc(100% - 40px));
   /* 浮层输入框占着底部，画布整体上移。 */
-  margin: 0 auto calc(var(--composer-h, 104px) + 24px);
+  margin: 0 auto 12px;
   height: min(34vh, 360px);
   min-height: 220px;
   border: 1px solid var(--ui-line);
@@ -1475,15 +1475,20 @@ body.dock-full .chat-dock {
 
 /* ── 会话流水 ─────────────────────────────────────────────────── */
 /* 一左一右：用户写的话靠右，出的图靠左。 */
-.chat-log {
-  flex: 1;
-  min-height: 0;
+/* 会话视图自己滚：滚动条从顶部贯到底部，不因输入框或画布改变位置。 */
+#view-chat {
   overflow-y: auto;
+  overflow-x: hidden;
+  /* 底部让出悬浮输入框的高度。 */
+  padding-bottom: calc(var(--composer-h, 104px) + 24px);
+}
+
+.chat-log {
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  /* 输入框浮在底部，滚到末尾时最后一条要能完整露出来。 */
-  padding: 22px max(20px, calc((100% - 860px) / 2)) calc(var(--composer-h, 104px) + 24px);
+  padding: 22px max(20px, calc((100% - 860px) / 2)) 20px;
 }
 .chat-row { display: flex; }
 .chat-row.user { justify-content: flex-end; }
