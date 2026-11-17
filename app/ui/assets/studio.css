@@ -87,6 +87,18 @@ body {
 }
 .studio-view[hidden] { display: none; }
 
+/* 输入框上方那块画布：会话在它上面继续滚。 */
+.chat-dock {
+  flex: none;
+  height: min(46vh, 460px);
+  border-top: 1px solid var(--ui-line);
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+.chat-dock[hidden] { display: none; }
+.chat-dock .canvas { height: 100%; }
+.cbtn.on { background: var(--ui-tint); color: var(--ui-text); }
+
 .view-bar {
   display: flex;
   align-items: center;
@@ -1390,7 +1402,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding: 22px max(20px, calc((100% - 860px) / 2)) 18px;
+  padding: 22px max(20px, calc((100% - 860px) / 2)) 26px;
 }
 .chat-row { display: flex; }
 .chat-row.user { justify-content: flex-end; }

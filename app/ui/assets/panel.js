@@ -4,6 +4,13 @@ import { hana } from "./sdk.js";
 import { startLive, inputUrl, outputUrl, thumbUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
+// 面板脚本一旦抛错，侧栏会整块空白：把第一条错误直接写到列表里。
+window.addEventListener("error", (event) => {
+  const box = document.getElementById("pn-history");
+  if (!box) return;
+  box.textContent = `脚本错误：${event.message} @ ${String(event.filename ?? "").split("/").pop()}:${event.lineno ?? 0}`;
+});
+
 const API = "/hana-moss-studio";
 /** 引擎的真实上限：单边 4096、总量 4.2 MP。 */
 const MAX_MP = 4.2;

@@ -214,8 +214,35 @@ function formatSize(bytes) {
 const tail = (p) => (p ? String(p).split(/[\\/]/).filter(Boolean).pop() : "");
 
 // ── 视图切换 ───────────────────────────────────────────────────────────
+// 输入框上方那块画布：同一份 DOM，不复制第二套。
+let dockOpen = false;
+
+function setDock(open) {
+  const canvasEl = document.getElementById("canvas");
+  const dockEl = document.getElementById("chat-dock");
+  const canvasHost = document.getElementById("view-canvas");
+  if (!canvasEl || !dockEl || !canvasHost) return;
+  dockOpen = Boolean(open);
+  if (dockOpen) {
+    if (currentView !== "chat") showView("chat");
+    canvasHost.hidden = true;
+    dockEl.append(canvasEl);
+    dockEl.hidden = false;
+  } else {
+    dockEl.hidden = true;
+    canvasHost.append(canvasEl);
+  }
+  document.getElementById("composer-dock")?.classList.toggle("on", dockOpen);
+  // 画布按容器尺寸排布，换了父节点要让它重新量一次。
+  requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+}
+
+document.getElementById("composer-dock")?.addEventListener("click", () => setDock(!dockOpen));
+
 function showView(view) {
   if (!views.includes(view)) return;
+  // 画布只有一个：切到画布页时，先把嵌在会话里的那块还回去。
+  if (view !== "chat" && dockOpen) setDock(false);
   currentView = view;
   for (const tab of nodes.tabs.querySelectorAll(".studio-tab")) {
     tab.classList.toggle("on", tab.dataset.view === view);
