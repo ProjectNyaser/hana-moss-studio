@@ -1524,6 +1524,9 @@ async function submitGenerate() {
     layChannel?.postMessage({ type: "compose-send", text: prompt, base: edit.remotePath ?? null });
     return;
   }
+  // 发出新的一句就是回到当前会话：不再停在从侧栏点开的历史段。
+  convScopeJobs = null;
+  chatFilter = null;
   submitting = true;
   if (composer.send) composer.send.disabled = true;
   try {
