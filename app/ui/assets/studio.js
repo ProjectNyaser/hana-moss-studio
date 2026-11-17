@@ -370,6 +370,12 @@ function renderChat() {
     const img = document.createElement("img");
     img.loading = "lazy";
     img.alt = (job.prompt ?? "").slice(0, 40);
+    // 先按真实比例占住高度：图到之前不塌，到了也不顶位。
+    if (job.width && job.height) {
+      img.style.aspectRatio = job.width + " / " + job.height;
+      img.setAttribute("width", String(job.width));
+      img.setAttribute("height", String(job.height));
+    }
     const url = loadThumb(job.output, 900);
     if (url) img.src = url;
     img.addEventListener("click", () => openViewer(job.id));
