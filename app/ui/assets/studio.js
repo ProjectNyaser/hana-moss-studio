@@ -1234,7 +1234,8 @@ const edit = {
 let maskDrawing = false;
 let maskLastPoint = null;
 let maskLoadToken = 0;
-const MASK_STROKE = "rgba(255, 96, 96, 0.55)";
+// 实色画，整层用 CSS 半透明：反复涂抹不会越涂越实。
+const MASK_STROKE = "rgb(255, 96, 96)";
 
 /** 蒙版画布的内部尺寸就是出图尺寸：与侧栏裁好的 init 图一一对应。 */
 function baseCanvasSize() {
