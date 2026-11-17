@@ -355,7 +355,9 @@ function renderChat() {
   const sig = JSON.stringify({
     ids: jobs.map((job) => job.id),
     // 刚提交的那条还没有结果，只有它进了签名，占位才会立刻出现。
-    live: liveJob ? `${liveJob.id}:${liveJob.status}` : null,
+    live: liveJob
+      ? `${liveJob.id}:${liveJob.status}:${latest?.engine?.active?.progress?.step ?? 0}/${latest?.engine?.active?.progress?.total ?? 0}:${latest?.engine?.active?.previewAt ?? ""}`
+      : null,
     filter: chatFilter ? [...chatFilter] : null,
     scope: convScopeJobs ? convScopeJobs.length : null,
     start: convStartMs,
@@ -479,7 +481,7 @@ function liveChatJob() {
   return jobs.find((job) => job.status === "running") ?? jobs.find((job) => job.status === "queued") ?? null;
 }
 
-/** 生成中的占位：上面是这次的提示词，下面是一块等图的空位。 */
+/** 生成中的那条：用户消息立刻出现，回复侧先立一块与成图同尺寸的占位。 */
 function pendingRows(job) {
   const userRow = document.createElement("div");
   userRow.className = "chat-row user";
@@ -489,27 +491,38 @@ function pendingRows(job) {
   botRow.className = "chat-row bot";
   const box = document.createElement("div");
   box.className = "chat-pending";
+
+  const width = job.width ?? latest?.settings?.width;
+  const height = job.height ?? latest?.settings?.height;
+  // 占位框按目标尺寸定比例：图从这一步开始在同一个位置长出来。
+  const frame = document.createElement("div");
+  frame.className = "chat-pending-frame";
+  if (width && height) frame.style.aspectRatio = `${width} / ${height}`;
+
+  const skeleton = document.createElement("div");
+  skeleton.className = "chat-skeleton";
+  const shot = document.createElement("img");
+  shot.className = "chat-pending-img";
+  shot.alt = "";
+  frame.append(skeleton, shot);
+
   const previewAt = job.status === "running" ? latest?.engine?.active?.previewAt : null;
-  // 采样有预览就先给一版，比一个纯文字框更接近结果。
   if (previewAt) {
-    const shot = document.createElement("img");
-    shot.className = "chat-pending-img";
-    // 先按目标尺寸占好位置：预览是分批出的，不占位就会来回顶。
-    const width = job.width ?? latest?.settings?.width;
-    const height = job.height ?? latest?.settings?.height;
-    if (width && height) shot.style.aspectRatio = `${width} / ${height}`;
     shot.src = previewUrl(previewAt);
-    shot.alt = "";
-    box.classList.add("has-preview");
-    box.append(shot);
+    frame.classList.add("loaded");
   }
+
   const progress = job.status === "running" ? (latest?.engine?.active?.progress ?? job.progress ?? {}) : {};
-  const label =
+  const label = document.createElement("p");
+  label.className = "chat-pending-label";
+  label.textContent =
     job.status === "running"
       ? `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step ?? 0}/${progress.total}` : "…"}`
       : "排队中";
-  box.textContent = label;
+
+  box.append(frame, label);
   botRow.append(box);
+
   const turn = document.createElement("div");
   turn.className = "chat-turn";
   turn.append(userRow, botRow);
