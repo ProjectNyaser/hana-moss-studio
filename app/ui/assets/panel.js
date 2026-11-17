@@ -2006,6 +2006,10 @@ function openConvMenu(session, anchor) {
   };
   add("继续这一段", () => continueSession(session));
   add("重命名", () => startRename(session, anchor));
+  // 只有一张的段拆不出东西。
+  if (session.jobs.length > 1) {
+    add("把最新一张拆成新会话", () => splitSession(session));
+  }
   add("解散这一段", () => dissolveSession(session));
   document.body.append(menu);
   convMenuAnchor = anchor;
@@ -2118,10 +2122,19 @@ async function splitSession(session) {
       keep,
     );
   }
-  say("已把最新一张拆成新会话");
-  activeConv = null;
-  editChannel?.postMessage({ type: "clear-conversation" });
+  // 拆出来的那段直接成为当前会话，主界面跟着过去，不用自己再找。
+  try {
+    localStorage.setItem(CONV_ID_KEY, fresh);
+    localStorage.setItem("hana-moss-studio.conv-pinned", "1");
+  } catch {
+    /* 存不了就只切这一次 */
+  }
+  blankConversation = false;
+  activeConv = [newest.id];
+  editChannel?.postMessage({ type: "open-conversation", jobs: [newest] });
+  say("已把最新一张拆成新会话，并切了过去");
   paintSessions();
+  await loadSessions();
 }
 
 // 会话行的拖放合并：dragSession 是正在被拖的那一段。
