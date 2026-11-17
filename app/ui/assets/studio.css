@@ -1595,14 +1595,15 @@ body.dock-full .chat-dock {
   align-items: center;
   gap: 6px;
   margin-top: 3px;
+  line-height: 16px;
 }
+/* 箭头与尺寸同一行：两边都按 16px 行高对齐，不再靠微调猜。 */
 .chat-arrow {
   flex: none;
   display: inline-flex;
   align-items: center;
-  height: 12px;
-  /* 数字的视觉重心偏高，箭头抬 1px 才是看上去同一行。 */
-  margin-top: -1px;
+  height: 16px;
+  margin: 0;
   color: var(--ui-text-3);
 }
 .chat-arrow svg { display: block; transition: transform 140ms var(--ui-ease); }
