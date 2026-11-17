@@ -448,8 +448,8 @@ function renderChat() {
   }
   // 正在跑的那一条也挂在末尾：人在会话页等图，不该什么也看不到。
   const live = liveChatJob();
-  // 从侧栏点开的是历史段，别把当前会话正在跑的占位塞进去。
-  if (live && !convScopeJobs) rows.push(...pendingRows(live));
+  // 列表是倒排的：DOM 开头才是视觉最底部，最新的那条放最前。
+  if (live && !convScopeJobs) rows.unshift(...pendingRows(live));
   // 看历史时以视口里最上面那条为锚：重建后用同一个锚点对位，位置不动。
   const anchorRow = chatAtBottom ? null : Array.from(log.querySelectorAll(".chat-row")).find((el) => el.getBoundingClientRect().bottom > scroller.getBoundingClientRect().top + 4);
   const anchorId = anchorRow?.dataset.jobId ?? null;
