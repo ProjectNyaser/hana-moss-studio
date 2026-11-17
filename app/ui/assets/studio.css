@@ -1,6 +1,22 @@
 /* 苔室工作区：画布、画廊、下载管理三个视图。生成设置仍在左侧栏（panel.html）。
    颜色只走 hana-theme.css 的 --ui-*（宿主主题变量）。 */
 
+/* 滚动条跟侧栏同一套：细、无箭头、滑块只在悬停时加深。 */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ui-text-3) 42%, transparent) transparent; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ui-text-3) 32%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ui-text-3) 56%, transparent);
+  background-clip: content-box;
+}
+
 html, body { height: 100%; }
 
 /* iframe 底色也铺上，内容短一像素时不会露出窗口的黑底。 */
