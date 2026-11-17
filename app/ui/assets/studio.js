@@ -1714,8 +1714,17 @@ async function submitGenerate() {
   localPending = {
     id: `local-${Date.now()}`,
     prompt,
+    negativePrompt: payload.negativePrompt,
     status: "queued",
     createdAt: new Date().toISOString(),
+    // 准备中就已经知道尺寸与参数：气泡和占位框当场就能摆对。
+    width: payload.width,
+    height: payload.height,
+    steps: payload.steps,
+    cfg: payload.cfg,
+    sampler: payload.sampler,
+    scheduler: payload.scheduler,
+    seed: payload.seed,
   };
   // 只退出全屏：画布是工具层，跟着这次提交收起，不占用消息。
   if (document.body.classList.contains("dock-full")) {
@@ -1730,6 +1739,16 @@ async function submitGenerate() {
   if (composer.send) composer.send.disabled = true;
   try {
     const payload = { prompt, negativePrompt: composer.negative?.value ?? "" };
+    // 这次要生成多大，提交时就定下来：占位按它立框，成图也按它出来。
+    const preset = latest?.settings ?? {};
+    if (preset.width && preset.height) {
+      payload.width = preset.width;
+      payload.height = preset.height;
+    }
+    if (preset.steps) payload.steps = preset.steps;
+    if (preset.cfg) payload.cfg = preset.cfg;
+    if (preset.sampler) payload.sampler = preset.sampler;
+    if (preset.scheduler) payload.scheduler = preset.scheduler;
     // 会话 id 跟着走：出图后才知道该归到哪一段。
     try {
       const conv = currentConv ?? localStorage.getItem("hana-moss-studio.conv-id");
