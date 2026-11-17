@@ -2175,7 +2175,8 @@ body.dock-full .chat-dock {
   justify-content: center;
   cursor: default;
 }
-.chat-base-card.missing img { visibility: hidden; height: 0; }
+/* 取不到图就把 img 移出流：留着它会把说明挤到一边。 */
+.chat-base-card.missing img { display: none; }
 .chat-base-note { padding: 0 12px; color: var(--ui-text-3); font-size: 11px; text-align: center; }
 .chat-base-tag {
   position: absolute;
