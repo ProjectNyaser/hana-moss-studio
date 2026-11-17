@@ -441,7 +441,17 @@ function renderChat() {
   const live = liveChatJob();
   // 从侧栏点开的是历史段，别把当前会话正在跑的占位塞进去。
   if (live && !convScopeJobs) rows.push(...pendingRows(live));
+  // 看历史时以视口里最上面那条为锚：重建后用同一个锚点对位，位置不动。
+  const anchorRow = chatAtBottom ? null : Array.from(log.querySelectorAll(".chat-row")).find((el) => el.getBoundingClientRect().bottom > scroller.getBoundingClientRect().top + 4);
+  const anchorId = anchorRow?.dataset.jobId ?? null;
+  const anchorOffset = anchorRow ? anchorRow.getBoundingClientRect().top - scroller.getBoundingClientRect().top : 0;
   log.replaceChildren(...rows);
+  if (!stick && anchorId) {
+    const again = log.querySelector(`.chat-row[data-job-id="${anchorId}"]`);
+    if (again) {
+      scroller.scrollTop += again.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchorOffset;
+    }
+  }
   if (stick) {
     // 图还没加载完时高度会变：先贴底，等两帧和图片解码后再贴一次。
     scroller.scrollTop = scroller.scrollHeight;
