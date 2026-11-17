@@ -1530,7 +1530,9 @@ body.dock-full .chat-dock {
 /* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
 /* 折叠的输入摘要：跟思考块一个形态，默认收起。 */
 .chat-think {
-  width: min(540px, 64%);
+  /* 按内容宽，不拉满：一行摘要就是一行。 */
+  width: fit-content;
+  max-width: min(540px, 64%);
   margin: 0 0 8px;
   padding: 7px 12px;
   border: 1px solid var(--ui-line);
@@ -1572,6 +1574,8 @@ body.dock-full .chat-dock {
   gap: 8px;
   width: min(540px, 64%);
 }
+/* 画布挪走后留下的空槽不占位。 */
+.chat-canvas-slot:empty { display: none; }
 .chat-canvas-slot .chat-dock {
   width: 100%;
   margin: 0;
