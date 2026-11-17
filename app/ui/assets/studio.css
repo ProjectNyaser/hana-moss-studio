@@ -1539,6 +1539,37 @@ body.dock-full .chat-dock {
 .chat-acts { display: flex; gap: 6px; }
 /* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
 /* 折叠的输入摘要：跟思考块一个形态，默认收起。 */
+/* 气泡：提示词一行，右上角一个展开箭头，其余按行列出。 */
+.chat-head { display: flex; align-items: flex-start; gap: 8px; }
+.chat-head .chat-text { flex: 1; min-width: 0; }
+.chat-more {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text-3);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.chat-more:hover { background: var(--ui-overlay); color: var(--ui-text); }
+.chat-more.on { color: var(--ui-accent); }
+.chat-extra {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.chat-extra[hidden] { display: none; }
+.chat-extra .k { color: var(--ui-text-3); white-space: nowrap; }
+.chat-extra .v { color: var(--ui-text-2); word-break: break-all; }
+
 /* 气泡里的摘要跟着气泡走：不再套一层卡片。 */
 .chat-bubble .chat-think {
   width: auto;

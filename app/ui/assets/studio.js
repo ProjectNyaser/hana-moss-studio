@@ -380,24 +380,7 @@ function renderChat() {
   for (const job of jobs) {
     const userRow = document.createElement("div");
     userRow.className = "chat-row user";
-    const bubble = document.createElement("div");
-    bubble.className = "chat-bubble";
-    const text = document.createElement("p");
-    text.className = "chat-text";
-    text.textContent = job.prompt || "（无提示词）";
-    const metaText = paramLine(job);
-    if (metaText) {
-      const meta = document.createElement("p");
-      meta.className = "chat-meta";
-      meta.textContent = metaText;
-      bubble.append(text, meta);
-    } else {
-      bubble.append(text);
-    }
-    // 摘要只补气泡上没有的部分；没得补就不占位。
-    const think = thinkBlock(job);
-    if (think) bubble.append(think);
-    userRow.append(bubble);
+    userRow.append(buildUserBubble(job));
 
     const botRow = document.createElement("div");
     botRow.className = "chat-row bot";
@@ -456,23 +439,7 @@ function liveChatJob() {
 function pendingRows(job) {
   const userRow = document.createElement("div");
   userRow.className = "chat-row user";
-  const bubble = document.createElement("div");
-  bubble.className = "chat-bubble";
-  const text = document.createElement("p");
-  text.className = "chat-text";
-  text.textContent = job.prompt || "（无提示词）";
-  const metaText = paramLine(job);
-  if (metaText) {
-    const meta = document.createElement("p");
-    meta.className = "chat-meta";
-    meta.textContent = metaText;
-    bubble.append(text, meta);
-  } else {
-    bubble.append(text);
-  }
-  const think = thinkBlock(job);
-  if (think) bubble.append(think);
-  userRow.append(bubble);
+  userRow.append(buildUserBubble(job));
 
   const botRow = document.createElement("div");
   botRow.className = "chat-row bot";
@@ -522,33 +489,78 @@ function placeDockUnused() {
   if (host && dock.parentElement !== host) host.append(dock);
 }
 
-/** 气泡里已经有提示词和参数，这块只补气泡上没写的那些。 */
-function thinkBlock(job) {
-  const negative = String(job.negativePrompt ?? job.negative ?? "").trim();
-  const lines = [];
-  if (negative) lines.push(`反向  ${negative}`);
-  // 尺寸、步数、CFG、采样器在气泡上已经有了，这里只列剩下的。
-  const extra = [
-    job.scheduler,
-    job.seed != null ? `种子 ${job.seed}` : "",
-    job.engineTier ? `档位 ${job.engineTier}` : "",
-    job.elapsedMs ? `耗时 ${(job.elapsedMs / 1000).toFixed(1)} 秒` : "",
-  ].filter(Boolean);
-  if (extra.length) lines.push(`其他  ${extra.join(" · ")}`);
-  const origin = job.origin ?? {};
-  if (origin.base) lines.push(`底图  ${origin.base}`);
-  if (Array.isArray(origin.refs) && origin.refs.length) lines.push(`参考  ${origin.refs.join("、")}`);
-  // 没有气泡之外的信息就不摆这一行。
-  if (!lines.length) return null;
+/** 一条用户消息：提示词 + 分辨率常显，其余收在右上角的展开里。 */
+function buildUserBubble(job) {
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble";
 
-  const box = document.createElement("details");
-  box.className = "chat-think";
-  const head = document.createElement("summary");
-  head.textContent = `更多输入 · ${lines.length} 项`;
-  const body = document.createElement("pre");
-  body.textContent = lines.join("\n");
-  box.append(head, body);
-  return box;
+  const head = document.createElement("div");
+  head.className = "chat-head";
+  const text = document.createElement("p");
+  text.className = "chat-text";
+  text.textContent = job.prompt || "（无提示词）";
+  head.append(text);
+
+  const rows = [];
+  const size = job.width && job.height ? `${job.width}×${job.height}` : "";
+  if (job.steps) rows.push(["步数", String(job.steps)]);
+  if (job.cfg) rows.push(["CFG", String(job.cfg)]);
+  if (job.sampler) rows.push(["采样器", String(job.sampler)]);
+  if (job.scheduler) rows.push(["调度器", String(job.scheduler)]);
+  if (job.seed != null) rows.push(["种子", String(job.seed)]);
+  if (job.engineTier) rows.push(["档位", String(job.engineTier)]);
+  if (job.elapsedMs) rows.push(["耗时", `${(job.elapsedMs / 1000).toFixed(1)} 秒`]);
+  const negative = String(job.negativePrompt ?? job.negative ?? "").trim();
+  if (negative) rows.push(["反向", negative]);
+  const origin = job.origin ?? {};
+  if (origin.base) rows.push(["底图", String(origin.base)]);
+  if (Array.isArray(origin.refs) && origin.refs.length) rows.push(["参考", origin.refs.join("、")]);
+
+  // 展开按钮只在真有额外信息时出现，固定在右上角。
+  if (rows.length) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "chat-more";
+    more.textContent = "›";
+    more.title = "展开这次的全部参数";
+    const extra = document.createElement("div");
+    extra.className = "chat-extra";
+    extra.hidden = true;
+    for (const [key, value] of rows) {
+      const k = document.createElement("span");
+      k.className = "k";
+      k.textContent = key;
+      const v = document.createElement("span");
+      v.className = "v";
+      v.textContent = value;
+      extra.append(k, v);
+    }
+    more.addEventListener("click", () => {
+      const open = extra.hidden;
+      extra.hidden = !open;
+      more.classList.toggle("on", open);
+      more.textContent = open ? "⌄" : "›";
+    });
+    head.append(more);
+    bubble.append(head);
+    if (size) {
+      const meta = document.createElement("p");
+      meta.className = "chat-meta";
+      meta.textContent = size;
+      bubble.append(meta);
+    }
+    bubble.append(extra);
+    return bubble;
+  }
+
+  bubble.append(head);
+  if (size) {
+    const meta = document.createElement("p");
+    meta.className = "chat-meta";
+    meta.textContent = size;
+    bubble.append(meta);
+  }
+  return bubble;
 }
 
 function renderStage(data) {
