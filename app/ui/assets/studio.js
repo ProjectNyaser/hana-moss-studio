@@ -438,7 +438,6 @@ function renderChat() {
   // 从侧栏点开的是历史段，别把当前会话正在跑的占位塞进去。
   if (live && !convScopeJobs) rows.push(...pendingRows(live));
   log.replaceChildren(...rows);
-  placeDock();
   if (stick) scroller.scrollTop = scroller.scrollHeight;
   chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
   chatBootstrapped = true;
@@ -499,8 +498,12 @@ function pendingRows(job) {
   return [userRow, botRow];
 }
 
-/** 画布跟着正在生成的那条走：有它在消息里，没了就回到视图末尾。 */
+/** 画布浮在底部，不往消息里搬。 */
 function placeDock() {
+  return;
+}
+
+function placeDockUnused() {
   const dock = document.getElementById("chat-dock");
   if (!dock || dock.hidden) return;
   const slot = document.querySelector('.chat-canvas-slot[data-live]');
