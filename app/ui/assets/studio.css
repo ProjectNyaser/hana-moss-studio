@@ -1506,7 +1506,12 @@ body.dock-full .chat-dock {
 }
 .chat-row { display: flex; }
 .chat-row.user { justify-content: flex-end; }
-.chat-row.bot { justify-content: flex-start; }
+/* 回复里的摘要、画布、图片是上下叠的，不是并排。 */
+.chat-row.bot {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
 .chat-bubble {
   max-width: min(620px, 78%);
   padding: 10px 14px;
