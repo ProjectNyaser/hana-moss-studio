@@ -288,6 +288,9 @@ function showView(view) {
 // ── 画布 ───────────────────────────────────────────────────────────────
 let chatFilter = null;
 let convStartMs = 0;
+// 首次渲染一定贴底；之后跟着用户是否停在底部走。
+let chatAtBottom = true;
+let chatBootstrapped = false;
 // 从侧栏点开那一段的完整记录：主界面只拉了第一页，靠前的老图不在里面。
 let convScopeJobs = null;
 
@@ -338,7 +341,13 @@ function renderChat() {
   }
   const rows = [];
   // 用户本来在底部才跟着滚；否则留着位置，别把人正在看的地方抽走。
-  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 8 || !log.children.length;
+  if (!log.dataset.stickBound) {
+    log.dataset.stickBound = "1";
+    log.addEventListener("scroll", () => {
+      chatAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+    });
+  }
+  const stick = !chatBootstrapped || chatAtBottom;
   for (const job of jobs) {
     const userRow = document.createElement("div");
     userRow.className = "chat-row user";
@@ -393,6 +402,8 @@ function renderChat() {
   if (live && !chatFilter) rows.push(...pendingRows(live));
   log.replaceChildren(...rows);
   if (stick) log.scrollTop = log.scrollHeight;
+  chatAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+  chatBootstrapped = true;
 }
 
 /** 队列里正在跑或排第一的那一条。 */
