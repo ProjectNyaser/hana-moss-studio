@@ -1513,6 +1513,9 @@ body.dock-full .chat-dock {
   gap: 18px;
   padding: 22px max(20px, calc((100% - 860px) / 2)) 20px;
 }
+/* 一轮消息：内部顺序固定，不受外层倒排影响。 */
+.chat-turn { display: flex; flex-direction: column; gap: 10px; }
+
 .chat-row { display: flex; }
 .chat-row.user { justify-content: flex-end; }
 /* 回复里的摘要、画布、图片是上下叠的，不是并排。 */

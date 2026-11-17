@@ -436,7 +436,11 @@ function renderChat() {
     img.addEventListener("error", () => frame.classList.add("loaded"));
     shot.append(frame, acts);
     botRow.append(shot);
-    rows.push(userRow, botRow);
+    // 一轮是一个整体：块之间倒排，块内仍是「我说话 → 它回图」。
+    const turn = document.createElement("div");
+    turn.className = "chat-turn";
+    turn.append(userRow, botRow);
+    rows.push(turn);
   }
   // 正在跑的那一条也挂在末尾：人在会话页等图，不该什么也看不到。
   const live = liveChatJob();
@@ -506,7 +510,10 @@ function pendingRows(job) {
       : "排队中";
   box.textContent = label;
   botRow.append(box);
-  return [userRow, botRow];
+  const turn = document.createElement("div");
+  turn.className = "chat-turn";
+  turn.append(userRow, botRow);
+  return [turn];
 }
 
 /** 一条用户消息：提示词 + 分辨率常显，其余收在右上角的展开里。 */
