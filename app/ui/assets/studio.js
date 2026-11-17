@@ -348,7 +348,8 @@ function renderChat() {
   const scoped = convStartMs
     ? source.filter((job) => (Date.parse(job.createdAt ?? "") || 0) >= convStartMs)
     : source;
-  const jobs = scoped.filter((job) => job.status === "done" && job.output).slice().reverse();
+  // 列表已倒排，这里保持「最新在前」：DOM 第一项就贴在底部。
+  const jobs = scoped.filter((job) => job.status === "done" && job.output);
   // 状态没变就不重建：轮询每三秒来一次，整体重绘会让图片重新加载、滚动跳动。
   const liveJob = localPending ?? liveChatJob();
   const sig = JSON.stringify({
