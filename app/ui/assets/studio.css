@@ -181,8 +181,7 @@ body.dock-full .chat-dock {
   width: auto;
   margin: 0;
   border-radius: 0;
-  border-left: 0;
-  border-right: 0;
+  border: 0;
   box-shadow: none;
 }
 .chat-dock-icon.on { background: var(--ui-tint); color: var(--ui-text); }
