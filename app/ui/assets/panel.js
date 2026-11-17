@@ -2133,7 +2133,10 @@ function paintSessions() {
         title.textContent = "新对话";
         const note = document.createElement("span");
         note.className = "pn-hist-meta";
-        note.textContent = "还没有消息";
+        // 时间就用这段会话的创建时刻，张数如实写 0。
+        const born = Number(localStorage.getItem("hana-moss-studio.fresh-at") ?? 0) || Date.now();
+        const when = new Date(born).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        note.textContent = `0 张 · ${when}`;
         box.append(title, note);
         const tail = document.createElement("span");
         tail.className = "pn-hist-more-spacer";
