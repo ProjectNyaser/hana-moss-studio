@@ -2278,17 +2278,18 @@ function paintSessions() {
         event.preventDefault();
         startRename(session, text);
       });
-      // 拖一段到另一段上就是合并：比在菜单里选「上一段」直觉得多。
-      btn.draggable = true;
-      thumb.draggable = false;
-      btn.addEventListener("dragstart", (event) => {
+      // 只有缩略图能拖：点行是查看、双击是改名，别和拖拽抢同一个手势。
+      btn.draggable = false;
+      thumb.draggable = true;
+      thumb.title = "拖到另一段上并进去";
+      thumb.addEventListener("dragstart", (event) => {
         dragSession = session;
         btn.classList.add("dragging");
         event.dataTransfer.effectAllowed = "move";
         // 有些环境要带一点数据才发 drag 事件。
         event.dataTransfer.setData("text/plain", session.key);
       });
-      btn.addEventListener("dragend", () => {
+      thumb.addEventListener("dragend", () => {
         dragSession = null;
         btn.classList.remove("dragging");
         clearDropMarks();
