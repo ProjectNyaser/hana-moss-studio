@@ -4113,8 +4113,6 @@ async function boot() {
   }
   showView("chat");
   void loadGallery(true);
-  // 事件流会断，轮询兜底：三秒对齐一次状态。
-  setInterval(() => void refresh(), 3000);
   // 侧栏那边存着底图与蒙版，起来之后问一遍当前状态。
   layChannel?.postMessage({ type: "edit-hello" });
   // 首屏靠事件流的首帧，不再单独拉一次 /state。万一流一时连不上，两秒后再补一次。

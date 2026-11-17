@@ -3197,18 +3197,6 @@ reuseChannel?.addEventListener("message", (event) => {
 
 // ── 片段：点一下接到主界面那段后面 ───────────────────────────
 const PROMPT_PRESETS = ["晨雾", "柔光", "浅景深", "低饱和", "胶片颗粒", "逆光", "湿润的空气", "极简构图"];
-// 事件流靠不住时用轮询兜底：三秒拉一次 state，数据一样就直接铺。
-setInterval(async () => {
-  try {
-    const response = await hana.api.fetch(`${API}/state`);
-    if (!response.ok) throw new Error(`state ${response.status}`);
-    render(await response.json());
-  } catch (error) {
-    // 拉不到或渲染抛错都要看得见，而不是一片空白。
-    const box = nodes.history;
-    if (box) box.textContent = `面板拉数据失败：${error?.message ?? error}`;
-  }
-}, 3000);
 nodes.newConv?.addEventListener("click", () => {
   try {
     const now = Date.now();
