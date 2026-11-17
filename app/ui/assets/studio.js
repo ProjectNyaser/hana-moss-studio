@@ -249,13 +249,13 @@ function setDock(open) {
   requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
 }
 
-// 隔一阵再打开就停在一段空白的新对话上；短时间内刷新沿用当前这段。
+// 会话 id 变了就是开了新的一段：侧栏换了 id，这边就从空白开始，
+// 两边不会一个空一个满。
 try {
-  const seenKey = "hana-moss-studio.seen-studio";
-  const last = Number(localStorage.getItem(seenKey) ?? 0);
-  const now = Date.now();
-  localStorage.setItem(seenKey, String(now));
-  if (!last || now - last > 5 * 60 * 1000) convStartMs = now;
+  const conv = localStorage.getItem("hana-moss-studio.conv-id");
+  const seen = localStorage.getItem("hana-moss-studio.seen-conv");
+  if (conv && conv !== seen) convStartMs = Date.now();
+  if (conv) localStorage.setItem("hana-moss-studio.seen-conv", conv);
 } catch {
   /* 存不了就按旧的来 */
 }
