@@ -945,8 +945,8 @@ function renderLayDraft() {
 }
 
 function openLayout(selectId) {
-  // 画布只有一块：框选与改图台不共存。
-  if (edit.open) closeEditSheet();
+  // 画布只有一块：框选与改图台不共存，但底图与蒙版都留着。
+  if (edit.open) closeEditSheet(true);
   lay.open = true;
   nodes.lay.hidden = false;
   nodes.laySheet.style.backgroundImage = lay.underlay ? `url(${lay.underlay.url})` : "";
@@ -1348,11 +1348,11 @@ async function openEditSheet(file) {
   }
 }
 
-function closeEditSheet() {
+function closeEditSheet(keepBase = false) {
   edit.open = false;
   edit.mode = null;
-  // 关掉就不再带底图：下一次发送回到纯文生图。
-  edit.remotePath = null;
+  // 关掉就不再带底图：下一次发送回到纯文生图。切去框选时底图还留着。
+  if (!keepBase) edit.remotePath = null;
   maskDrawing = false;
   maskLastPoint = null;
   nodes.base.hidden = true;
@@ -2306,6 +2306,19 @@ nodes.layImport.addEventListener("click", () => {
 nodes.layBase.addEventListener("click", () => {
   if (!edit.file) {
     toast("先用「换底图」选一张，再抹蒙版");
+    return;
+  }
+  // 同一张底图：直接开回改图台，蒙版原样接着用。
+  if (edit.url) {
+    closeLayout();
+    edit.open = true;
+    edit.mode = null;
+    nodes.base.hidden = false;
+    nodes.baseImage.src = edit.url;
+    baseSheetSize();
+    if (edit.maskBlob) void showMaskBlob(edit.maskBlob);
+    renderBaseBar();
+    void renderCanvas(latest);
     return;
   }
   void openEditSheet(edit.file).catch((error) => {
