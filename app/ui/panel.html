@@ -412,6 +412,7 @@
       padding: 6px;
       border: 0 !important;
       border-radius: 10px;
+      transition: background 120ms var(--ui-ease);
       background: transparent !important;
       color: var(--ui-text);
       font: inherit;
@@ -421,10 +422,10 @@
     /* 空会话那行与普通行同框，只是文字淡一档。 */
     .pn-conv-row.empty .pn-hist-prompt { color: var(--ui-text-2); }
     .pn-conv-row:hover { background: var(--ui-overlay); }
+    /* 选中靠底色与左侧一条强调，不另起一个边框样式。 */
     .pn-conv-row.on {
       background: var(--ui-tint);
-      outline: 1px solid var(--ui-accent);
-      outline-offset: -1px;
+      box-shadow: inset 2px 0 0 var(--ui-accent);
     }
     /* 拖拽中与可放下：虚线框一步到位。 */
     .pn-conv-row.dragging { opacity: 0.45; }
