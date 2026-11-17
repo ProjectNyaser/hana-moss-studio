@@ -526,7 +526,16 @@ function thinkBlock(job) {
     `反向  ${negative || "（空）"}`,
   ];
   const size = job.width && job.height ? `${job.width}×${job.height}` : "";
-  const bits = [size, job.steps ? `${job.steps} 步` : "", job.cfg ? `CFG ${job.cfg}` : "", job.seed != null ? `种子 ${job.seed}` : ""].filter(Boolean);
+  const bits = [
+    size,
+    job.steps ? `${job.steps} 步` : "",
+    job.cfg ? `CFG ${job.cfg}` : "",
+    job.sampler,
+    job.scheduler,
+    job.seed != null ? `种子 ${job.seed}` : "",
+    job.engineTier ? `档位 ${job.engineTier}` : "",
+    job.elapsedMs ? `耗时 ${(job.elapsedMs / 1000).toFixed(1)} 秒` : "",
+  ].filter(Boolean);
   if (bits.length) lines.push(`参数  ${bits.join(" · ")}`);
   const origin = job.origin ?? {};
   if (origin.base) lines.push(`底图  ${origin.base}`);
@@ -535,7 +544,8 @@ function thinkBlock(job) {
   const box = document.createElement("details");
   box.className = "chat-think";
   const head = document.createElement("summary");
-  head.textContent = `文本编码 · ${prompt.length} 字`;
+  // 只报真拿到的东西：喂进去的内容和引擎回报的参数。
+  head.textContent = `这次的输入 · ${prompt.length} 字`;
   const body = document.createElement("pre");
   body.textContent = lines.join("\n");
   box.append(head, body);
