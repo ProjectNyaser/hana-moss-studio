@@ -441,13 +441,19 @@ function renderChat() {
     img.addEventListener("load", () => frame.classList.add("loaded"));
     img.addEventListener("error", () => frame.classList.add("loaded"));
     shot.append(frame, acts);
-    const under = baseCard(job);
-    if (under) userRow.append(under);
     botRow.append(shot);
-    // 一轮是一个整体：块之间倒排，块内仍是「我说话 → 它回图」。
+    // 一轮是一个整体：块之间倒排，块内仍是「我说话 → 带进去的底图 → 它回图」。
     const turn = document.createElement("div");
     turn.className = "chat-turn";
-    turn.append(userRow, botRow);
+    turn.append(userRow);
+    const under = baseCard(job);
+    if (under) {
+      const baseRow = document.createElement("div");
+      baseRow.className = "chat-row user";
+      baseRow.append(under);
+      turn.append(baseRow);
+    }
+    turn.append(botRow);
     rows.push(turn);
   }
   // 正在跑的那一条也挂在末尾：人在会话页等图，不该什么也看不到。
@@ -544,13 +550,19 @@ function pendingRows(job) {
       : "排队中";
 
   box.append(frame, label);
-  const under = baseCard(job);
-  if (under) userRow.append(under);
   botRow.append(box);
 
   const turn = document.createElement("div");
   turn.className = "chat-turn";
-  turn.append(userRow, botRow);
+  turn.append(userRow);
+  const under = baseCard(job);
+  if (under) {
+    const baseRow = document.createElement("div");
+    baseRow.className = "chat-row user";
+    baseRow.append(under);
+    turn.append(baseRow);
+  }
+  turn.append(botRow);
   return [turn];
 }
 
