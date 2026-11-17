@@ -124,6 +124,10 @@ body {
   background: var(--ui-surface);
   overflow: hidden;
 }
+/* 移除底图是破坏性动作：悬停才转红。 */
+#base-close { color: var(--ui-text-2); }
+#base-close:hover { color: var(--danger, #c4553f); background: color-mix(in srgb, var(--danger, #c4553f) 10%, transparent); }
+
 /* 全屏时图标换成向内收：点它是退出。 */
 #chat-dock-full .ico-collapse { display: none; }
 body.dock-full #chat-dock-full .ico-expand { display: none; }
