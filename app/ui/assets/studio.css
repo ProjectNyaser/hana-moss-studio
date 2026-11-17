@@ -1897,11 +1897,4 @@ body.dock-full .chat-dock { height: auto; flex: 1; }
   line-height: 0;
   overflow: hidden;
 }
-.send::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-top: 2px solid currentColor;
-  border-right: 2px solid currentColor;
-  transform: translateY(1px) rotate(-45deg);
-}
+.send svg { display: block; }
