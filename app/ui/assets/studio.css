@@ -1583,16 +1583,7 @@ body.dock-full .chat-dock {
 /* 折叠的输入摘要：跟思考块一个形态，默认收起。 */
 /* 气泡：提示词一行，右上角一个展开箭头，其余按行列出。 */
 /* summary：提示词一行，分辨率一行，箭头跟在尺寸后面。 */
-.chat-summary {
-  list-style: none;
-  cursor: pointer;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-/* 箭头与首行文字对齐，不落到两行之间。 */
-.chat-summary > .chat-arrow { margin-top: 2px; }
-.chat-summary-body { flex: 1; min-width: 0; }
+.chat-summary { list-style: none; cursor: pointer; }
 .chat-summary::-webkit-details-marker { display: none; }
 .chat-summary::-moz-marker { content: none; }
 .chat-sub {
