@@ -1645,24 +1645,6 @@ body.dock-full .chat-dock { height: auto; flex: 1; }
   padding: 0 6px 4px;
 }
 .composer-extra[hidden] { display: none; }
-/* 有底图时，输入框上面多一条「画布 · 改这张」。 */
-.composer-dock-row {
-  display: flex;
-  padding: 0 6px 6px;
-}
-.composer-dock-row[hidden] { display: none; }
-.composer-dock-btn {
-  padding: 3px 10px;
-  border: 1px solid var(--ui-line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ui-text-2);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.composer-dock-btn:hover { border-color: var(--ui-accent); color: var(--ui-text); }
-.composer-dock-btn.on { background: var(--ui-tint); border-color: var(--ui-accent); color: var(--ui-text); }
 /* 两行各自一排，不挤在一起。 */
 .composer-extra + .composer-extra { padding-top: 0; }
 .composer-more {

@@ -242,14 +242,14 @@ function setDock(open) {
     document.body.classList.remove("dock-full");
     document.getElementById("chat-dock-full")?.classList.remove("on");
   }
-  document.getElementById("composer-dock-btn")?.classList.toggle("on", dockOpen);
+  document.getElementById("dock-toggle")?.classList.toggle("on", dockOpen);
   // 画布改了高度，会话区跟着变：重排一次，滚到底的仍在底部。
   if (currentView === "chat") renderChat();
   // 画布按容器尺寸排布，换了父节点要让它重新量一次。
   requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
 }
 
-document.getElementById("composer-dock-btn")?.addEventListener("click", () => setDock(!dockOpen));
+document.getElementById("dock-toggle")?.addEventListener("click", () => setDock(!dockOpen));
 document.getElementById("chat-dock-full")?.addEventListener("click", () => {
   const on = !document.body.classList.contains("dock-full");
   document.body.classList.toggle("dock-full", on);
@@ -2125,10 +2125,6 @@ function renderComposerModel() {
 /** 底图、蒙版、布局各自的状态。 */
 function renderComposerChips(state) {
   lastEditState = state ?? lastEditState;
-  // 只有手里真有一张底图时才需要画布：没底图时这一行不占地方。
-  const dockRow = document.getElementById("composer-dock-row");
-  if (dockRow) dockRow.hidden = !lastEditState?.hasBase;
-  if (!lastEditState?.hasBase && dockOpen) setDock(false);
   if (!composer.chips) return;
   const items = [];
   // 参考图每张一张缩略图卡，点开看大图。
