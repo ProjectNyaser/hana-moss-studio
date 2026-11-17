@@ -303,6 +303,8 @@ function showView(view) {
 // ── 画布 ───────────────────────────────────────────────────────────────
 let chatFilter = null;
 let convStartMs = 0;
+// 刚提交、服务端还没回来的那一条：先在会话里立住，不让界面空等。
+let localPending = null;
 // 首次渲染一定贴底；之后跟着用户是否停在底部走。
 let chatAtBottom = true;
 let chatBootstrapped = false;
@@ -348,7 +350,7 @@ function renderChat() {
     : source;
   const jobs = scoped.filter((job) => job.status === "done" && job.output).slice().reverse();
   // 状态没变就不重建：轮询每三秒来一次，整体重绘会让图片重新加载、滚动跳动。
-  const liveJob = liveChatJob();
+  const liveJob = localPending ?? liveChatJob();
   const sig = JSON.stringify({
     ids: jobs.map((job) => job.id),
     // 刚提交的那条还没有结果，只有它进了签名，占位才会立刻出现。
@@ -471,6 +473,16 @@ function pendingRows(job) {
   botRow.className = "chat-row bot";
   const box = document.createElement("div");
   box.className = "chat-pending";
+  const previewAt = job.status === "running" ? latest?.engine?.active?.previewAt : null;
+  // 采样有预览就先给一版，比一个纯文字框更接近结果。
+  if (previewAt) {
+    const shot = document.createElement("img");
+    shot.className = "chat-pending-img";
+    shot.src = previewUrl(previewAt);
+    shot.alt = "";
+    box.classList.add("has-preview");
+    box.append(shot);
+  }
   const progress = job.status === "running" ? (latest?.engine?.active?.progress ?? job.progress ?? {}) : {};
   const label =
     job.status === "running"
@@ -1527,6 +1539,21 @@ async function submitGenerate() {
   // 发出新的一句就是回到当前会话：不再停在从侧栏点开的历史段。
   convScopeJobs = null;
   chatFilter = null;
+  // 先把这次的话挂到会话里，再收起画布：第一眼看到的是自己的消息。
+  localPending = {
+    id: `local-${Date.now()}`,
+    prompt,
+    status: "queued",
+    createdAt: new Date().toISOString(),
+  };
+  if (dockOpen || document.body.classList.contains("dock-full")) {
+    document.body.classList.remove("dock-full");
+    document.getElementById("chat-dock-full")?.classList.remove("on");
+    setDock(false);
+  }
+  chatAtBottom = true;
+  renderChat.lastSig = "";
+  renderChat();
   submitting = true;
   if (composer.send) composer.send.disabled = true;
   try {
@@ -3836,6 +3863,11 @@ function render(data) {
       chatAtBottom = true;
       renderChat();
     }
+  }
+  // 服务端已经有这条在排：本地占位让位给真实记录。
+  if (localPending && (data.jobs ?? []).some((job) => job.status === "running" || job.status === "queued")) {
+    localPending = null;
+    renderChat.lastSig = "";
   }
   bootstrapped = true;
   syncBaseSheet();

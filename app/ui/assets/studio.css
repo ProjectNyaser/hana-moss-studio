@@ -1533,6 +1533,17 @@ body.dock-full .chat-dock {
 }
 .chat-acts { display: flex; gap: 6px; }
 /* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
+/* 有采样预览时，占位就是那张图本身，进度写在下面。 */
+.chat-pending.has-preview {
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 8px;
+  border-style: solid;
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+.chat-pending-img { display: block; width: 100%; height: auto; }
+
 .chat-pending {
   display: flex;
   align-items: center;
