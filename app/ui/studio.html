@@ -87,12 +87,16 @@
             <label class="base-brush" id="base-brush-field" hidden><span>笔刷</span>
               <input id="base-brush" type="range" min="6" max="240" step="2" value="60">
               <span class="base-brush-value mono" id="base-brush-value">60</span></label>
-            <button class="btn small" id="base-paint" type="button">画蒙版</button>
+            <button class="btn small" id="base-paint" type="button">蒙版</button>
             <button class="btn small" id="base-erase" type="button" hidden>擦</button>
             <button class="btn small" id="base-mask-clear" type="button" hidden>清空</button>
             <button class="btn small" id="base-mask-save" type="button" hidden>保存蒙版</button>
-            <button class="btn small" id="base-layout" type="button" title="把这张底图交给布局框选">框选布局</button>
-            <button class="btn small" id="base-close" type="button" title="不再用这张底图，回到纯文生图">移除底图</button>
+            <button class="btn small" id="base-layout" type="button" title="在这张底图上框几块，按块重排">框选</button>
+            <button class="chat-dock-icon" id="base-close" type="button" title="移除底图，回到纯文生图">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3.4 4.6h9.2M6.4 4.6V3.2h3.2v1.4M4.6 4.6l.6 8.2h5.6l.6-8.2M6.6 6.8v4.2M9.4 6.8v4.2"/>
+              </svg>
+            </button>
             <button class="chat-dock-icon" id="chat-dock-full" type="button" title="全屏画布">
               <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M6 2.8H2.8V6M10 2.8h3.2V6M6 13.2H2.8V10M10 13.2h3.2V10"/>
