@@ -1590,19 +1590,20 @@ body.dock-full .chat-dock {
 .chat-summary { list-style: none; cursor: pointer; }
 .chat-summary::-webkit-details-marker { display: none; }
 .chat-summary::-moz-marker { content: none; }
+/* 行高交给盒子：文字按自身高度，居中由 flex 负责。 */
 .chat-sub {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 3px;
-  line-height: 16px;
+  margin-top: 4px;
+  line-height: 1;
 }
 /* 箭头与尺寸同一行：两边都按 16px 行高对齐，不再靠微调猜。 */
 .chat-arrow {
   flex: none;
   display: inline-flex;
   align-items: center;
-  height: 16px;
+  height: 12px;
   margin: 0;
   color: var(--ui-text-3);
 }
