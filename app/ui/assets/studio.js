@@ -478,7 +478,19 @@ function renderChat() {
 /** 队列里正在跑或排第一的那一条。 */
 function liveChatJob() {
   const jobs = latest?.jobs ?? [];
-  return jobs.find((job) => job.status === "running") ?? jobs.find((job) => job.status === "queued") ?? null;
+  const hit = jobs.find((job) => job.status === "running") ?? jobs.find((job) => job.status === "queued");
+  if (hit) return hit;
+  // 引擎已经在跑、但记录还没进列表时，用它兜住这一条占位。
+  const active = latest?.engine?.active;
+  if (!active) return null;
+  return {
+    id: active.jobId ?? "live",
+    status: "running",
+    prompt: active.prompt ?? "",
+    width: active.width,
+    height: active.height,
+    steps: active.steps,
+  };
 }
 
 /** 生成中的那条：用户消息立刻出现，回复侧先立一块与成图同尺寸的占位。 */
@@ -3997,9 +4009,14 @@ function render(data) {
     }
   }
   // 服务端已经有这条在排：本地占位让位给真实记录。
-  if (localPending && (data.jobs ?? []).some((job) => job.status === "running" || job.status === "queued")) {
-    localPending = null;
-    renderChat.lastSig = "";
+  if (localPending) {
+    const same = (data.jobs ?? []).some(
+      (job) => (job.status === "running" || job.status === "queued") && (!localPending.prompt || job.prompt === localPending.prompt),
+    );
+    if (same) {
+      localPending = null;
+      renderChat.lastSig = "";
+    }
   }
   bootstrapped = true;
   syncBaseSheet();
