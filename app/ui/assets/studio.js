@@ -1094,6 +1094,8 @@ async function setUnderlay(file) {
   try {
     const uploaded = await api("/inputs/upload?kind=init", { method: "POST", body: file }, 60000);
     if (uploaded?.name) layChannel?.postMessage({ type: "layout-underlay", name: uploaded.name });
+      // 提交时这条路径跟着 compose-send 一起过去，不再单独跟侧栏握手。
+      edit.remotePath = uploaded?.path ?? null;
   } catch (error) {
     toast(`底图没传上去：${error instanceof Error ? error.message : String(error)}`, "error");
   }
@@ -1314,6 +1316,8 @@ async function openEditSheet(file) {
     try {
       const uploaded = await api("/inputs/upload?kind=init", { method: "POST", body: file }, 60000);
       if (uploaded?.name) layChannel?.postMessage({ type: "layout-underlay", name: uploaded.name });
+      // 提交时这条路径跟着 compose-send 一起过去，不再单独跟侧栏握手。
+      edit.remotePath = uploaded?.path ?? null;
     } catch (error) {
       toast(`底图没传上去：${error instanceof Error ? error.message : String(error)}`, "error");
     }
@@ -1347,6 +1351,8 @@ async function openEditSheet(file) {
 function closeEditSheet() {
   edit.open = false;
   edit.mode = null;
+  // 关掉就不再带底图：下一次发送回到纯文生图。
+  edit.remotePath = null;
   maskDrawing = false;
   maskLastPoint = null;
   nodes.base.hidden = true;
@@ -1437,7 +1443,7 @@ function pushComposerPrompt() {
 function sendCompose() {
   if (!composer.send || composer.send.disabled) return;
   composer.send.disabled = true;
-  layChannel?.postMessage({ type: "compose-send", text: composerText() });
+  layChannel?.postMessage({ type: "compose-send", text: composerText(), base: edit.remotePath ?? null });
   setTimeout(() => {
     if (composer.send) composer.send.disabled = false;
   }, 1400);
@@ -3595,7 +3601,6 @@ function loadJob(job) {
 /** 把一张已出的图当底图：侧栏管提交参数，画布这边同时把图摆上。 */
 function useAsReference(job) {
   if (!job?.output) return;
-  channel?.postMessage({ type: "reference", name: job.output });
   setDock(true);
   void openEditFromJob(job);
 }

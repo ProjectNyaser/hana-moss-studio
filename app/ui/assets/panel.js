@@ -12,6 +12,8 @@ window.addEventListener("error", (event) => {
 });
 
 const API = "/hana-moss-studio";
+/** 主界面在 compose-send 里带来的底图路径，只对这一条请求有效。 */
+let pendingBase = null;
 /** 引擎的真实上限：单边 4096、总量 4.2 MP。 */
 const MAX_MP = 4.2;
 // 引擎的硬边界：单边最小 256（256×256 ≈ 0.066MP）。
@@ -2354,7 +2356,17 @@ async function onGenerate() {
   if (activeLoras.length) payload.loras = activeLoras.map(({ path, strength }) => ({ path, strength: Number(strength) }));
   try {
     // 参考图按当前尺寸现准备：改了尺寸也能直接跑，不用用户再选一次。
-    if (refImage) {
+    if (pendingBase) {
+      // 主界面已经把这张图上传过了，路径直接用。
+      payload.initImage = pendingBase;
+      payload.strength = Math.min(1, Math.max(0.05, Number(nodes.strength.value) || 0.6));
+      payload.resize = "stretch";
+      if (maskPath) {
+        payload.mask = maskPath;
+        payload.maskEncoding = "u8";
+      }
+      pendingBase = null;
+    } else if (refImage) {
       say("正在准备底图…");
       const prepared = await prepareRef(Number(nodes.width.value), Number(nodes.height.value));
       if (prepared) {
@@ -3017,6 +3029,7 @@ reuseChannel?.addEventListener("message", (event) => {
   }
   if (msg.type === "compose-send") {
     if (typeof msg.text === "string") nodes.prompt.value = msg.text;
+    pendingBase = typeof msg.base === "string" && msg.base ? msg.base : null;
     void onGenerate();
     return;
   }
