@@ -1613,11 +1613,12 @@ async function submitGenerate() {
     status: "queued",
     createdAt: new Date().toISOString(),
   };
-  if (dockOpen || document.body.classList.contains("dock-full")) {
+  // 只退出全屏：画布本身跟着这条消息进流里，不是被收起来。
+  if (document.body.classList.contains("dock-full")) {
     document.body.classList.remove("dock-full");
     document.getElementById("chat-dock-full")?.classList.remove("on");
-    setDock(false);
   }
+  if (!dockOpen) setDock(true);
   chatAtBottom = true;
   renderChat.lastSig = "";
   renderChat();
