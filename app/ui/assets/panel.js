@@ -2032,9 +2032,11 @@ function startRename(session, anchor) {
   input.className = "pn-conv-rename";
   // 框里预填当前名字：改过名就是那个名字，没改过就是原标题。
   // 全选着，直接打字就是替换；清空保存等于退回原标题。
-  const currentName = convNameMap()[session.key] ?? session.jobs[0]?.prompt ?? "";
+  // 取第一条带提示词的记录，和列表标题同一个来源，不是 jobs[0]。
+  const basePrompt = session.jobs.find((job) => job.prompt)?.prompt ?? "";
+  const currentName = convNameMap()[session.key] ?? basePrompt;
   input.value = currentName;
-  input.placeholder = session.jobs[0]?.prompt ?? "无提示词";
+  input.placeholder = basePrompt || "无提示词";
   input.title = input.value;
   let done = false;
   const finish = (commit) => {
