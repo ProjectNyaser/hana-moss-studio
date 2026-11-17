@@ -1419,6 +1419,9 @@ function pushExtras() {
 composer.negative?.addEventListener("input", pushExtras);
 composer.seed?.addEventListener("input", pushExtras);
 
+// 反向提示词与种子的展开状态只初始化一次，之后归用户。
+let extrasBootstrapped = false;
+
 // 两行各自收起：反向提示词与种子互不影响。
 for (const id of ["composer-negative-close", "composer-seed-close"]) {
   document.getElementById(id)?.addEventListener("click", (event) => {
@@ -1979,11 +1982,15 @@ function renderComposerModel() {
   if (composer.seed && document.activeElement !== composer.seed) {
     composer.seed.value = defaults.seed != null && defaults.seed !== "" ? String(defaults.seed) : "";
   }
-  // 已经有值的那一行自己展开：两个参数不绑在一起。
-  const negBox = document.getElementById("composer-extra-negative");
-  if (negBox) negBox.hidden = !String(defaults.negativePrompt ?? "").trim();
-  const seedBox = document.getElementById("composer-extra-seed");
-  if (seedBox) seedBox.hidden = !(defaults.seed != null && defaults.seed !== "");
+  // 已经有值的那一行自己展开，只做一次：之后的展开/收起由用户决定，
+  // 每次状态推送都重设会把人刚点开的行按回去。
+  if (!extrasBootstrapped) {
+    const negBox = document.getElementById("composer-extra-negative");
+    if (negBox) negBox.hidden = !String(defaults.negativePrompt ?? "").trim();
+    const seedBox = document.getElementById("composer-extra-seed");
+    if (seedBox) seedBox.hidden = !(defaults.seed != null && defaults.seed !== "");
+    extrasBootstrapped = true;
+  }
   renderCpop();
 }
 
