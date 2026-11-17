@@ -1493,8 +1493,10 @@ body.dock-full .chat-dock {
 
 /* ── 会话流水 ─────────────────────────────────────────────────── */
 /* 一左一右：用户写的话靠右，出的图靠左。 */
-/* 会话视图自己滚：滚动条从顶部贯到底部，不因输入框或画布改变位置。 */
+/* 会话视图自己滚，且以底部为原点：scrollTop 0 就是最新那条。 */
 #view-chat {
+  display: flex;
+  flex-direction: column-reverse;
   overflow-y: auto;
   /* 不让浏览器自己挑锚点：内容尺寸一变就整屏跳。 */
   overflow-anchor: none;
@@ -1504,10 +1506,10 @@ body.dock-full .chat-dock {
 }
 
 .chat-log {
-  /* 内容少时也占满剩余空间，画布就贴在输入框上方。 */
-  flex: 1;
+  /* 两层都倒排：DOM 里最新的在前，视觉上贴底。 */
+  flex: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 18px;
   padding: 22px max(20px, calc((100% - 860px) / 2)) 20px;
 }

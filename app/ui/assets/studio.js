@@ -374,7 +374,7 @@ function renderChat() {
     log.dataset.stickBound = "1";
     // 滚的是整个会话视图：监听也得挂在它身上，挂在列表上永远收不到事件。
     scroller.addEventListener("scroll", () => {
-      chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
+      chatAtBottom = scroller.scrollTop <= 8;
     });
   }
   const stick = !chatBootstrapped || chatAtBottom;
@@ -449,21 +449,22 @@ function renderChat() {
   if (!stick && anchorId) {
     const again = log.querySelector(`.chat-row[data-job-id="${anchorId}"]`);
     if (again) {
-      scroller.scrollTop += again.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchorOffset;
+      // 倒排之下，scrollTop 越大越往上：元素下移多少，就把位置回退多少。
+      scroller.scrollTop -= again.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchorOffset;
     }
   }
   if (stick) {
     // 图还没加载完时高度会变：先贴底，等两帧和图片解码后再贴一次。
-    scroller.scrollTop = scroller.scrollHeight;
+    scroller.scrollTop = 0;
     requestAnimationFrame(() => {
-      scroller.scrollTop = scroller.scrollHeight;
+      scroller.scrollTop = 0;
     });
     setTimeout(() => {
-      scroller.scrollTop = scroller.scrollHeight;
+      scroller.scrollTop = 0;
       chatAtBottom = true;
     }, 120);
   }
-  chatAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 8;
+  chatAtBottom = scroller.scrollTop <= 8;
   chatBootstrapped = true;
 }
 
