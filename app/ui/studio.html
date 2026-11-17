@@ -12,7 +12,6 @@
   <main class="studio-column">
     <nav class="studio-tabs" id="studio-tabs" role="tablist">
       <button class="studio-tab on" type="button" role="tab" data-view="chat">会话</button>
-      <button class="studio-tab" type="button" role="tab" data-view="canvas">画布</button>
       <button class="studio-tab" type="button" role="tab" data-view="gallery">画廊<span class="tab-count" id="tab-count"></span></button>
       <button class="studio-tab" type="button" role="tab" data-view="queue">队列<span class="tab-count" id="tab-queue"></span></button>
       <button class="studio-tab" type="button" role="tab" data-view="versions">版本</button>
@@ -28,6 +27,7 @@
       <div class="chat-dock" id="chat-dock" hidden>
         <div class="chat-dock-head">
           <span class="chat-dock-title">画布</span>
+          <button class="chat-dock-close" id="chat-dock-full" type="button" title="全屏画布">全屏</button>
           <button class="chat-dock-close" id="chat-dock-close" type="button" title="收起画布">收起</button>
         </div>
         <div class="chat-dock-body" id="chat-dock-body"></div>
@@ -112,6 +112,9 @@
       </div>
 
       <div class="composer" id="composer">
+        <div class="composer-dock-row" id="composer-dock-row" hidden>
+          <button class="composer-dock-btn" id="composer-dock-btn" type="button" title="在同一张底图上涂抹或框选">画布 · 改这张</button>
+        </div>
         <div class="composer-chips" id="composer-chips" hidden></div>
         <div class="composer-extra" id="composer-extra-negative" hidden>
           <input id="composer-negative" type="text" placeholder="反向提示词（可选）">
@@ -123,12 +126,6 @@
         </div>
         <textarea id="composer-input" rows="1" placeholder="描述画面，或者把图拖进来改"></textarea>
         <div class="composer-tools">
-          <button class="cbtn" id="composer-dock" type="button" title="在输入框上方展开画布">
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="2.2" y="4.2" width="11.6" height="7.6" rx="1.6"/>
-              <path d="M5.2 8.6l2-2 1.6 1.6 2-2"/>
-            </svg>
-          </button>
           <button class="cbtn cbtn-plus" id="composer-plus" type="button" title="加图">
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
               <path d="M8 3.4v9.2M3.4 8h9.2"/>

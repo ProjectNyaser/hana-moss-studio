@@ -100,7 +100,7 @@ const nodes = {
   downloadAvailable: el("download-available"),
 };
 
-const views = ["chat", "canvas", "gallery", "queue", "versions"];
+const views = ["chat", "gallery", "queue", "versions"];
 const imageCache = new Map();
 let latest = null;
 // 耗时锚点：{ at, ms }，每次后端推送更新，两次之间由定时器补差。
@@ -238,18 +238,27 @@ function setDock(open) {
   } else {
     dockEl.hidden = true;
     canvasHost.append(canvasEl);
+    // 收起就回到常规高度，不留一个“下次打开还是全屏”的意外。
+    document.body.classList.remove("dock-full");
+    document.getElementById("chat-dock-full")?.classList.remove("on");
   }
-  document.getElementById("composer-dock")?.classList.toggle("on", dockOpen);
+  document.getElementById("composer-dock-btn")?.classList.toggle("on", dockOpen);
   // 画布按容器尺寸排布，换了父节点要让它重新量一次。
-  requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+  requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
 }
 
-document.getElementById("composer-dock")?.addEventListener("click", () => setDock(!dockOpen));
+document.getElementById("composer-dock-btn")?.addEventListener("click", () => setDock(!dockOpen));
+document.getElementById("chat-dock-full")?.addEventListener("click", () => {
+  const on = !document.body.classList.contains("dock-full");
+  document.body.classList.toggle("dock-full", on);
+  document.getElementById("chat-dock-full")?.classList.toggle("on", on);
+  requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
+});
 document.getElementById("chat-dock-close")?.addEventListener("click", () => setDock(false));
 
-// 默认就把画布摆在输入框上方；手动收起过就不扰人。
+// 开局收着：有底图时输入框上方会出现「画布 · 改这张」。
 requestAnimationFrame(() => {
-  if (localStorage.getItem(DOCK_KEY) !== "0") setDock(true);
+  if (localStorage.getItem(DOCK_KEY) === "1") setDock(true);
 });
 
 function showView(view) {
@@ -1503,7 +1512,7 @@ composer.menu?.addEventListener("click", (event) => {
   closeComposerMenu();
   // 两种图都在主界面自己选，不绕到侧栏的文件框。
   if (act === "base") {
-    showView("canvas");
+    setDock(true);
     fileIntent = "edit";
     nodes.layFile.click();
   } else if (act === "reference") {
@@ -2037,6 +2046,10 @@ function renderComposerModel() {
 /** 底图、蒙版、布局各自的状态。 */
 function renderComposerChips(state) {
   lastEditState = state ?? lastEditState;
+  // 只有手里真有一张底图时才需要画布：没底图时这一行不占地方。
+  const dockRow = document.getElementById("composer-dock-row");
+  if (dockRow) dockRow.hidden = !lastEditState?.hasBase;
+  if (!lastEditState?.hasBase && dockOpen) setDock(false);
   if (!composer.chips) return;
   const items = [];
   // 参考图每张一张缩略图卡，点开看大图。
@@ -2193,7 +2206,7 @@ nodes.canvas.addEventListener("drop", async (event) => {
     toast("拖进来的不是图片");
     return;
   }
-  showView("canvas");
+  setDock(true);
   // 拖进来就是「接着这张改」：落进改图台，蒙版直接在上面抹。
   // 想框选布局就在台子上点「框选布局」，底图不会重传。
   try {
@@ -2424,7 +2437,7 @@ layChannel?.addEventListener("message", (event) => {
     return;
   }
   if (msg.type !== "layout-open") return;
-  showView("canvas");
+  setDock(true);
   const target = Number.isFinite(msg.index) ? lay.boxes[msg.index]?.id : undefined;
   openLayout(target);
   if (!lay.underlay) {
@@ -3555,7 +3568,7 @@ function showMenu(event, items) {
 function loadJob(job) {
   selectedId = job.id;
   renderedJobsKey = null;
-  showView("canvas");
+  setDock(true);
   channel?.postMessage({
     type: "reuse",
     job: {
@@ -3580,14 +3593,14 @@ function loadJob(job) {
 function useAsReference(job) {
   if (!job?.output) return;
   channel?.postMessage({ type: "reference", name: job.output });
-  showView("canvas");
+  setDock(true);
 }
 
 /** 编辑参考：交给侧栏当 references 的第一张（需要编辑适配器在 LoRA 里）。 */
 function useAsEditReference(job) {
   if (!job?.output) return;
   channel?.postMessage({ type: "edit-reference", name: job.output });
-  showView("canvas");
+  setDock(true);
 }
 
 // ── 总渲染 ─────────────────────────────────────────────────────────────
