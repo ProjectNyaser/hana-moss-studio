@@ -1834,16 +1834,11 @@ let activeConv = null;
 const CONV_KEY = "hana-moss-studio.conv-start";
 const CONV_ID_KEY = "hana-moss-studio.conv-id";
 // 隔一阵再打开就是新对话：短时间内刷新沿用当前这段。
+// 打开就开一段新会话：旧的那些留在列表里。
 try {
-  const seenKey = "hana-moss-studio.seen-panel";
-  const last = Number(localStorage.getItem(seenKey) ?? 0);
   const now = Date.now();
-  localStorage.setItem(seenKey, String(now));
-  if (!last || now - last > 5 * 60 * 1000) {
-    localStorage.setItem(CONV_ID_KEY, `conv-${now.toString(36)}`);
-    // 显式留个记号：主界面靠它判断“该从空白开始了”。
-    localStorage.setItem("hana-moss-studio.fresh-at", String(now));
-  }
+  localStorage.setItem(CONV_ID_KEY, `conv-${now.toString(36)}`);
+  localStorage.setItem("hana-moss-studio.fresh-at", String(now));
 } catch {
   /* 存不了就沿用旧的 */
 }
@@ -1926,6 +1921,13 @@ async function loadSessions() {
     if (!response.ok) throw new Error(`jobs ${response.status}`);
     const page = await response.json();
     sessionsCache = groupSessions(Array.isArray(page.jobs) ? page.jobs : []);
+    // 当前会话已经有图了：占位就该让位给那一行。
+    try {
+      const current = localStorage.getItem(CONV_ID_KEY);
+      if (current && sessionsCache.some((item) => item.conv === current)) blankConversation = false;
+    } catch {
+      /* 读不到就维持原状 */
+    }
     paintSessions();
   } catch (error) {
     const box = nodes.history;
@@ -2086,11 +2088,12 @@ function clearDropMarks() {
   });
 }
 
-let placeholderHidden = false;
+// 当前这一段还是空的：显式记着，不靠比较推断。
+let blankConversation = true;
 
-/** 当前会话还没有消息时，列表顶部留一行占位；去点别的段就收起。 */
+/** 空会话在列表顶部留一行占位；有图或去点历史就收起。 */
 function withPlaceholder(sessions) {
-  if (placeholderHidden) return sessions;
+  if (!blankConversation) return sessions;
   let current = null;
   try {
     current = localStorage.getItem(CONV_ID_KEY);
@@ -2235,7 +2238,7 @@ function paintSessions() {
       });
       btn.addEventListener("click", () => {
         // 去点历史了：那个空的新对话占位就不再举着。
-        placeholderHidden = true;
+        blankConversation = false;
         // 重复点同一段也要能把人带回会话页；只是不改筛选范围。
         activeConv = ids.slice();
         editChannel?.postMessage({
@@ -3148,8 +3151,11 @@ setInterval(async () => {
 }, 3000);
 nodes.newConv?.addEventListener("click", () => {
   try {
-    localStorage.setItem(CONV_KEY, String(Date.now()));
-    localStorage.setItem(CONV_ID_KEY, `conv-${Date.now().toString(36)}`);
+    const now = Date.now();
+    localStorage.setItem(CONV_KEY, String(now));
+    localStorage.setItem(CONV_ID_KEY, `conv-${now.toString(36)}`);
+    localStorage.setItem("hana-moss-studio.fresh-at", String(now));
+    blankConversation = true;
   } catch {
     /* 存不了就只刷新列表 */
   }
