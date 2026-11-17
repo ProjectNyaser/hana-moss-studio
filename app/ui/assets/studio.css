@@ -2149,3 +2149,42 @@ body.dock-full .chat-dock {
   overflow: hidden;
 }
 .send svg { display: block; }
+
+/* 底图单独成卡：与结果图同一套尺寸上限，右对齐靠外层的 user 行。 */
+.chat-base-card {
+  position: relative;
+  display: block;
+  width: min(540px, 64%);
+  max-width: 100%;
+  padding: 0;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-overlay);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.chat-base-card img {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+}
+.chat-base-card.missing {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+.chat-base-card.missing img { visibility: hidden; height: 0; }
+.chat-base-note { color: var(--ui-text-3); font-size: 11px; }
+.chat-base-tag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-surface) 82%, transparent);
+  color: var(--ui-text-2);
+  font-size: 10px;
+}
