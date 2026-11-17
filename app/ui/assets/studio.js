@@ -1,6 +1,6 @@
 // 苔室工作区：画布、画廊、队列、版本、下载五个视图。生成设置在左侧栏（panel.html）。
 import { hana } from "./sdk.js";
-import { startLive, outputUrl, previewUrl, thumbUrl } from "./live.js";
+import { startLive, inputUrl, outputUrl, previewUrl, thumbUrl } from "./live.js";
 import { applyTheme } from "./theme.js";
 
 const API = "/hana-moss-studio";
@@ -563,10 +563,10 @@ function buildUserBubble(job) {
   const negative = String(job.negativePrompt ?? job.negative ?? "").trim();
   if (negative) rows.push(["反向", negative]);
   const origin = job.origin ?? {};
-  // 路径只在磁盘上有意义，界面上给文件名就够，省一半宽度。
-  const baseName = (value) => String(value).split(/[\\/]/).pop();
-  if (origin.base) rows.push(["底图", baseName(origin.base)]);
-  if (Array.isArray(origin.refs) && origin.refs.length) rows.push(["参考", origin.refs.map(baseName).join("、")]);
+  // 附带的图用缩略图表示，不占参数表。
+  const attachments = [];
+  if (origin.base) attachments.push({ role: "底图", name: String(origin.base) });
+  for (const ref of Array.isArray(origin.refs) ? origin.refs : []) attachments.push({ role: "参考", name: String(ref) });
 
   const size = job.width && job.height ? `${job.width}×${job.height}` : "";
   const text = document.createElement("p");
@@ -640,6 +640,7 @@ function buildUserBubble(job) {
     });
   });
   box.append(summary, extra);
+  box.append(...attachRow(attachments));
   return box;
 }
 
@@ -666,6 +667,30 @@ function updatePendingLabel() {
   }
   const progress = active.progress ?? {};
   el.textContent = `${progress.phase ?? "生成中"}${progress.total ? ` ${progress.step ?? 0}/${progress.total}` : "…"}`;
+}
+
+/** 气泡里的附件：一张缩略图一件事，点开看原图。 */
+function attachRow(items) {
+  if (!items || !items.length) return [];
+  const row = document.createElement("div");
+  row.className = "chat-attach-row";
+  for (const item of items) {
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "chat-attach";
+    cell.title = `${item.role} · ${item.name}`;
+    const img = document.createElement("img");
+    img.alt = item.role;
+    img.src = inputUrl(item.name);
+    img.addEventListener("error", () => cell.classList.add("missing"));
+    const tag = document.createElement("span");
+    tag.className = "chat-attach-tag";
+    tag.textContent = item.role;
+    cell.append(img, tag);
+    cell.addEventListener("click", () => openRefBox(inputUrl(item.name), item.name));
+    row.append(cell);
+  }
+  return [row];
 }
 
 function renderStage(data) {
