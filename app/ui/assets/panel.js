@@ -150,7 +150,6 @@ const nodes = {
   refClear: el("pn-ref-clear"),
   refPick: el("pn-ref-pick"),
   refFile: el("pn-ref-file"),
-  dropHint: el("pn-drop"),
   refResize: el("pn-ref-resize"),
   strength: el("pn-strength"),
   maskEdit: el("pn-mask-edit"),
@@ -2927,52 +2926,6 @@ nodes.controlKind.addEventListener("input", () => {
 // 参考图
 nodes.refPick.addEventListener("click", () => nodes.refFile.click());
 
-// 侧栏整页都是拖放落点：文件从桌面拖进来就当作底图。
-// 计数是为了在子元素之间移动时不被误判成离开（dragleave 会连发）。
-let dropDepth = 0;
-const carriesFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes("Files");
-const hideDropHint = () => {
-  dropDepth = 0;
-  if (nodes.dropHint) nodes.dropHint.hidden = true;
-};
-window.addEventListener("dragenter", (event) => {
-  if (!carriesFiles(event)) return;
-  event.preventDefault();
-  dropDepth += 1;
-  if (nodes.dropHint) nodes.dropHint.hidden = false;
-});
-window.addEventListener("dragover", (event) => {
-  if (!carriesFiles(event)) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = "copy";
-  // 落在「参考图」块上就是编辑适配器的源图，其余地方当底图。
-  const overRef = Boolean(event.target?.closest?.("#pn-editref-block"));
-  if (nodes.dropHint) nodes.dropHint.textContent = overRef ? "松手当作参考图" : "松手当作底图";
-});
-window.addEventListener("dragleave", (event) => {
-  if (!carriesFiles(event)) return;
-  dropDepth = Math.max(0, dropDepth - 1);
-  if (!dropDepth) hideDropHint();
-});
-window.addEventListener("drop", async (event) => {
-  if (!carriesFiles(event)) return;
-  event.preventDefault();
-  const overRef = Boolean(event.target?.closest?.("#pn-editref-block"));
-  hideDropHint();
-  const files = Array.from(event.dataTransfer?.files ?? []);
-  const file = files.find((item) => (item.type ? item.type.startsWith("image/") : /\.(png|jpe?g|webp|bmp|avif)$/i.test(item.name ?? "")));
-  if (!file) {
-    say("拖进来的不是图片（要 png / jpg / webp）。", "bad");
-    return;
-  }
-  if (overRef) {
-    for (const item of files.filter((entry) => (entry.type ? entry.type.startsWith("image/") : /\.(png|jpe?g|webp|bmp|avif)$/i.test(entry.name ?? "")))) {
-      await addEditReference(item, item.name);
-    }
-    return;
-  }
-  await setReference(file);
-});
 nodes.refFile.addEventListener("change", async () => {
   const file = nodes.refFile.files?.[0];
   nodes.refFile.value = "";
