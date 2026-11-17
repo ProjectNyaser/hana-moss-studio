@@ -571,13 +571,16 @@ function buildUserBubble(job) {
   tip.setAttribute("d", "M6.2 3.8 10.4 8l-4.2 4.2");
   chev.append(tip);
   arrow.append(chev);
-  sub.append(arrow);
+
+  const body = document.createElement("div");
+  body.className = "chat-summary-body";
+  body.append(text);
+  if (size) body.append(sub);
 
   const summary = document.createElement("summary");
   summary.className = "chat-summary";
   summary.title = "展开这次的全部参数";
-  summary.append(text);
-  if (size) summary.append(sub);
+  summary.append(arrow, body);
 
   const extra = document.createElement("div");
   extra.className = "chat-extra";
