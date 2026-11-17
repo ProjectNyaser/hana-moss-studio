@@ -1613,8 +1613,8 @@ body.dock-full .chat-dock {
 .chat-more:hover { color: var(--ui-text); }
 .chat-more.on { color: var(--ui-accent); }
 .chat-more.on::before { transform: rotate(45deg); }
-/* 展开时气泡取固定宽度，避免从窄到宽跳一下。 */
-.chat-bubble:has(.chat-extra:not([hidden])) { width: min(540px, 100%); }
+/* 气泡宽度不随展开变化：箭头就钉在原地转。 */
+.chat-extra { max-width: min(420px, 100%); }
 .chat-extra {
   display: grid;
   grid-template-columns: auto 1fr;
