@@ -1731,6 +1731,17 @@ let submitting = false;
 
 /** 主界面自己提交：参数来自这里，不再让侧栏按隐藏控件拼。 */
 async function submitGenerate() {
+  // 任何一步抛错都要说话：静默失败最难看。
+  try {
+    await submitGenerateInner();
+  } catch (error) {
+    submitting = false;
+    if (composer.send) composer.send.disabled = false;
+    toast(`提交失败：${error instanceof Error ? error.message : String(error)}`, "error");
+  }
+}
+
+async function submitGenerateInner() {
   if (submitting) return;
   const prompt = composerText().trim();
   if (!prompt) {
