@@ -109,8 +109,7 @@ export default defineApp(async (sdk) => {
   /** 下载器的日志与控制文件。 */
   const downloadsDir = join(runtimeDir, "downloads");
   /** 参考图与蒙版：界面按目标尺寸画好再传上来，任务只引用这里的绝对路径。 */
-  // 底图与参考图是用户资产：放 app-data，不跟运行期临时目录一起清。
-  const inputsDir = join(dataDir, "inputs");
+  const inputsDir = join(runtimeDir, "inputs");
   /** 导入的 LoRA：放 app-data 里，路径稳定，换工作区也找得到。 */
   const lorasDir = join(dataDir, "loras");
   /** 控制适配器（depth / canny 那一类）：单独一堆，别跟 LoRA 混。 */
@@ -119,12 +118,12 @@ export default defineApp(async (sdk) => {
     mkdirSync(dir, { recursive: true });
   }
   migrateRuntimeDirs(dataDir, { engineCacheDir, previewDir, thumbsDir, runtimeDir });
-  // 上一版把上传的图放在临时目录里，重启会被清掉，这里搬到持久位置。
+  // 上一版把上传的素材挪到了 app-data/inputs，这里搬回临时目录。
   try {
-    const legacyInputs = join(runtimeDir, "inputs");
-    if (existsSync(legacyInputs)) {
-      for (const name of readdirSync(legacyInputs)) {
-        const from = join(legacyInputs, name);
+    const movedInputs = join(dataDir, "inputs");
+    if (existsSync(movedInputs)) {
+      for (const name of readdirSync(movedInputs)) {
+        const from = join(movedInputs, name);
         const to = join(inputsDir, name);
         if (!existsSync(to)) {
           try {
@@ -495,7 +494,10 @@ export default defineApp(async (sdk) => {
    * 一次生成的归一化：排队、工具、预估算的都是这一层。
    * 返回的记录不含 id / output，那两样只属于真正入队的那些。
    */
-  function buildRecord(input, settings) {
+  function buildRecord(rawInput, settings) {
+    // 「改这张」把产物当底图时，直接引用产物文件，不另存一份。
+    const initOutput = typeof rawInput?.initOutput === "string" && rawInput.initOutput ? rawInput.initOutput : null;
+    const input = initOutput ? { ...rawInput, initImage: join(outputsDir, initOutput) } : rawInput;
     const box = resolveSize(input, settings.defaults);
     // 布局先算：它会把 prompt 换成一段 JSON，而 caption 仍当展示用的提示词。
     const layout = readLayout(input, box.width, box.height);
@@ -590,6 +592,7 @@ export default defineApp(async (sdk) => {
       hiresSteps: clamp(input?.hiresSteps ?? settings.defaults.hiresSteps, 0, 80, 0),
       hiresStrength: clampFloat(input?.hiresStrength ?? settings.defaults.hiresStrength, 0.05, 1, 0.45),
       initImage: gen.initImage,
+      initKind: initOutput ? "output" : gen.initImage ? "input" : null,
       mask: gen.mask,
       maskEncoding: gen.maskEncoding,
       strength: clampFloat(input?.strength, 0.05, 1, 0.6),
@@ -757,6 +760,7 @@ export default defineApp(async (sdk) => {
               conv: String(conv),
               // 只存文件名：绝对路径一旦搬家就失效。
               base: job.initImage ? basename(String(job.initImage)) : null,
+              baseKind: job.initKind ?? (job.initImage ? "input" : null),
               mask: job.mask ? basename(String(job.mask)) : null,
               refs: Array.isArray(job.references) ? job.references.map((item) => basename(String(item))) : [],
               parent: job.parent ?? null,
@@ -931,6 +935,7 @@ export default defineApp(async (sdk) => {
         // 队列里的记录把会话 id 放在顶层，跟盘上读出来的 origin.conv 是同一件事。
         conv: String(job.conv),
         base: job.initImage ? basename(String(job.initImage)) : null,
+        baseKind: job.initKind ?? (job.initImage ? "input" : null),
         mask: job.mask ? basename(String(job.mask)) : null,
         refs: Array.isArray(job.references) ? job.references.map((item) => basename(String(item))) : [],
         parent: job.parent ?? null,

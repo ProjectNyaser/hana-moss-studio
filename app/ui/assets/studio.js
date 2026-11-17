@@ -730,6 +730,8 @@ function baseCard(job) {
   card.type = "button";
   card.className = "chat-base-card";
   card.title = base;
+  // 产物直接指 generated，用户上传的走临时目录。
+  const baseUrl = job.origin?.baseKind === "output" ? outputUrl(base) : inputUrl(base);
   // 比例跟结果图一致：底图会被缩到这次请求的尺寸，卡片照那个尺寸摆。
   if (job.width && job.height) {
     const scale = Math.min(540 / job.width, 340 / job.height, 1);
@@ -738,7 +740,7 @@ function baseCard(job) {
   }
   const img = document.createElement("img");
   img.alt = "底图";
-  img.src = inputUrl(base);
+  img.src = baseUrl;
   img.addEventListener("error", () => {
     card.classList.add("missing");
     const note = document.createElement("span");
@@ -753,7 +755,7 @@ function baseCard(job) {
     tag.textContent = "含蒙版";
     card.append(tag);
   }
-  card.addEventListener("click", () => openRefBox(inputUrl(base), base));
+  card.addEventListener("click", () => openRefBox(baseUrl, base));
   return card;
 }
 
@@ -1404,7 +1406,7 @@ function onLayPointerUp(event) {
 }
 
 /** 底图就是图生图的源图（initImage）：能对齐构图，也会参与生成。比例不同就跟着改画幅。 */
-async function setUnderlay(file) {
+async function setUnderlay(file, opts = {}) {
   const url = URL.createObjectURL(file);
   const image = new Image();
   await new Promise((resolve, reject) => {
@@ -1417,14 +1419,23 @@ async function setUnderlay(file) {
   nodes.laySheet.style.backgroundImage = `url(${url})`;
   // 框跟着底图走：换图清空，同一张图回来再从本地接上。
   restoreLayoutFor(lay.underlay);
-  // 底图就是图生图的源图（initImage）：传上去，让侧栏那张也跟着换成它。
+  // 产物当底图时直接引用那张图，不复制到临时目录。
+  if (opts.outputName) {
+    edit.outputName = String(opts.outputName);
+    edit.remotePath = null;
+    edit.sourceKind = "output";
+  } else {
+  edit.outputName = null;
+  // 用户给的图才上传：它是临时素材，落在 runtime 里。
   try {
     const uploaded = await api("/inputs/upload?kind=init", { method: "POST", body: file }, 60000);
     if (uploaded?.name) layChannel?.postMessage({ type: "layout-underlay", name: uploaded.name });
       // 提交时这条路径跟着 compose-send 一起过去，不再单独跟侧栏握手。
       edit.remotePath = uploaded?.path ?? null;
+    edit.sourceKind = "input";
   } catch (error) {
     toast(`底图没传上去：${error instanceof Error ? error.message : String(error)}`, "error");
+  }
   }
   const resized = await alignCanvasToRatio(image.naturalWidth, image.naturalHeight);
   const size = layoutCanvasSize();
@@ -1622,7 +1633,7 @@ async function showMaskBlob(blob) {
 }
 
 /** 底图落进改图台：同一张图交给侧栏当 init_image，不重复上传两次。 */
-async function openEditSheet(file) {
+async function openEditSheet(file, opts = {}) {
   let url = null;
   try {
     url = URL.createObjectURL(file);
@@ -1642,13 +1653,22 @@ async function openEditSheet(file) {
     edit.share = 0;
     edit.mode = null;
     edit.maskBlob = null;
-    try {
-      const uploaded = await api("/inputs/upload?kind=init", { method: "POST", body: file }, 60000);
-      if (uploaded?.name) layChannel?.postMessage({ type: "layout-underlay", name: uploaded.name });
-      // 提交时这条路径跟着 compose-send 一起过去，不再单独跟侧栏握手。
-      edit.remotePath = uploaded?.path ?? null;
-    } catch (error) {
-      toast(`底图没传上去：${error instanceof Error ? error.message : String(error)}`, "error");
+    // 产物当底图：记下产物名，提交时后端直接引用那张，不再复制一份。
+    if (opts.outputName) {
+      edit.outputName = String(opts.outputName);
+      edit.remotePath = null;
+      edit.sourceKind = "output";
+    } else {
+      edit.outputName = null;
+      try {
+        const uploaded = await api("/inputs/upload?kind=init", { method: "POST", body: file }, 60000);
+        if (uploaded?.name) layChannel?.postMessage({ type: "layout-underlay", name: uploaded.name });
+        // 提交时这条路径跟着 compose-send 一起过去，不再单独跟侧栏握手。
+        edit.remotePath = uploaded?.path ?? null;
+        edit.sourceKind = "input";
+      } catch (error) {
+        toast(`底图没传上去：${error instanceof Error ? error.message : String(error)}`, "error");
+      }
     }
     // 布局那边也用这张：两条路共一个底图，不各传一份。
     lay.underlay = { url, name: file.name, width: edit.width, height: edit.height };
@@ -1678,6 +1698,7 @@ async function openEditSheet(file) {
 }
 
 function closeEditSheet(keepBase = false) {
+  edit.outputName = null;
   edit.open = false;
   edit.mode = null;
   // 关掉就不再带底图：下一次发送回到纯文生图。切去框选时底图还留着。
@@ -1906,7 +1927,9 @@ async function submitGenerateInner() {
   if (composer.send) composer.send.disabled = true;
   try {
     // 需要 await 的附件在这里补进 payload。
-    if (edit.remotePath) {
+    if (edit.outputName) {
+      payload.initOutput = edit.outputName;
+    } else if (edit.remotePath) {
       payload.initImage = edit.remotePath;
       payload.strength = 0.6;
       payload.resize = "stretch";
@@ -4163,7 +4186,7 @@ async function openEditFromJob(job) {
     const response = await fetch(outputUrl(job.output));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const blob = await response.blob();
-    await openEditSheet(new window.File([blob], job.output, { type: blob.type || "image/png" }));
+    await openEditSheet(new window.File([blob], job.output, { type: blob.type || "image/png" }), { outputName: job.output });
   } catch (error) {
     toast(`这张图打不开：${error instanceof Error ? error.message : String(error)}`, "error");
   }
