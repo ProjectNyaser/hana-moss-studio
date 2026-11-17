@@ -56,6 +56,22 @@ function parseTxt(body) {
 }
 
 /** 从一个 PNG 里取出文本块，返回 { generation, parameters }，读不到就是 null。 */
+/** 从 IHDR 读像素尺寸：没写参数的图也至少知道自己是多大。 */
+function readPngSize(file) {
+  let handle;
+  try {
+    handle = openSync(file, "r");
+    const head = Buffer.alloc(24);
+    if (readSync(handle, head, 0, 24, 0) < 24) return null;
+    if (head.toString("hex", 0, 8) !== PNG_SIGNATURE) return null;
+    return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+  } catch {
+    return null;
+  } finally {
+    if (handle !== undefined) closeSync(handle);
+  }
+}
+
 export function readPngText(file) {
   let stat;
   try {
@@ -260,13 +276,14 @@ export function scanOutputs(dir) {
         /* 不像 JSON 就原样留着 */
       }
     }
+    const size = meta ? null : readPngSize(file);
     records.push({
       id,
       prompt,
       layoutItems,
       negativePrompt: meta?.negative_prompt ?? "",
-      width: meta?.width ?? null,
-      height: meta?.height ?? null,
+      width: meta?.width ?? size?.width ?? null,
+      height: meta?.height ?? size?.height ?? null,
       steps: meta?.steps ?? null,
       cfg: meta?.cfg ?? null,
       seed: meta?.seed ?? null,
