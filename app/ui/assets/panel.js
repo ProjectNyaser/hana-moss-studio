@@ -2118,59 +2118,37 @@ function paintSessions() {
   }
   list.replaceChildren(
     ...rows.map((session) => {
-      if (session.placeholder) {
-        // 空的新对话：占一行，点它回到空白会话；去点历史就收起。
-        const blank = document.createElement("button");
-        blank.type = "button";
-        blank.className = "pn-conv-row empty";
-        const slot = document.createElement("span");
-        slot.className = "pn-hist-thumb blank";
-        slot.textContent = "+";
-        const box = document.createElement("span");
-        box.className = "pn-hist-text";
-        const title = document.createElement("span");
-        title.className = "pn-hist-prompt";
-        title.textContent = "新对话";
-        const note = document.createElement("span");
-        note.className = "pn-hist-meta";
-        // 时间就用这段会话的创建时刻，张数如实写 0。
-        const born = Number(localStorage.getItem("hana-moss-studio.fresh-at") ?? 0) || Date.now();
-        const when = new Date(born).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-        note.textContent = `0 张 · ${when}`;
-        box.append(title, note);
-        const tail = document.createElement("span");
-        tail.className = "pn-hist-more-spacer";
-        blank.append(slot, box, tail);
-        blank.addEventListener("click", () => {
-          activeConv = null;
-          editChannel?.postMessage({ type: "new-conversation" });
-          paintSessions();
-        });
-        return blank;
-      }
-      // 一段一行；点开就是去主界面只看这一段。
+      const isBlank = Boolean(session.placeholder);
+      // 一段一行；空会话也用这一行，只把内容换成占位。
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "pn-conv-row";
+      btn.className = isBlank ? "pn-conv-row empty" : "pn-conv-row";
       const ids = session.jobs.map((job) => job.id);
       if (activeConv && activeConv.length === ids.length && ids.every((id) => activeConv.includes(id))) {
         btn.classList.add("on");
       }
       const head = session.jobs[0];
-      const thumb = document.createElement("img");
-      thumb.className = "pn-hist-thumb";
-      thumb.loading = "lazy";
-      thumb.alt = "";
-      if (head.output) {
-        thumb.src = thumbUrl(head.output, 96);
-        // 缩略图取不到就给个可见的占位，不要留一块空白让人以为图丢了。
-        thumb.addEventListener("error", () => thumb.classList.add("blank"));
+      let thumb;
+      if (isBlank) {
+        thumb = document.createElement("span");
+        thumb.className = "pn-hist-thumb blank";
+        thumb.textContent = "+";
       } else {
-        thumb.classList.add("blank");
+        thumb = document.createElement("img");
+        thumb.className = "pn-hist-thumb";
+        thumb.loading = "lazy";
+        thumb.alt = "";
+        if (head.output) {
+          thumb.src = thumbUrl(head.output, 96);
+          // 缩略图取不到就给个可见的占位，不要留一块空白让人以为图丢了。
+          thumb.addEventListener("error", () => thumb.classList.add("blank"));
+        } else {
+          thumb.classList.add("blank");
+        }
       }
       const text = document.createElement("span");
       text.className = "pn-hist-text";
-      const firstPrompt = session.jobs.find((job) => job.prompt)?.prompt ?? "";
+      const firstPrompt = isBlank ? "新对话" : (session.jobs.find((job) => job.prompt)?.prompt ?? "");
       const line = document.createElement("span");
       line.className = "pn-hist-prompt";
       line.textContent = convNameMap()[session.key] ?? firstPrompt ?? "（无提示词）";
@@ -2184,6 +2162,20 @@ function paintSessions() {
       }
       const meta = document.createElement("span");
       meta.className = "pn-hist-meta";
+      if (isBlank) {
+        const born = Number(localStorage.getItem("hana-moss-studio.fresh-at") ?? 0) || Date.now();
+        meta.textContent = `0 张 · ${new Date(born).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
+        text.append(line, meta);
+        const tail = document.createElement("span");
+        tail.className = "pn-hist-more-spacer";
+        btn.append(thumb, text, tail);
+        btn.addEventListener("click", () => {
+          activeConv = null;
+          editChannel?.postMessage({ type: "new-conversation" });
+          paintSessions();
+        });
+        return btn;
+      }
       const when = head.createdAt
         ? new Date(head.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
         : "";
