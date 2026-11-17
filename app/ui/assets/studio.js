@@ -1573,8 +1573,7 @@ async function submitGenerate() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     }, 60000);
-    toast("已提交，出图会排在会话里");
-    // 立刻拉一次状态：占位要在提交当刻就出现在会话末尾。
+    // 提交本身就有回执：会话末尾立刻出现那条占位，不再额外弹一句话。
     void api("/state").then((data) => render(data)).catch(() => {});
   } catch (error) {
     toast("提交失败：" + (error instanceof Error ? error.message : String(error)), "error");
