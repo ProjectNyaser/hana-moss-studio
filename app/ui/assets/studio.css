@@ -124,6 +124,11 @@ body {
   background: var(--ui-surface);
   overflow: hidden;
 }
+/* 全屏时图标换成向内收：点它是退出。 */
+#chat-dock-full .ico-collapse { display: none; }
+body.dock-full #chat-dock-full .ico-expand { display: none; }
+body.dock-full #chat-dock-full .ico-collapse { display: block; }
+
 .chat-dock[hidden] { display: none; }
 /* 画布只有一行抬头：两个图标浮在工具条的右上角。 */
 .chat-dock-head {

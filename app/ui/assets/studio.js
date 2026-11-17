@@ -266,7 +266,9 @@ document.getElementById("dock-toggle")?.addEventListener("click", () => setDock(
 document.getElementById("chat-dock-full")?.addEventListener("click", () => {
   const on = !document.body.classList.contains("dock-full");
   document.body.classList.toggle("dock-full", on);
-  document.getElementById("chat-dock-full")?.classList.toggle("on", on);
+  const fullBtn = document.getElementById("chat-dock-full");
+  fullBtn?.classList.toggle("on", on);
+  if (fullBtn) fullBtn.title = on ? "退出全屏" : "全屏画布";
   requestAnimationFrame(() => window.dispatchEvent(new window.Event("resize")));
 });
 document.getElementById("chat-dock-close")?.addEventListener("click", () => setDock(false));
