@@ -303,7 +303,7 @@ function paramLine(job) {
   if (job.steps) bits.push(`${job.steps} 步`);
   if (job.cfg !== null && job.cfg !== undefined) bits.push(`CFG ${job.cfg}`);
   if (job.sampler) bits.push(job.sampler);
-  return bits.length ? bits.join(" · ") : "参数未记录";
+  return bits.join(" · ");
 }
 
 /** 会话页默认看的那一段：当前会话 id 名下的图；还没出图时退回最近一段。 */
@@ -356,10 +356,15 @@ function renderChat() {
     const text = document.createElement("p");
     text.className = "chat-text";
     text.textContent = job.prompt || "（无提示词）";
-    const meta = document.createElement("p");
-    meta.className = "chat-meta";
-    meta.textContent = paramLine(job);
-    bubble.append(text, meta);
+    const metaText = paramLine(job);
+    if (metaText) {
+      const meta = document.createElement("p");
+      meta.className = "chat-meta";
+      meta.textContent = metaText;
+      bubble.append(text, meta);
+    } else {
+      bubble.append(text);
+    }
     userRow.append(bubble);
 
     const botRow = document.createElement("div");
@@ -423,10 +428,15 @@ function pendingRows(job) {
   const text = document.createElement("p");
   text.className = "chat-text";
   text.textContent = job.prompt || "（无提示词）";
-  const meta = document.createElement("p");
-  meta.className = "chat-meta";
-  meta.textContent = paramLine(job);
-  bubble.append(text, meta);
+  const metaText = paramLine(job);
+  if (metaText) {
+    const meta = document.createElement("p");
+    meta.className = "chat-meta";
+    meta.textContent = metaText;
+    bubble.append(text, meta);
+  } else {
+    bubble.append(text);
+  }
   userRow.append(bubble);
 
   const botRow = document.createElement("div");
