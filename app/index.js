@@ -755,9 +755,10 @@ export default defineApp(async (sdk) => {
           if (conv) {
             const origin = {
               conv: String(conv),
-              base: job.initImage ?? null,
-              mask: job.mask ?? null,
-              refs: Array.isArray(job.references) ? job.references : [],
+              // 只存文件名：绝对路径一旦搬家就失效。
+              base: job.initImage ? basename(String(job.initImage)) : null,
+              mask: job.mask ? basename(String(job.mask)) : null,
+              refs: Array.isArray(job.references) ? job.references.map((item) => basename(String(item))) : [],
               parent: job.parent ?? null,
             };
             try {
@@ -929,9 +930,9 @@ export default defineApp(async (sdk) => {
       origin: job.origin ?? (job.conv ? {
         // 队列里的记录把会话 id 放在顶层，跟盘上读出来的 origin.conv 是同一件事。
         conv: String(job.conv),
-        base: job.initImage ?? null,
-        mask: job.mask ?? null,
-        refs: Array.isArray(job.references) ? job.references : [],
+        base: job.initImage ? basename(String(job.initImage)) : null,
+        mask: job.mask ? basename(String(job.mask)) : null,
+        refs: Array.isArray(job.references) ? job.references.map((item) => basename(String(item))) : [],
         parent: job.parent ?? null,
       } : null),
       stepCache: job.stepCache ?? "off",

@@ -591,7 +591,9 @@ function buildUserBubble(job) {
   // 附带的图用缩略图表示，不占参数表。
   const attachments = [];
   // 参考图是随身的附件，留在气泡里；底图本身是这张结果的起点，单独成卡。
-  for (const ref of Array.isArray(origin.refs) ? origin.refs : []) attachments.push({ role: "参考", name: String(ref) });
+  for (const ref of Array.isArray(origin.refs) ? origin.refs : []) {
+    attachments.push({ role: "参考", name: String(ref).split(/[\\/]/).pop() });
+  }
 
   const size = job.width && job.height ? `${job.width}×${job.height}` : "";
   const text = document.createElement("p");
@@ -720,12 +722,14 @@ function attachRow(items) {
 
 /** 底图单独一张卡：跟预览、结果同一个尺寸规矩，点开看原图。 */
 function baseCard(job) {
-  const base = job.origin?.base;
+  // 老记录里存的是绝对路径，取文件名再拼地址。
+  const raw = job.origin?.base;
+  const base = raw ? String(raw).split(/[\\/]/).pop() : null;
   if (!base) return null;
   const card = document.createElement("button");
   card.type = "button";
   card.className = "chat-base-card";
-  card.title = String(base);
+  card.title = base;
   // 比例跟结果图一致：底图会被缩到这次请求的尺寸，卡片照那个尺寸摆。
   if (job.width && job.height) {
     const scale = Math.min(540 / job.width, 340 / job.height, 1);
@@ -734,7 +738,7 @@ function baseCard(job) {
   }
   const img = document.createElement("img");
   img.alt = "底图";
-  img.src = inputUrl(String(base));
+  img.src = inputUrl(base);
   img.addEventListener("error", () => {
     card.classList.add("missing");
     const note = document.createElement("span");
@@ -749,7 +753,7 @@ function baseCard(job) {
     tag.textContent = "含蒙版";
     card.append(tag);
   }
-  card.addEventListener("click", () => openRefBox(inputUrl(String(base)), String(base)));
+  card.addEventListener("click", () => openRefBox(inputUrl(base), base));
   return card;
 }
 
