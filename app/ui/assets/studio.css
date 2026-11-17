@@ -1466,8 +1466,8 @@ body.dock-full .chat-dock {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  /* 底部留出输入框的高度，最后一条不会被压住。 */
-  padding: 22px max(20px, calc((100% - 860px) / 2)) calc(var(--composer-h, 104px) + 28px);
+  /* 底部只留一点余量：浮起的输入框由画布那块的外边距让位。 */
+  padding: 22px max(20px, calc((100% - 860px) / 2)) 26px;
 }
 .chat-row { display: flex; }
 .chat-row.user { justify-content: flex-end; }
