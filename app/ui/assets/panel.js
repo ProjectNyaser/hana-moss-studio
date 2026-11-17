@@ -2163,6 +2163,13 @@ function paintSessions() {
     ]),
     active: activeConv,
     blank: blankConversation,
+    current: (() => {
+      try {
+        return localStorage.getItem(CONV_ID_KEY);
+      } catch {
+        return null;
+      }
+    })(),
     names: convNameMap(),
   });
   if (sig === paintSessions.lastSig) return;
@@ -2180,11 +2187,19 @@ function paintSessions() {
       // 一段一行；空会话也用这一行，只把内容换成占位。
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = isBlank ? "pn-conv-row empty" : "pn-conv-row";
+      const currentConv = (() => {
+        try {
+          return localStorage.getItem(CONV_ID_KEY);
+        } catch {
+          return null;
+        }
+      })();
+      btn.className = isBlank ? "pn-conv-row empty on" : "pn-conv-row";
       const ids = session.jobs.map((job) => job.id);
       if (activeConv && activeConv.length === ids.length && ids.every((id) => activeConv.includes(id))) {
         btn.classList.add("on");
       }
+      if (session.conv && session.conv === currentConv) btn.classList.add("on");
       const head = session.jobs[0];
       let thumb;
       if (isBlank) {
@@ -2211,13 +2226,6 @@ function paintSessions() {
       line.className = "pn-hist-prompt";
       line.textContent = convNameMap()[session.key] ?? firstPrompt ?? "（无提示词）";
       if (!line.textContent) line.textContent = "（无提示词）";
-      // 标出“接下来出图会进哪一段”，不然看不出哪个是活的。
-      if (session.conv && session.conv === localStorage.getItem(CONV_ID_KEY)) {
-        const tag = document.createElement("span");
-        tag.className = "pn-hist-now";
-        tag.textContent = "当前";
-        line.append(" ", tag);
-      }
       const meta = document.createElement("span");
       meta.className = "pn-hist-meta";
       if (isBlank) {
