@@ -489,7 +489,16 @@ function renderChat() {
 
 /** 队列里正在跑或排第一的那一条。 */
 function liveChatJob() {
-  const jobs = latest?.jobs ?? [];
+  const conv = currentConv ?? (() => {
+    try {
+      return localStorage.getItem("hana-moss-studio.conv-id");
+    } catch {
+      return null;
+    }
+  })();
+  // 有会话归属的按归属走；没有归属的（工具提交、老记录）算在当前这一段。
+  const mine = (job) => !conv || !job.origin?.conv || job.origin.conv === conv;
+  const jobs = (latest?.jobs ?? []).filter(mine);
   const hit = jobs.find((job) => job.status === "running") ?? jobs.find((job) => job.status === "queued");
   if (hit) return hit;
   // 引擎已经在跑、但记录还没进列表时，用它兜住这一条占位。
@@ -1830,6 +1839,20 @@ async function submitGenerateInner() {
   if (lay.boxes.length) {
     layChannel?.postMessage({ type: "compose-send", text: prompt, base: edit.remotePath ?? null });
     return;
+  }
+  // 会话 id 还没到手就先问一次：归属要在提交那一刻定下来。
+  if (!currentConv) {
+    layChannel?.postMessage({ type: "conv-ask" });
+    for (let i = 0; i < 8 && !currentConv; i += 1) {
+      await new Promise((done) => setTimeout(done, 100));
+    }
+    if (!currentConv) {
+      try {
+        currentConv = localStorage.getItem("hana-moss-studio.conv-id");
+      } catch {
+        /* 读不到就算了 */
+      }
+    }
   }
   // 请求体先立好：占位框和气泡都要用这里的尺寸与参数。
   const preset = latest?.settings ?? {};
