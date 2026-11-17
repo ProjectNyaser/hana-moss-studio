@@ -597,6 +597,9 @@ function buildUserBubble(job) {
     meta.className = "chat-meta";
     meta.textContent = size;
     sub.append(meta);
+    // 箭头放在尺寸右侧：左边不留空白，两行文字才对得齐。
+    const moreBtn = sub.querySelector(".chat-more");
+    if (moreBtn) sub.append(moreBtn);
     bubble.append(sub);
     if (rows.length) bubble.append(extra);
   }
