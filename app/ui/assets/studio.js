@@ -461,6 +461,10 @@ function pendingRows(job) {
   if (previewAt) {
     const shot = document.createElement("img");
     shot.className = "chat-pending-img";
+    // 先按目标尺寸占好位置：预览是分批出的，不占位就会来回顶。
+    const width = job.width ?? latest?.settings?.width;
+    const height = job.height ?? latest?.settings?.height;
+    if (width && height) shot.style.aspectRatio = `${width} / ${height}`;
     shot.src = previewUrl(previewAt);
     shot.alt = "";
     box.classList.add("has-preview");
