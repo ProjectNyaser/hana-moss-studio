@@ -2020,6 +2020,7 @@ async function mergeInto(session, target) {
   say(`已并入「${sessionTitle(target)}」`);
   // 归属变了，旧的筛选集合不再对应任何一段。
   activeConv = null;
+  editChannel?.postMessage({ type: "clear-conversation" });
   paintSessions();
 }
 
@@ -2029,6 +2030,7 @@ async function splitOne(job) {
   await assignConv([job.output], conv);
   say("已拆成新会话");
   activeConv = null;
+  editChannel?.postMessage({ type: "clear-conversation" });
   paintSessions();
 }
 
@@ -2048,6 +2050,7 @@ async function splitSession(session) {
   }
   say("已把最新一张拆成新会话");
   activeConv = null;
+  editChannel?.postMessage({ type: "clear-conversation" });
   paintSessions();
 }
 
@@ -2167,7 +2170,13 @@ function paintSessions() {
         // 重复点不切换，但「看全部」在主界面那条上。
         if (same) return;
         activeConv = ids.slice();
-        editChannel?.postMessage({ type: "open-conversation", ids: activeConv, title: sessionTitle(session) });
+        editChannel?.postMessage({
+          type: "open-conversation",
+          ids: activeConv,
+          title: sessionTitle(session),
+          // 带上整段记录：主界面只拉了第一页，靠前的老图不在里面。
+          jobs: session.jobs,
+        });
         paintSessions();
       });
       return btn;

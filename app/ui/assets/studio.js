@@ -237,6 +237,8 @@ function showView(view) {
 // ── 画布 ───────────────────────────────────────────────────────────────
 let chatFilter = null;
 let convStartMs = 0;
+// 从侧栏点开那一段的完整记录：主界面只拉了第一页，靠前的老图不在里面。
+let convScopeJobs = null;
 
 /** 会话页顶部那条范围提示：从哪段点进来的，怎么回全量。 */
 function paintScope(title, count = 0) {
@@ -285,7 +287,7 @@ function renderChat() {
   const log = document.getElementById("chat-log");
   if (!log) return;
   const source = chatFilter
-    ? galleryJobs.filter((job) => chatFilter.has(job.id))
+    ? (convScopeJobs ?? galleryJobs.filter((job) => chatFilter.has(job.id)))
     : currentConvJobs();
   const scoped = convStartMs
     ? source.filter((job) => (Date.parse(job.createdAt ?? "") || 0) >= convStartMs)
@@ -2317,6 +2319,7 @@ layChannel?.addEventListener("message", (event) => {
     // 新会话从空白开始：这一页只显示之后生成的图。
     convStartMs = Date.now();
     chatFilter = null;
+    convScopeJobs = null;
     if (composer.input) composer.input.value = "";
     if (composer.negative) composer.negative.value = "";
     if (composer.seed) composer.seed.value = "";
@@ -2325,10 +2328,20 @@ layChannel?.addEventListener("message", (event) => {
     renderChat();
     return;
   }
+  if (msg.type === "clear-conversation") {
+    // 归组变了：回到当前会话，别停在已经不存在的旧范围上。
+    chatFilter = null;
+    convScopeJobs = null;
+    convStartMs = 0;
+    paintScope(null);
+    renderChat();
+    return;
+  }
   if (msg.type === "open-conversation") {
     const ids = Array.isArray(msg.ids) ? msg.ids : [];
     convStartMs = 0;
     chatFilter = ids.length ? new Set(ids) : null;
+    convScopeJobs = Array.isArray(msg.jobs) ? msg.jobs : null;
     paintScope(msg.title ?? null, ids.length, msg.total ?? null);
     showView("chat");
     renderChat();
