@@ -1582,17 +1582,19 @@ body.dock-full .chat-dock {
 /* 生成中占位：跟图片同宽、虚线，不抢眼但一看就知道在等。 */
 /* 折叠的输入摘要：跟思考块一个形态，默认收起。 */
 /* 气泡：提示词一行，右上角一个展开箭头，其余按行列出。 */
-/* 按钮钉在气泡右上角，展开多高都不动。 */
-.chat-bubble { position: relative; }
-.chat-head { display: flex; align-items: flex-start; gap: 8px; }
+/* 分辨率那一行：左边是展开箭头，右边是尺寸。 */
+.chat-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
 .chat-head .chat-text { flex: 1; min-width: 0; }
 .chat-more {
-  /* 跟第一行文字的中心对齐：不用绝对定位去猜偏移。 */
-  align-self: flex-start;
-  margin-top: 2px;
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  margin: 0 0 0 -3px;
   padding: 0;
   border: 0;
   background: transparent;

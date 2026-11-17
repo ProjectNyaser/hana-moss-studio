@@ -516,16 +516,15 @@ function pendingRows(job) {
   return [turn];
 }
 
-/** 一条用户消息：提示词 + 分辨率常显，其余收在右上角的展开里。 */
+/** 一条用户消息：提示词一行，分辨率一行，展开按钮放在分辨率那一行的左边。 */
 function buildUserBubble(job) {
   const bubble = document.createElement("div");
   bubble.className = "chat-bubble";
 
-  const head = document.createElement("div");
-  head.className = "chat-head";
   const text = document.createElement("p");
   text.className = "chat-text";
   text.textContent = job.prompt || "（无提示词）";
+  bubble.append(text);
 
   const size = job.width && job.height ? `${job.width}×${job.height}` : "";
   const rows = [];
@@ -542,59 +541,65 @@ function buildUserBubble(job) {
   if (origin.base) rows.push(["底图", String(origin.base)]);
   if (Array.isArray(origin.refs) && origin.refs.length) rows.push(["参考", origin.refs.join("、")]);
 
-  let extra = null;
-  // 展开按钮只在真有额外信息时出现，固定在右上角。
-  if (rows.length) {
-    const more = document.createElement("button");
-    more.type = "button";
-    more.className = "chat-more";
-    more.title = "展开这次的全部参数";
-    // 图标用 SVG：形状本身居中，旋转 90° 才是就地转。
-    const chev = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    chev.setAttribute("viewBox", "0 0 16 16");
-    chev.setAttribute("width", "14");
-    chev.setAttribute("height", "14");
-    chev.setAttribute("fill", "none");
-    chev.setAttribute("stroke", "currentColor");
-    chev.setAttribute("stroke-width", "1.7");
-    chev.setAttribute("stroke-linecap", "round");
-    chev.setAttribute("stroke-linejoin", "round");
-    chev.setAttribute("aria-hidden", "true");
-    const tip = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    tip.setAttribute("d", "M6.2 3.8 10.4 8l-4.2 4.2");
-    chev.append(tip);
-    more.append(chev);
-    extra = document.createElement("div");
-    extra.className = "chat-extra";
-    extra.hidden = true;
-    for (const [key, value] of rows) {
-      const k = document.createElement("span");
-      k.className = "k";
-      k.textContent = key;
-      const v = document.createElement("span");
-      v.className = "v";
-      v.textContent = value;
-      extra.append(k, v);
-    }
-    more.addEventListener("click", () => {
-      const open = extra.hidden;
-      extra.hidden = !open;
-      more.classList.toggle("on", open);
-      more.title = open ? "收起参数" : "展开这次的全部参数";
-    });
-    head.append(text, more);
-  } else {
-    head.append(text);
-  }
-  bubble.append(head);
-
+  const extra = document.createElement("div");
+  extra.className = "chat-extra";
+  extra.hidden = true;
   if (size) {
-    const meta = document.createElement("p");
+    const sub = document.createElement("p");
+    sub.className = "chat-sub";
+    if (rows.length) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "chat-more";
+      more.title = "展开这次的全部参数";
+      // 图标用 SVG：形状本身居中，旋转 90° 才是就地转。
+      const chev = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      chev.setAttribute("viewBox", "0 0 16 16");
+      chev.setAttribute("width", "12");
+      chev.setAttribute("height", "12");
+      chev.setAttribute("fill", "none");
+      chev.setAttribute("stroke", "currentColor");
+      chev.setAttribute("stroke-width", "1.8");
+      chev.setAttribute("stroke-linecap", "round");
+      chev.setAttribute("stroke-linejoin", "round");
+      chev.setAttribute("aria-hidden", "true");
+      const tip = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      tip.setAttribute("d", "M6.2 3.8 10.4 8l-4.2 4.2");
+      chev.append(tip);
+      more.append(chev);
+
+      for (const [key, value] of rows) {
+        const k = document.createElement("span");
+        k.className = "k";
+        k.textContent = key;
+        const v = document.createElement("span");
+        v.className = "v";
+        v.textContent = value;
+        extra.append(k, v);
+      }
+      more.addEventListener("click", () => {
+        const scroller = document.getElementById("view-chat");
+        const before = bubble.getBoundingClientRect().top;
+        const open = extra.hidden;
+        extra.hidden = !open;
+        more.classList.toggle("on", open);
+        more.title = open ? "收起参数" : "展开这次的全部参数";
+        // 底部锚定的列表里，展开会把整条往上顶：把这部分补回去，视线不跳。
+        if (scroller && open) {
+          requestAnimationFrame(() => {
+            scroller.scrollTop -= bubble.getBoundingClientRect().top - before;
+          });
+        }
+      });
+      sub.append(more);
+    }
+    const meta = document.createElement("span");
     meta.className = "chat-meta";
     meta.textContent = size;
-    bubble.append(meta);
+    sub.append(meta);
+    bubble.append(sub);
+    if (rows.length) bubble.append(extra);
   }
-  if (extra) bubble.append(extra);
   return bubble;
 }
 
