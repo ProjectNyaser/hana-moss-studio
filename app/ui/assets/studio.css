@@ -1523,6 +1523,9 @@ body.dock-full .chat-dock { height: auto; flex: 1; }
 }
 .dock-toggle:hover { background: var(--ui-overlay); color: var(--ui-text); }
 .dock-toggle.on { background: var(--ui-tint); color: var(--ui-text); }
+/* 收起时朝上（还能展开），展开时朝下（点了会收）。 */
+.dock-toggle svg { transition: transform 140ms var(--ui-ease); }
+.dock-toggle.on svg { transform: rotate(180deg); }
 
 .composer.dragging {
   border-color: var(--ui-accent);
