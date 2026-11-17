@@ -2234,9 +2234,7 @@ function paintSessions() {
         const born = Number(localStorage.getItem("hana-moss-studio.fresh-at") ?? 0) || Date.now();
         meta.textContent = `0 张 · ${new Date(born).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
         text.append(line, meta);
-        const tail = document.createElement("span");
-        tail.className = "pn-hist-more-spacer";
-        btn.append(thumb, text, tail);
+        btn.append(thumb, text);
         btn.addEventListener("click", () => {
           activeConv = null;
           editChannel?.postMessage({ type: "new-conversation" });
@@ -2258,20 +2256,17 @@ function paintSessions() {
         .filter(Boolean)
         .join(" · ");
       text.append(line, meta);
-      const more = document.createElement("span");
-      more.className = "pn-hist-more";
-      more.textContent = "⋯";
-      more.title = "整理这一段";
-      more.addEventListener("click", (event) => {
-        event.stopPropagation();
-        // 已经开着就收起来。
-        if (convMenu && convMenuAnchor === more) {
-          closeConvMenu();
-          return;
-        }
-        openConvMenu(session, more);
+      btn.append(thumb, text);
+      // 整理这一段放右键：列表上不摆一个常驻按钮。
+      btn.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        openConvMenu(session, btn);
       });
-      btn.append(thumb, text, more);
+      // 双击标题就地改名。
+      text.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        startRename(session, text);
+      });
       // 拖一段到另一段上就是合并：比在菜单里选「上一段」直觉得多。
       btn.draggable = true;
       thumb.draggable = false;
