@@ -1742,6 +1742,12 @@ async function submitGenerate() {
     }, 60000);
     // 提交本身就有回执：会话末尾立刻出现那条占位，不再额外弹一句话。
     void api("/state").then((data) => render(data)).catch(() => {});
+    // 话已经进了会话，输入框回到空态；底图与参考图留着，接着改同一张。
+    if (composer.input) {
+      composer.input.value = "";
+      composer.input.style.height = "";
+    }
+    pushComposerPrompt();
   } catch (error) {
     toast("提交失败：" + (error instanceof Error ? error.message : String(error)), "error");
   } finally {
