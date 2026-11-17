@@ -1600,7 +1600,9 @@ body.dock-full .chat-dock {
   flex: none;
   display: inline-flex;
   align-items: center;
-  height: 14px;
+  height: 12px;
+  /* 数字的视觉重心偏高，箭头抬 1px 才是看上去同一行。 */
+  margin-top: -1px;
   color: var(--ui-text-3);
 }
 .chat-arrow svg { display: block; transition: transform 140ms var(--ui-ease); }
