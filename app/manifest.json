@@ -3,7 +3,7 @@
   "id": "hana-moss-studio",
   "name": "苔室",
   "version": "0.1.0",
-  "description": "MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、采样器与加速器、LoRA、图生图与局部重绘；工具出图在对话里挂实时进度卡，左侧状态面板跟着当前任务走。",
+  "description": "MOSS-Image 的本机出图工作台：自带 CUDA 引擎进程、串行队列、采样器与加速器、LoRA、图生图与局部重绘、JSON 布局与控制图；工具出图在对话里挂实时进度卡，左侧状态面板跟着当前任务走。",
   "entry": "index.js",
   "icon": "assets/icon.png",
   "minAppVersion": "1.5.7-beta",
@@ -36,7 +36,7 @@
       {
         "id": "studio",
         "title": "苔室",
-        "description": "MOSS-Image 出图工作台：提示词、参数、队列与画廊",
+        "description": "MOSS-Image 出图工作台：提示词、参数、队列、画廊，画布上框选布局",
         "route": "/studio.html",
         "realization": "page",
         "siteNavEntry": true,
