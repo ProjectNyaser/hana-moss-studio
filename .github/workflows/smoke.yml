@@ -1,0 +1,13 @@
+name: smoke
+
+# 临时诊断：验证 GitHub 是否会给这个仓库注册 workflow。
+# 注册正常后删除。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
