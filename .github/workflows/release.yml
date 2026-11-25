@@ -9,10 +9,13 @@ name: Release
 # 打包是仓库自己的事（scripts/pack.mjs）：包内容由这个 App 需要什么决定，
 # 条目的 sha256 对包现算，不经中间小票。
 #
-# App 的 SDK 副本（app/sdk）不入库，是 vendor/hana-app-sdk 里 tgz 的派生物，
-# 构建前先 pnpm install + derive 把它展出来。
+# App 的 SDK 副本（app/sdk）与 vendor-bin 下的两个 exe 都不入库，
+# 由 pnpm run pack 在构建机上现展、现取、现编。
 #
 # 不做平台矩阵：交付物是纯 JS，一个包跑遍所有平台，矩阵只是白花时间。
+# 但构建机必须是 Windows：包里带两个外部可执行文件，aria2c.exe 从 Release 取，
+# shm-bridge.exe 用 .NET Framework 的 csc.exe 编译（scripts/vendor/shm-bridge.mjs
+# 在非 win32 上直接 exit 1）。在 Linux runner 上出包会缺这两个文件。
 
 on:
   push:
@@ -28,12 +31,12 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
-      # App 的 SDK 副本不入库（见 .gitignore），从 vendor/hana-app-sdk 的快照展开，
-      # 所以构建前必须装依赖。tgz 在仓库里，这一步不需要联网取 SDK。
+      # App 的 SDK 副本不入库（见 .gitignore），从 vendor/hana-app-sdk 的快照展开；
+      # vendor-bin 下的两个 exe 也不入库，由 pack 前的两步现取 / 现编译。
       - uses: pnpm/action-setup@v4
         with:
           version: 12
@@ -43,25 +46,26 @@ jobs:
           node-version: "20"
           cache: pnpm
 
-      - name: 装依赖并展开 SDK 副本
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm run derive
+      - name: 装依赖
+        run: pnpm install --frozen-lockfile
 
+      # pack 脚本的链条：取 aria2c → 编译 shm-bridge → 展开 SDK → 出 ZIP 与条目。
+      # 不能只跑 derive + pack，那样包里没有 aria2c.exe 与 shm-bridge.exe。
       - name: 出包
-        run: node scripts/pack.mjs
+        run: pnpm run pack
 
       # tag 是 v0.1.0 而 manifest 写着别的版本，发出去的包装着错版本号。
       - name: 校验 tag 与 manifest 版本一致
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          MANIFEST=$(node -p "JSON.parse(require('fs').readFileSync('app/manifest.json','utf8')).version")
-          echo "tag = $TAG / manifest = $MANIFEST"
-          if [ "$TAG" != "$MANIFEST" ]; then
-            echo "::error::tag $TAG 与 manifest 版本 $MANIFEST 不一致"
+          $tag = $env:GITHUB_REF_NAME -replace '^v', ''
+          $manifest = node -p "JSON.parse(require('fs').readFileSync('app/manifest.json','utf8')).version"
+          Write-Host "tag = $tag / manifest = $manifest"
+          if ($tag -ne $manifest) {
+            Write-Error "tag $tag 与 manifest 版本 $manifest 不一致"
             exit 1
-          fi
+          }
 
       - uses: actions/upload-artifact@v4
         with:

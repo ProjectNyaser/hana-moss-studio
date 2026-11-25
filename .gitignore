@@ -17,3 +17,6 @@ app/vendor-bin/
 
 # 临时脚本与截图：UI 试跑、CDP 驱动、探针，不进仓库
 .tmp/
+
+# 本地工作树：Code 页把并行开发的 worktree 放在这里
+.hana/

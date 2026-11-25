@@ -2,19 +2,24 @@
 
 把 [MossInfer](https://github.com/mossimage-cpp/mossimage.cpp) 的本机推理引擎接进 HanaAgent 的 App：自带 CUDA 引擎进程、串行队列、提示词面板与画廊，工具出图在对话里挂实时进度卡。苔室自己管理 `moss-server` 进程，不依赖 Electron 外壳，也不用手抄 token。
 
-苔室自己管理 `moss-server` 进程，不依赖 Electron 外壳，也不用手抄 token。
-
 ## 结构
 
 ```
 app/                    App 本体，打包后就是安装包内容
-  manifest.json         v2 manifest（整页卡片 + 功能面板 + 两个工具）
+  manifest.json         v2 manifest（整页卡片 + 功能面板 + 六个工具）
   index.js              路由、串行队列、宿主任务桥、工具注册
   lib/engine.js         moss-server 生命周期与 JSON-lines 协议
-  lib/installer.js      引擎与权重的下载安装（面板上的两个按钮）
+  lib/installer.js      引擎与权重的下载安装（面板上的按钮）
+  lib/params.js         一次生成的参数面：采样器、调度器、加速器、LoRA、图生图输入
+  lib/latent.js         可续画的生成与 latent 级局部重绘
+  lib/session.js        component session 的宿主侧
+  lib/shm.js            共享内存区读写
+  lib/outputs.js        从 PNG 读回生成记录
+  lib/image.js          降采样与 WebP 编码
+  lib/unzip.js          解 zip
   lib/store.js          设置与任务台账
   lib/mossimage.js      引擎版本、协议号与模型组件清单（手写常量，不派生）
-  vendor-bin/           aria2c.exe，构建时按 vendor/aria2-bin.json 取，不入库
+  vendor-bin/           aria2c.exe 与 shm-bridge.exe，构建期产出，不入库
   assets/icon.png       应用图标（MOSS-Image 画的）
   skills/hana-moss-studio/
                         SKILL.md 与 references/，装了 App 就有这个技能
@@ -25,11 +30,22 @@ app/                    App 本体，打包后就是安装包内容
 scripts/
   vendor/sdk.mjs        从本机宿主同步 vendor/hana-app-sdk 的快照
   vendor/aria2.mjs      按 vendor/aria2-bin.json 把 aria2c.exe 取进 app/vendor-bin/
+  vendor/shm-bridge.mjs 用 csc.exe 编译 tools/shm-bridge/ShmBridge.cs
   derive.mjs            从依赖树展开 app/sdk、ui 侧副本与 manifest#minAppVersion
   package.mjs           产出 build/<appId>/
   pack.mjs              出安装包与市场投稿条目
+  market.mjs            市场投稿（registry / approvals）
+  check-syntax.mjs      全量语法检查
+  check-undeclared.mjs  未声明变量与调用
+  check-ident.mjs       标识符一致性
+  check-dom.mjs         HTML 里用到的 id 与脚本是否对得上
+  check-icons.mjs       图标引用
   fetch-weights.mjs     按清单拉权重（aria2c 优先，缺了就 Node fetch）
   smoke-generate.mjs    绕开 UI 直跑引擎
+  dev/install-local.ps1 本地安装到 HANA_HOME
+tools/
+  shm-bridge/ShmBridge.cs  共享内存桥源码（.NET Framework，csc 编译）
+  dev/                  对引擎的探针：批量、裁剪、重绘、会话、VAE
 vendor/mossimage.cpp    引擎源与权威文档（git submodule，shallow）
 vendor/aria2            下载器源（git submodule，shallow，GPLv2）
 vendor/hana-app-sdk     App SDK 快照（tgz + source-manifest.json），见该目录的 README
@@ -90,7 +106,7 @@ git submodule update --init --depth 1
 
 侧栏里 LoRA 是「库」：导入的 safetensors 落在 `app-data/hana-moss-studio/loras/`，勾选与强度跟着设置存下来。参考图在浏览器里按目标尺寸裁好（crop / fit / stretch）再上传，蒙版就在这张裁好的图上画，所以引擎拿到的 `init_image` 与蒙版天然同尺寸。
 
-工具面另有三件：`moss_estimate`（空跑 `check`，给「能不能跑、要多久」）、`moss_inspect`（问引擎一个文件是什么）、`moss_engine`（start / stop / release，`release` 把显存还回去但留住引擎）。
+工具面另有四件：`moss_estimate`（空跑 `check`，给「能不能跑、要多久」）、`moss_inspect`（问引擎一个文件是什么）、`moss_engine`（start / stop / release，`release` 把显存还回去但留住引擎）、`moss_latent`（可续画的生成：`run` / `resume` / `list` / `encode` / `decode` / `inpaint`，断点落在 `checkpoints/`）。
 
 ## 布局（指哪画哪）
 
@@ -155,7 +171,7 @@ dist-extensions/app-<id>-<version>.entry.json   市场投稿条目
 
 条目是对 ZIP 的派生：字节数与 `sha256` 都对包现算，不经中间小票，所以不存在「小票与包对不上」这条失败路径。`archive.url` 保留 `{{BASE_URL}}/` 占位符是协议要求，市场同步器按这个前缀取出资产名。
 
-推 tag 后 `.github/workflows/release.yml` 会出包、校验 tag 与 manifest 版本一致、建**正式** Release（市场不接受 draft 与 prerelease）并把 ZIP 与 entry.json 一起挂上去，发完再回头核对。
+推 tag 后 `.github/workflows/release.yml` 会出包、校验 tag 与 manifest 版本一致、建**正式** Release（市场不接受 draft 与 prerelease）并把 ZIP 与 entry.json 一起挂上去，发完再回头核对。构建机是 `windows-2022`：包里那两个 exe 都不入库，要在构建机上现取与现编。
 
 投稿时在市场的 `registry.json` 追加 `{kind, id, repository, publisher}`，在 `approvals.json` 追加 `{kind, id, tag, sha256, readme}`。`sha256` 抄 entry.json 里的值，不要自行计算。
 
@@ -204,7 +220,7 @@ node scripts/smoke-generate.mjs --engine <moss-server 路径> --model <diffusers
 
 - **只支持 Windows x64**。引擎上游也有 Linux x64 资产，但苔室只在这个平台验证过；macOS 没有任何引擎构建。非 Windows 平台上启动引擎会直接报平台不支持。
 - 单张上限 4.2 百万像素、单边 4096。4K 出不了；`hiresScale` 受同一个上限，只做两段式细化，不能把图做大。
-- 只吃 MOSS-Image 那套目录结构，不吃单文件 checkpoint。单文件 DiT / 文本编码器在协议里有（`dit_file` / `text_encoder_file`），苔室还没接。
+- 只吃 MOSS-Image 架构，别人的 checkpoint（SDXL / Flux / Qwen-Image）加载不了。单文件 DiT / 文本编码器 / VAE 可以按分量覆盖 bundle（`dit_file` / `text_encoder_file` / `vae_file`），tokenizer 与配置仍来自 bundle。
 - 控制适配器只认带 `video_embedder` 的完整文件：HuggingFace 上 `thedeoxen/MOSS-Image-*-controlnet` 那批只有 LoRA，`moss_inspect` 会判成 `lora`，当 `control` 用会被引擎拒。
 - 加速器（`step_cache` / `cfg_truncation`）与 LoRA 合并都是 lossy 的：开了之后与同一随机种子的未加速结果不是同一张图。
 - 一次只跑一个任务。单卡小显存下并发只会互相拖慢。

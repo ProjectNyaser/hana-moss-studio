@@ -5,7 +5,7 @@ description: 苔室（Hana-Moss-Studio，v2 App）——MOSS-Image 的本机出�
 
 # 苔室（Hana-Moss-Studio）
 
-把本机 **MOSS-Image** 引擎接进 Hana 的出图工作台。一个模型、一条干净流水线：它不加载 SDXL / Flux / Qwen-Image 那些单文件 checkpoint，**只认 MOSS-Image 那套目录结构**（`transformer / text_encoder / vae / model_index.json`）。想要一个吃所有模型的界面，走 comfyui-hana。
+把本机 **MOSS-Image** 引擎接进 Hana 的出图工作台。一个模型、一条干净流水线：它不加载 SDXL / Flux / Qwen-Image 那些别人的 checkpoint，**只认 MOSS-Image 架构**：bundle 是 `transformer / text_encoder / vae / model_index.json`，单文件 DiT / 文本编码器 / VAE 可以按分量覆盖它。想要一个吃所有模型的界面，走 comfyui-hana。
 
 ## 快速上手
 
