@@ -1082,6 +1082,23 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       const target = join(engineDir, base);
       const zip = join(engineDir, `${base}.zip`);
 
+      // 这个版本已经在本地解好了（重复点按钮、或上次装完状态没刷新）。
+      // 不能走「重下一遍再解压」：目录里正在跑的 moss-server 会锁住自己的 DLL，
+      // 覆盖时只会得到一个看不懂的 EBUSY。
+      const installedExe = join(target, "bin", "moss-server.exe");
+      if (existsSync(installedExe)) {
+        saveSettings({ serverPath: installedExe });
+        const drift =
+          MOSSIMAGE.version === version ? "" : `；app/lib/mossimage.js 里还写着 ${MOSSIMAGE.version}`;
+        task.finish({
+          phase: "done",
+          message: `引擎就绪：${base}（这个版本已经在本地，没有重新下载）${drift}`,
+          detail: { serverPath: installedExe, version, tag: release.tag_name },
+        });
+        onInstalled?.("engine", { serverPath: installedExe });
+        return;
+      }
+
       task.patch({ phase: "download", message: `下载 ${asset.name}（${mb(asset.size ?? 0)} MB）`, totalBytes: asset.size ?? 0 });
       await downloadViaRpc(task, [{ url: asset.browser_download_url, out: `${base}.zip`, size: asset.size ?? 0 }], {
         dir: engineDir,
@@ -1692,6 +1709,15 @@ export function createInstaller({ dataDir, runtimeDir, getSettings, saveSettings
       if (!task || task.job.finishedAt) return false;
       task.cancelled = true;
       task.child?.kill();
+      // 下载中的包是预分配成整份大小的，取消后不删就白占几百兆磁盘；
+      // `.aria2` 一起清掉，否则下次续传会以为还有半截可用。
+      for (const file of task.job.tasks ?? []) {
+        const rel = typeof file.path === "string" ? file.path : "";
+        if (!rel) continue;
+        const full = path.isAbsolute(rel) ? rel : join(dataDir, rel);
+        rmSync(full, { force: true });
+        rmSync(`${full}.aria2`, { force: true });
+      }
       // 残留的活跃任务跟着落成终态，否则收尾后那一条还挂着最后一帧速度和进度。
       const files = (task.job.tasks ?? []).map((file) =>
         file.status === "active" || file.status === "waiting" ? { ...file, status: "removed", speed: 0 } : file,
