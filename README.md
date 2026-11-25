@@ -120,6 +120,19 @@ MOSS-Image 支持把排布写成 JSON，**那段 JSON 就是提示词**，不需
 
 坐标是 `yxyx` 顺序，原点在**画布中心**，单位像素（512² 的范围是 ±256）。侧栏有可收起的「布局」段：贴 JSON、或按当前尺寸生成模板，写错时指出哪一条不合法。工具面用 `boxes` 更省事：给左上角的 `[x0,y0,x1,y1]`，苔室按 `width × height` 换算并拼成 layout JSON。画廊里的布局图会把 prompt 显示成 `summary.caption`，旧 PNG 也照这个规则读。
 
+## 装之前
+
+| 项 | 要求 |
+| --- | --- |
+| Hana | 宿主 1.5.7-beta 或更高（manifest 的 `minAppVersion`，`pnpm run derive` 从 SDK 快照推出来） |
+| 系统 | Windows x64。引擎上游有 Linux 资产，但苔室只在 Windows 上验证过，macOS 没有构建 |
+| 显卡 | NVIDIA，驱动里带 `nvidia-smi`（装引擎要靠它读驱动版本与算力） |
+| 显存 | 6 GB 能跑 512²（本机 RTX 4050 Laptop 实测）；1024² 及以上必须把显存策略切到 `min_memory` |
+| 磁盘 | 权重约 25 GiB，放 NVMe：文本编码器 15.6 GB，SATA 读一次 30.9 秒，NVMe 6 秒 |
+| 网络 | 装引擎取 GitHub Release，下权重走 HF 镜像；两条都不通时用「用本地包」与手工放权重 |
+
+App 本身不挑这些：装上去就能开界面、看状态、读画廊。上面这些是出图的前提，缺哪一项，`moss_status` 会指出缺的是引擎、模型还是平台。
+
 ## 装引擎与权重
 
 用户不需要命令行。左侧面板「引擎与模型」里两个按钮：
