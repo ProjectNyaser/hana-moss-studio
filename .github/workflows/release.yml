@@ -32,6 +32,9 @@ env:
 jobs:
   build:
     runs-on: windows-2022
+    # 出包要下 aria2c、编 shm-bridge、展 SDK，正常在十分钟内；
+    # 卡住时不该占着 runner 六个小时。
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
