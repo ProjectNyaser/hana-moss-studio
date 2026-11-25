@@ -15,6 +15,16 @@
 
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+const HANA_HOME = process.env.HANA_HOME;
+if (!HANA_HOME) {
+  console.error("设置 HANA_HOME 指向 Hana 的数据目录（下面有 app-data/hana-moss-studio）");
+  process.exit(1);
+}
+const MOSS_DATA = join(HANA_HOME, "app-data", "hana-moss-studio");
+const MODEL_DIR = join(MOSS_DATA, "models", "moss-image-sft");
+const MODEL_FILES = join(MOSS_DATA, "models", "files");
+const ENGINE_DIR = "mossinfer-2.2.1-windows-cu13-x86_64";
 import { tmpdir } from "node:os";
 import { decode as decodePng } from "fast-png";
 
@@ -30,13 +40,13 @@ const DIM = MODE === "batch" ? Number(process.argv[4] ?? 256) : SIZE;
 const RUN_STEPS = MODE === "batch" ? Number(process.argv[5] ?? 6) : STEPS;
 
 const settings = {
-  serverPath: "H:\\.hanako\\app-data\\hana-moss-studio\\engine\\mossinfer-2.2.1-windows-cu13-x86_64\\bin\\moss-server.exe",
-  modelPath: "H:\\.hanako\\app-data\\hana-moss-studio\\models\\moss-image-sft",
+  serverPath: join(MOSS_DATA, "engine", ENGINE_DIR, "bin", "moss-server.exe"),
+  modelPath: MODEL_DIR,
   memoryMode: "min_memory",
   tier: "turbo",
   modelFiles: {
-    dit: "H:\\.hanako\\app-data\\hana-moss-studio\\models\\files\\moss_image_sft_int4_convrot.safetensors",
-    textEncoder: "H:\\.hanako\\app-data\\hana-moss-studio\\models\\files\\qwen3.5_9b_w4a8_gptq.safetensors",
+    dit: join(MODEL_FILES, "moss_image_sft_int4_convrot.safetensors"),
+    textEncoder: join(MODEL_FILES, "qwen3.5_9b_w4a8_gptq.safetensors"),
     vae: null,
   },
   defaults: { width: DIM, height: DIM, steps: RUN_STEPS, cfg: 3, sampler: "euler", scheduler: "moss", shift: 5 },
