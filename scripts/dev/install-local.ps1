@@ -5,7 +5,12 @@ $port = if ($info.network.actualPort) { $info.network.actualPort } else { $info.
 $base = "http://127.0.0.1:$port"
 $headers = @{ Authorization = "Bearer $($info.token)" }
 $app = "$base/api/extensions/app:hana-moss-studio"
-$pkg = "E:\Hanako\Workspace\Projects\apps\hana-moss-studio\.hana\worktrees\visual-layout-editor\build\hana-moss-studio"
+$root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$pkg = Join-Path $root "build\hana-moss-studio"
+if (-not (Test-Path $pkg)) {
+  Write-Output "没有 $pkg，先跑 pnpm run build"
+  exit 1
+}
 
 try { Invoke-RestMethod -Method Put -Uri "$app/enabled" -Headers $headers -ContentType "application/json" -Body '{"enabled":false}' | Out-Null } catch {}
 Start-Sleep -Seconds 2
